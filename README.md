@@ -41,7 +41,7 @@ For the end-to-end tests, install a browser once with `npx playwright install ch
 
 ### Hosting the pilot
 
-`npm run build` produces a static site in `dist/` that works from any static host or sub-path (routing is hash-based), for example GitHub Pages, Netlify, Cloudflare Pages or Vercel — all free for this size. A manual GitHub Pages workflow is included in `.github/workflows/deploy-pages.yml` (enable Pages → “GitHub Actions” in the repository settings, then run the workflow).
+`npm run build` produces a static site in `dist/` that works from any static host or sub-path (routing is hash-based), for example GitHub Pages, Netlify, Cloudflare Pages or Vercel — all free for this size. A GitHub Pages workflow is included in `.github/workflows/deploy-pages.yml`: with Settings → Pages → Source set to “GitHub Actions”, every push to the default branch publishes the app (it can also be run by hand from the Actions tab).
 
 ## How data is stored
 

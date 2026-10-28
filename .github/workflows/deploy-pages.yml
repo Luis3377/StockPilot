@@ -1,9 +1,11 @@
-# Publishes the static app to GitHub Pages. Runs only when started manually
-# (Actions → Deploy to GitHub Pages → Run workflow). First enable Pages with
-# Settings → Pages → Source: GitHub Actions.
+# Publishes the static app to GitHub Pages on every push to the default branch,
+# or on demand (Actions → Deploy to GitHub Pages → Run workflow).
+# Requires Settings → Pages → Source: GitHub Actions.
 name: Deploy to GitHub Pages
 
 on:
+  push:
+    branches: [main, claude/stockpilot-prototype]
   workflow_dispatch:
 
 permissions:
