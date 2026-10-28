@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens. Components use roles (surface, ink, accent…) so light/dark swap in one place. */
+:root {
+  color-scheme: light;
+  --canvas: #f5f5f3;
+  --surface: #ffffff;
+  --surface-2: #f2f1ee;
+  --surface-3: #e9e8e4;
+  --line: #e4e3de;
+  --line-strong: #d3d2cc;
+  --ink: #111110;
+  --ink-2: #52514e;
+  --muted: #7a7974;
+  --accent: #256abf;
+  --accent-hover: #1c5cab;
+  --accent-ink: #ffffff;
+  --accent-soft: #e9f1fc;
+  --accent-text: #1c5cab;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --good-soft: #e6f4e6;
+  --warn: #fab219;
+  --warn-text: #7a5000;
+  --warn-soft: #fff3d6;
+  --serious: #ec835a;
+  --bad: #d03b3b;
+  --bad-text: #b42323;
+  --bad-soft: #fdeceb;
+  --demo: #6250d6;
+  --demo-soft: #efedfc;
+  /* Charts (validated categorical slots 1–2, hairline chrome). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --grid: #ebeae5;
+  --axis: #c3c2b7;
+  --shadow: 0 1px 2px rgba(17, 17, 16, 0.04), 0 1px 1px rgba(17, 17, 16, 0.03);
+  --shadow-lg: 0 12px 32px rgba(17, 17, 16, 0.12), 0 2px 6px rgba(17, 17, 16, 0.06);
+}
+
+.dark {
+  color-scheme: dark;
+  --canvas: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #232322;
+  --surface-3: #2c2c2a;
+  --line: #2c2c2a;
+  --line-strong: #3a3a37;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #94938c;
+  --accent: #3987e5;
+  --accent-hover: #5598e7;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(57, 135, 229, 0.16);
+  --accent-text: #86b6ef;
+  --good-text: #4cc94c;
+  --good-soft: rgba(12, 163, 12, 0.16);
+  --warn-text: #fab219;
+  --warn-soft: rgba(250, 178, 25, 0.14);
+  --bad-text: #f07a7a;
+  --bad-soft: rgba(208, 59, 59, 0.18);
+  --demo: #9085e9;
+  --demo-soft: rgba(144, 133, 233, 0.16);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+}
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-good: var(--good);
+  --color-good-text: var(--good-text);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-text: var(--warn-text);
+  --color-warn-soft: var(--warn-soft);
+  --color-serious: var(--serious);
+  --color-bad: var(--bad);
+  --color-bad-text: var(--bad-text);
+  --color-bad-soft: var(--bad-soft);
+  --color-demo: var(--demo);
+  --color-demo-soft: var(--demo-soft);
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
+
+html,
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+}
+
+/* iOS zooms into inputs under 16px; keep form text at 16px on touch screens. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@keyframes sp-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sp-sheet-in {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes sp-toast-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.animate-fade-in { animation: sp-fade-in 150ms ease-out; }
+.animate-sheet-in { animation: sp-sheet-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.animate-toast-in { animation: sp-toast-in 180ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
