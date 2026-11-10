@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addItem, nav, onboard, openItem } from './helpers';
+import { addItem, nav, onboard, openItem, recordSale } from './helpers';
 
 test('Count Check finds shortages and overages and applies approved adjustments', async ({ page }) => {
   await onboard(page, 'Small business');
@@ -94,4 +94,57 @@ test('the Overview shows missing stock on its own, with extras in the small text
   await nav(page, 'Overview');
   await expect(page.getByTestId('stat-discrepancy-value')).toHaveText('-$6.50 missing');
   await expect(page.getByTestId('stat-discrepancy')).toContainText('+$18.00 extra found · Last count');
+});
+
+test('a count is flagged when stock changes after the item was counted', async ({ page }) => {
+  await onboard(page, 'Small business');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await addItem(page, { name: 'Widget', quantity: 12, cost: '2' });
+  await addItem(page, { name: 'Gadget', quantity: 5, cost: '4' });
+  await nav(page, 'Count Check');
+  await page.getByRole('button', { name: 'Start counting 2 items' }).click();
+  await page.getByLabel('Counted quantity for Widget').fill('12');
+  await page.getByLabel('Counted quantity for Widget').press('Enter');
+  await page.getByLabel('Counted quantity for Gadget').fill('5');
+  await page.getByLabel('Counted quantity for Gadget').press('Enter');
+  await expect(page.getByTestId('count-changed')).toHaveCount(0);
+
+  // A sale is recorded before the count is finished.
+  await nav(page, 'Sales & Profit');
+  await page.getByRole('button', { name: 'Record your first sale' }).click();
+  await recordSale(page, { item: 'Widget', price: '5' });
+  await nav(page, 'Count Check');
+  await expect(page.getByTestId('count-changed-banner')).toContainText('Stock changed for 1 item since you counted it');
+  const row = page.getByTestId('count-row').filter({ hasText: 'Widget' });
+  await expect(row.getByTestId('count-changed')).toContainText('Stock changed since you counted this (12 → 11). Recount?');
+
+  // In review, the changed row starts unticked so it can't adjust stock by accident.
+  await page.getByRole('button', { name: 'Review & finish' }).click();
+  const review = page.getByTestId('count-review');
+  await expect(review.getByLabel('Apply adjustment for Widget')).not.toBeChecked();
+  await expect(review.getByTestId('review-line')).toContainText('Stock changed since you counted this (12 → 11). Recount?');
+  await review.getByRole('button', { name: 'Keep counting' }).click();
+
+  // Recount clears the number so it can be entered again.
+  await row.getByRole('button', { name: 'Recount' }).click();
+  await expect(page.getByLabel('Counted quantity for Widget')).toHaveValue('');
+  await expect(page.getByTestId('count-changed-banner')).toHaveCount(0);
+  await page.getByLabel('Counted quantity for Widget').fill('11');
+  await page.getByLabel('Counted quantity for Widget').press('Enter');
+  await expect(row).toContainText('✓ Matches');
+
+  // "Keep count" accepts a count as still right after another change.
+  await nav(page, 'Sales & Profit');
+  await page.getByRole('button', { name: 'Record sale' }).first().click();
+  await recordSale(page, { item: 'Gadget', price: '9' });
+  await nav(page, 'Count Check');
+  const gadget = page.getByTestId('count-row').filter({ hasText: 'Gadget' });
+  await gadget.getByRole('button', { name: 'Keep count' }).click();
+  await expect(page.getByTestId('count-changed')).toHaveCount(0);
+  await expect(gadget).toContainText('+1');
+
+  // Kept counts survive a reload (the snapshot is saved with the draft).
+  await page.reload();
+  await expect(page.getByTestId('count-row').filter({ hasText: 'Gadget' })).toContainText('+1');
+  await expect(page.getByTestId('count-changed')).toHaveCount(0);
 });

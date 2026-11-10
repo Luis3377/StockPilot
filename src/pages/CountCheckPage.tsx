@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
-import { CheckCheck, ClipboardCheck, Download, Minus, Plus, Search, X } from 'lucide-react';
-import { compareCount, completeCount, discardCount, itemsInScope, setCount, startCount, type CountDecision } from '../domain/actions';
+import { useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CheckCheck, ClipboardCheck, Download, Minus, Plus, Search, X } from 'lucide-react';
+import { compareCount, completeCount, discardCount, itemsInScope, keepCount, setCount, startCount, type CountDecision } from '../domain/actions';
 import { knownCategories, knownLocations } from '../domain/calc';
 import { formatDateTime } from '../domain/dates';
 import type { CountLine, CountRecord, CountScope, Item } from '../domain/types';
@@ -19,7 +19,7 @@ import { ItemThumb } from '../ui/Photo';
 import { useConfirm } from '../ui/Confirm';
 import { useToast } from '../ui/Toast';
 import { cn } from '../ui/cn';
-import { plural } from '../domain/format';
+import { plural, pluralWord } from '../domain/format';
 
 const REASONS = ['Miscounted before', 'Damaged', 'Lost', 'Stolen', 'Sold but not recorded', 'Found extra', 'Received but not recorded', 'Other'];
 
@@ -234,10 +234,13 @@ function ActiveCount() {
   const cmp = compareCount(data.items, draft);
   const counted = cmp.lines.length;
   const lineById = new Map(cmp.lines.map((l) => [l.itemId, l]));
+  const changed = cmp.changedSinceCounted;
+  const changedCount = Object.keys(changed).length;
+  const needsAttention = (id: string) => (lineById.get(id)?.difference ?? 0) !== 0 || id in changed;
   const visible = scoped.filter((i) => {
     if (q.trim() && !`${i.name} ${i.sku} ${i.location}`.toLowerCase().includes(q.trim().toLowerCase())) return false;
     if (filter === 'todo') return draft.counts[i.id] === undefined;
-    if (filter === 'diff') return (lineById.get(i.id)?.difference ?? 0) !== 0;
+    if (filter === 'diff') return needsAttention(i.id);
     return true;
   });
 
@@ -308,10 +311,24 @@ function ActiveCount() {
           options={[
             { value: 'all', label: 'All' },
             { value: 'todo', label: `Not counted (${cmp.uncounted.length})` },
-            { value: 'diff', label: `Differences (${cmp.lines.filter((l) => l.difference !== 0).length})` },
+            { value: 'diff', label: `Differences (${scoped.filter((i) => needsAttention(i.id)).length})` },
           ]}
         />
       </div>
+
+      {changedCount > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn-text" role="status" data-testid="count-changed-banner">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">
+            Stock changed for {plural(changedCount, 'item')} since you counted {pluralWord(changedCount, 'it', 'them')}, so {pluralWord(changedCount, 'its', 'their')} difference may be wrong. Recount, or keep your count if it’s still right.
+          </span>
+          {filter !== 'diff' && (
+            <button type="button" onClick={() => setFilter('diff')} className="font-semibold underline">
+              Show {pluralWord(changedCount, 'it', 'them')}
+            </button>
+          )}
+        </div>
+      )}
 
       <Card className="mt-3 overflow-hidden">
         {visible.length === 0 ? (
@@ -319,14 +336,23 @@ function ActiveCount() {
         ) : (
           <ul className="divide-y divide-line" data-testid="count-list">
             {visible.map((item) => (
-              <CountRow key={item.id} item={item} counted={draft.counts[item.id]} line={lineById.get(item.id)} onChange={(v) => update(item.id, v)} money={money} />
+              <CountRow
+                key={item.id}
+                item={item}
+                counted={draft.counts[item.id]}
+                changedFrom={changed[item.id]}
+                line={lineById.get(item.id)}
+                onChange={(v) => update(item.id, v)}
+                onKeep={() => store.update((d) => keepCount(d, item.id))}
+                money={money}
+              />
             ))}
           </ul>
         )}
       </Card>
       {cmp.uncounted.length > 0 && counted > 0 && <p className="mt-2 text-xs text-muted">Items you don’t count are left unchanged when you finish.</p>}
 
-      <ReviewDialog open={reviewing} onClose={() => setReviewing(false)} lines={cmp.lines} uncounted={cmp.uncounted.length} />
+      <ReviewDialog open={reviewing} onClose={() => setReviewing(false)} lines={cmp.lines} changed={changed} uncounted={cmp.uncounted.length} />
     </>
   );
 }
@@ -341,8 +367,20 @@ function SummaryTile({ label, value, sub, tone, testId }: { label: string; value
   );
 }
 
-function CountRow({ item, counted, line, onChange, money }: { item: Item; counted: number | undefined; line?: CountLine; onChange: (v: number | null) => void; money: (n: number) => string }) {
+interface CountRowProps {
+  item: Item;
+  counted: number | undefined;
+  /** Recorded quantity when the item was counted, if stock has changed since. */
+  changedFrom: number | undefined;
+  line?: CountLine;
+  onChange: (v: number | null) => void;
+  onKeep: () => void;
+  money: (n: number) => string;
+}
+
+function CountRow({ item, counted, changedFrom, line, onChange, onKeep, money }: CountRowProps) {
   const [text, setText] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const shown = text ?? (counted === undefined ? '' : String(counted));
   const commit = (raw: string) => {
     setText(null);
@@ -359,6 +397,31 @@ function CountRow({ item, counted, line, onChange, money }: { item: Item; counte
           <p className="truncate text-xs text-ink-2">
             {[item.sku, item.location].filter(Boolean).join(' · ')} · Recorded: <strong className="text-ink">{item.quantity}</strong>
           </p>
+          {changedFrom !== undefined && (
+            <div className="mt-1.5 text-xs text-warn-text" data-testid="count-changed">
+              <p className="flex items-start gap-1.5 font-medium">
+                <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+                <span>
+                  Stock changed since you counted this <span className="whitespace-nowrap">({changedFrom} → {item.quantity})</span>. Recount?
+                </span>
+              </p>
+              <div className="mt-1 flex gap-3 pl-5">
+                <button
+                  type="button"
+                  className="font-semibold underline"
+                  onClick={() => {
+                    onChange(null);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  Recount
+                </button>
+                <button type="button" className="font-semibold underline" onClick={onKeep}>
+                  Keep count
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -376,6 +439,7 @@ function CountRow({ item, counted, line, onChange, money }: { item: Item; counte
             <Minus className="size-4" />
           </button>
           <input
+            ref={inputRef}
             inputMode="numeric"
             pattern="[0-9]*"
             aria-label={`Counted quantity for ${item.name}`}
@@ -395,12 +459,14 @@ function CountRow({ item, counted, line, onChange, money }: { item: Item; counte
   );
 }
 
-function ReviewDialog({ open, onClose, lines, uncounted }: { open: boolean; onClose: () => void; lines: CountLine[]; uncounted: number }) {
+function ReviewDialog({ open, onClose, lines, changed, uncounted }: { open: boolean; onClose: () => void; lines: CountLine[]; changed: Record<string, number>; uncounted: number }) {
   const { money } = useMoney();
   const toast = useToast();
   const diffs = lines.filter((l) => l.status !== 'match');
   const [decisions, setDecisions] = useState<Record<string, { apply: boolean; reason: string; note: string }>>({});
-  const get = (l: CountLine) => decisions[l.itemId] ?? { apply: true, reason: l.status === 'missing' ? 'Miscounted before' : 'Found extra', note: '' };
+  // Rows whose stock changed after counting start unticked so a stale count can't adjust stock by default.
+  const get = (l: CountLine) => decisions[l.itemId] ?? { apply: !(l.itemId in changed), reason: l.status === 'missing' ? 'Miscounted before' : 'Found extra', note: '' };
+  const changedCount = lines.filter((l) => l.itemId in changed).length;
   const setD = (l: CountLine, patch: Partial<{ apply: boolean; reason: string; note: string }>) => setDecisions((d) => ({ ...d, [l.itemId]: { ...get(l), ...patch } }));
   const applyCount = diffs.filter((l) => get(l).apply).length;
   const net = diffs.filter((l) => get(l).apply).reduce((s, l) => s + l.valueDifference, 0);
@@ -447,6 +513,12 @@ function ReviewDialog({ open, onClose, lines, uncounted }: { open: boolean; onCl
           <p className="text-sm text-ink-2">
             Approved adjustments set each item’s quantity to what you counted. Net effect on inventory value: <strong className={net < 0 ? 'text-bad-text' : 'text-ink'}>{money(net)}</strong>
           </p>
+          {changedCount > 0 && (
+            <p className="flex gap-1.5 rounded-xl bg-warn-soft p-3 text-sm text-warn-text">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+              Stock changed for {plural(changedCount, 'item')} after you counted {pluralWord(changedCount, 'it', 'them')}. {pluralWord(changedCount, 'It is', 'They are')} left unticked; recount first, or tick to apply anyway.
+            </p>
+          )}
           <ul className="space-y-2">
             {diffs.map((l) => {
               const d = get(l);
@@ -464,6 +536,11 @@ function ReviewDialog({ open, onClose, lines, uncounted }: { open: boolean; onCl
                       <p className="text-xs text-ink-2">
                         Recorded {l.recordedQuantity} → counted {l.countedQuantity}
                       </p>
+                      {l.itemId in changed && (
+                        <p className="mt-0.5 text-xs font-medium text-warn-text">
+                          Stock changed since you counted this <span className="whitespace-nowrap">({changed[l.itemId]} → {l.recordedQuantity})</span>. Recount?
+                        </p>
+                      )}
                       {d.apply && (
                         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <select value={d.reason} onChange={(e) => setD(l, { reason: e.target.value })} aria-label={`Reason for ${l.itemName}`} className={cn(inputClass, 'h-10 border-line-strong text-sm')}>

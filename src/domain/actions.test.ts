@@ -9,6 +9,7 @@ import {
   compareCount,
   deleteItem,
   deleteSale,
+  keepCount,
   nextSku,
   recordSale,
   restockItem,
@@ -273,12 +274,38 @@ describe('count check', () => {
     expect(r.record.lines.map((l) => l.applied)).toEqual([true, false]);
   });
 
-  it('compares against live quantities if a sale happens mid-count', () => {
-    let { data, a } = setup();
+  it('flags an item whose stock changed after it was counted', () => {
+    let { data, a, b } = setup();
     data = startCount(data, { category: null, location: null });
-    data = setCount(data, a.id, 8);
-    data = recordSale(data, sale(a.id, 2)).data;
-    expect(compareCount(data.items, data.countDraft!).lines[0].status).toBe('match');
+    data = setCount(data, a.id, 10);
+    data = setCount(data, b.id, 4);
+    expect(data.countDraft!.recordedAtCount).toEqual({ [a.id]: 10, [b.id]: 4 });
+    expect(compareCount(data.items, data.countDraft!).changedSinceCounted).toEqual({});
+
+    // A sale recorded mid-count: still compared live, but flagged instead of silently "missing".
+    data = recordSale(data, sale(a.id, 1)).data;
+    let cmp = compareCount(data.items, data.countDraft!);
+    expect(cmp.lines.find((l) => l.itemId === a.id)).toMatchObject({ recordedQuantity: 9, countedQuantity: 10, status: 'excess' });
+    expect(cmp.changedSinceCounted).toEqual({ [a.id]: 10 });
+
+    // Keeping the count accepts it against the new stock level.
+    const kept = keepCount(data, a.id);
+    expect(compareCount(kept.items, kept.countDraft!).changedSinceCounted).toEqual({});
+    expect(kept.countDraft!.counts[a.id]).toBe(10);
+
+    // Recounting (entering a new number) also clears the flag.
+    const recounted = setCount(data, a.id, 9);
+    cmp = compareCount(recounted.items, recounted.countDraft!);
+    expect(cmp.changedSinceCounted).toEqual({});
+    expect(cmp.lines.find((l) => l.itemId === a.id)?.status).toBe('match');
+
+    // Clearing a count clears its snapshot too.
+    const cleared = setCount(data, a.id, null);
+    expect(cleared.countDraft!.recordedAtCount).toEqual({ [b.id]: 4 });
+    // Deleting an item removes both.
+    const deleted = deleteItem(data, b.id).data;
+    expect(deleted.countDraft!.counts).not.toHaveProperty(b.id);
+    expect(deleted.countDraft!.recordedAtCount).not.toHaveProperty(b.id);
   });
 
   it('requires at least one counted item to finish', () => {

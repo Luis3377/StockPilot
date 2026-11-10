@@ -178,16 +178,27 @@ function sanitizeCountRecord(raw: unknown, n: number): CountRecord {
   };
 }
 
-function sanitizeDraft(raw: unknown): CountDraft | null {
-  if (!isObj(raw)) return null;
-  const counts: Record<string, number> = {};
-  if (isObj(raw.counts)) {
-    for (const [k, v] of Object.entries(raw.counts)) {
-      if (typeof v === 'number' && Number.isInteger(v) && v >= 0) counts[k] = v;
+function quantityMap(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (isObj(raw)) {
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === 'number' && Number.isInteger(v) && v >= 0) out[k] = v;
     }
   }
+  return out;
+}
+
+function sanitizeDraft(raw: unknown): CountDraft | null {
+  if (!isObj(raw)) return null;
   if (typeof raw.id !== 'string' || typeof raw.startedAt !== 'string') return null;
-  return { id: raw.id, startedAt: raw.startedAt, scope: sanitizeScope(raw.scope), counts };
+  return {
+    id: raw.id,
+    startedAt: raw.startedAt,
+    scope: sanitizeScope(raw.scope),
+    counts: quantityMap(raw.counts),
+    // Drafts saved before stock-change tracking have no snapshot; they just aren't flagged.
+    recordedAtCount: quantityMap(raw.recordedAtCount),
+  };
 }
 
 function sanitizeSnapshot(raw: unknown): ValueSnapshot | null {

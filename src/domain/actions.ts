@@ -291,10 +291,12 @@ export function updateItem(
 export function deleteItem(data: AppData, id: string): { data: AppData; removedPhotoIds: string[] } {
   const item = findItem(data, id);
   let countDraft = data.countDraft;
-  if (countDraft && id in countDraft.counts) {
+  if (countDraft && (id in countDraft.counts || id in countDraft.recordedAtCount)) {
     const counts = { ...countDraft.counts };
+    const recordedAtCount = { ...countDraft.recordedAtCount };
     delete counts[id];
-    countDraft = { ...countDraft, counts };
+    delete recordedAtCount[id];
+    countDraft = { ...countDraft, counts, recordedAtCount };
   }
   return {
     data: { ...data, items: data.items.filter((i) => i.id !== id), countDraft },
@@ -539,15 +541,35 @@ export function startCount(data: AppData, scope: CountScope, clock?: Clock): App
   const { iso } = nowParts(clock);
   if (data.countDraft) throw new DomainError('A count is already in progress. Finish or discard it first.');
   if (itemsInScope(data.items, scope).length === 0) throw new DomainError('There are no items to count in that selection.');
-  return { ...data, countDraft: { id: newId(), startedAt: iso, scope, counts: {} } };
+  return { ...data, countDraft: { id: newId(), startedAt: iso, scope, counts: {}, recordedAtCount: {} } };
 }
 
+/**
+ * Records (or clears, with null) an item's physical count, remembering the recorded quantity
+ * at that moment so later stock changes can be flagged. Entering a count again is a recount.
+ */
 export function setCount(data: AppData, itemId: string, counted: number | null): AppData {
   if (!data.countDraft) throw new DomainError('Start a count first.');
   const counts = { ...data.countDraft.counts };
-  if (counted === null) delete counts[itemId];
-  else counts[itemId] = requireWholeNumber(counted, `count-${itemId}`, 'Counted quantity');
-  return { ...data, countDraft: { ...data.countDraft, counts } };
+  const recordedAtCount = { ...data.countDraft.recordedAtCount };
+  if (counted === null) {
+    delete counts[itemId];
+    delete recordedAtCount[itemId];
+  } else {
+    counts[itemId] = requireWholeNumber(counted, `count-${itemId}`, 'Counted quantity');
+    const item = data.items.find((i) => i.id === itemId);
+    if (item) recordedAtCount[itemId] = item.quantity;
+  }
+  return { ...data, countDraft: { ...data.countDraft, counts, recordedAtCount } };
+}
+
+/** Keeps an item's count as entered after its stock changed, clearing the "changed" flag. */
+export function keepCount(data: AppData, itemId: string): AppData {
+  const draft = data.countDraft;
+  if (!draft) throw new DomainError('Start a count first.');
+  const item = data.items.find((i) => i.id === itemId);
+  if (!item || draft.counts[itemId] === undefined) return data;
+  return { ...data, countDraft: { ...draft, recordedAtCount: { ...draft.recordedAtCount, [itemId]: item.quantity } } };
 }
 
 export function discardCount(data: AppData): AppData {
@@ -556,6 +578,8 @@ export function discardCount(data: AppData): AppData {
 
 export interface CountComparison {
   lines: CountLine[];
+  /** Counted items whose recorded stock changed afterwards: itemId -> recorded quantity at count time. */
+  changedSinceCounted: Record<string, number>;
   uncounted: Item[];
   totalInScope: number;
   matching: number;
@@ -571,12 +595,15 @@ export function compareCount(items: Item[], draft: CountDraft): CountComparison 
   const scoped = itemsInScope(items, draft.scope);
   const lines: CountLine[] = [];
   const uncounted: Item[] = [];
+  const changedSinceCounted: Record<string, number> = {};
   for (const item of scoped) {
     const counted = draft.counts[item.id];
     if (counted === undefined) {
       uncounted.push(item);
       continue;
     }
+    const atCount = draft.recordedAtCount[item.id];
+    if (atCount !== undefined && atCount !== item.quantity) changedSinceCounted[item.id] = atCount;
     const difference = counted - item.quantity;
     lines.push({
       itemId: item.id,
@@ -598,6 +625,7 @@ export function compareCount(items: Item[], draft: CountDraft): CountComparison 
   const excessValue = fromCents(excess.reduce((c, l) => c + toCents(l.valueDifference), 0));
   return {
     lines,
+    changedSinceCounted,
     uncounted,
     totalInScope: scoped.length,
     matching: lines.length - missing.length - excess.length,
