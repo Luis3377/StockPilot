@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { recordSale, updateSale, type SaleInput } from '../../domain/actions';
-import { computeSale, knownPlatforms, uniqueSorted } from '../../domain/calc';
+import { computeSale, convertSalePrice, knownPlatforms, uniqueSorted } from '../../domain/calc';
 import { isDomainError } from '../../domain/errors';
 import { todayISO } from '../../domain/dates';
 import { formatPercent, parseMoneyInput, roundMoney } from '../../domain/money';
@@ -131,6 +131,17 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
     if (!priceTouched && next?.askingPrice != null) set('salePrice', String(next.askingPrice));
   };
 
+  const switchPriceMode = (mode: PriceMode) => {
+    if (mode === form.priceMode) return;
+    const price = parseMoneyInput(form.salePrice);
+    // Keep the revenue the same: $20 per item × 3 becomes a $60.00 total, and back.
+    if (price !== null && !Number.isNaN(price) && qty >= 1) {
+      setPriceTouched(true);
+      set('salePrice', convertSalePrice(price, qty, mode).toFixed(2));
+    }
+    set('priceMode', mode);
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const fieldErrors: Partial<Record<keyof FormState, string>> = {};
@@ -257,7 +268,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
                     size="sm"
                     label="Price is"
                     value={form.priceMode}
-                    onChange={(v) => set('priceMode', v)}
+                    onChange={switchPriceMode}
                     options={[
                       { value: 'per_unit', label: 'Per item' },
                       { value: 'total', label: `Total for ${qty}` },

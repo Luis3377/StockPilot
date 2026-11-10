@@ -46,8 +46,9 @@ test('fees can be entered as a percentage and price as a total', async ({ page }
   const dialog = page.getByTestId('sale-form');
   await dialog.getByLabel('Item sold').selectOption({ label: 'Retro console — 5 available' });
   await dialog.getByLabel('Quantity sold').fill('3');
-  await dialog.getByLabel('Sale price').fill('240');
+  await dialog.getByLabel('Sale price').fill('');
   await dialog.getByRole('radio', { name: 'Total for 3' }).click();
+  await dialog.getByLabel('Sale price').fill('240');
   await dialog.getByRole('radio', { name: '% of sale' }).click();
   await dialog.getByLabel('Marketplace fees (%)').fill('10');
   // 240 − 120 − 24 = 96
@@ -55,6 +56,27 @@ test('fees can be entered as a percentage and price as a total', async ({ page }
   await dialog.getByRole('button', { name: 'Record sale' }).click();
   await expect(page.getByTestId('sale-row')).toHaveCount(1);
   await expect(page.getByTestId('sales-net-value')).toHaveText('$96.00');
+});
+
+test('switching between per item and total converts the price', async ({ page }) => {
+  await setup(page);
+  await nav(page, 'Sales & Profit');
+  await page.getByRole('button', { name: 'Record your first sale' }).click();
+  const dialog = page.getByTestId('sale-form');
+  await dialog.getByLabel('Item sold').selectOption({ label: 'Retro console — 5 available' });
+  await dialog.getByLabel('Quantity sold').fill('3');
+  await dialog.getByLabel('Sale price').fill('20');
+  await expect(dialog.getByTestId('sale-preview')).toContainText('$60.00');
+  await dialog.getByRole('radio', { name: 'Total for 3' }).click();
+  await expect(dialog.getByLabel('Sale price')).toHaveValue('60.00');
+  await expect(dialog.getByTestId('sale-preview')).toContainText('Revenue$60.00');
+  await dialog.getByRole('radio', { name: 'Per item' }).click();
+  await expect(dialog.getByLabel('Sale price')).toHaveValue('20.00');
+  await expect(dialog.getByTestId('sale-preview')).toContainText('Revenue$60.00');
+  // With no price entered, only the mode changes.
+  await dialog.getByLabel('Sale price').fill('');
+  await dialog.getByRole('radio', { name: 'Total for 3' }).click();
+  await expect(dialog.getByLabel('Sale price')).toHaveValue('');
 });
 
 test('a sale can never take stock below zero', async ({ page }) => {

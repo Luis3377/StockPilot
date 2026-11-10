@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeSale, inventoryTotals, projectUnsold, salesByCategory, salesByMonth, salesByPlatform, sellingCostRate, totalSales, daysWithoutSale } from './calc';
+import { computeSale, convertSalePrice, inventoryTotals, projectUnsold, salesByCategory, salesByMonth, salesByPlatform, sellingCostRate, totalSales, daysWithoutSale } from './calc';
 import { recordSale } from './actions';
 import { clock, withItem } from './testUtils';
 
@@ -32,6 +32,17 @@ describe('computeSale', () => {
     expect(f.revenue).toBe(59.97);
     expect(f.costOfGoods).toBe(10);
     expect(f.netProfit).toBe(41.9);
+  });
+});
+
+describe('convertSalePrice', () => {
+  it('keeps revenue the same when switching between per item and total', () => {
+    expect(convertSalePrice(20, 3, 'total')).toBe(60);
+    expect(convertSalePrice(60, 3, 'per_unit')).toBe(20);
+    expect(convertSalePrice(19.99, 3, 'total')).toBe(59.97);
+    // A total that doesn't split evenly is rounded to cents.
+    expect(convertSalePrice(100, 3, 'per_unit')).toBe(33.33);
+    expect(convertSalePrice(20, 0, 'total')).toBe(20);
   });
 });
 

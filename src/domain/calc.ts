@@ -35,6 +35,15 @@ export function saleRevenue(s: Pick<SaleFigureInput, 'quantity' | 'salePrice' | 
   return s.priceMode === 'per_unit' ? multiplyMoney(s.salePrice, s.quantity) : roundMoney(s.salePrice);
 }
 
+/**
+ * Converts an entered sale price when the user switches between "per item" and "total",
+ * so the revenue stays the same (a total split per item is rounded to cents).
+ */
+export function convertSalePrice(price: number, quantity: number, to: PriceMode): number {
+  if (!(quantity >= 1)) return price;
+  return to === 'total' ? multiplyMoney(price, quantity) : roundMoney(price / quantity);
+}
+
 export function computeSale(s: SaleFigureInput): SaleFigures {
   const revenue = saleRevenue(s);
   const costOfGoods = multiplyMoney(s.unitCost, s.quantity);
