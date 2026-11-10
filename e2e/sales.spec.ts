@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { addItem, nav, onboard, openItem, recordSale } from './helpers';
+import { addItem, isMobile, nav, onboard, openItem, recordSale } from './helpers';
 
 async function setup(page: Page) {
   await onboard(page, 'Reseller');
@@ -30,6 +30,7 @@ test('recording a sale reduces stock and profit includes every expense', async (
   await nav(page, 'Sales & Profit');
   await page.getByRole('radio', { name: 'All time' }).click();
   await expect(page.getByTestId('sales-revenue-value')).toHaveText('$190.00');
+  await expect(page.getByTestId('sales-revenue')).toContainText('1 sale · 2 units');
   await expect(page.getByTestId('sales-cogs-value')).toHaveText('$80.00');
   await expect(page.getByTestId('sales-expenses-value')).toHaveText('$46.58');
   await expect(page.getByTestId('sales-net-value')).toHaveText('$63.42');
@@ -46,8 +47,9 @@ test('fees can be entered as a percentage and price as a total', async ({ page }
   const dialog = page.getByTestId('sale-form');
   await dialog.getByLabel('Item sold').selectOption({ label: 'Retro console — 5 available' });
   await dialog.getByLabel('Quantity sold').fill('3');
-  await dialog.getByLabel('Sale price').fill('240');
+  await dialog.getByLabel('Sale price').fill('');
   await dialog.getByRole('radio', { name: 'Total for 3' }).click();
+  await dialog.getByLabel('Sale price').fill('240');
   await dialog.getByRole('radio', { name: '% of sale' }).click();
   await dialog.getByLabel('Marketplace fees (%)').fill('10');
   // 240 − 120 − 24 = 96
@@ -57,14 +59,40 @@ test('fees can be entered as a percentage and price as a total', async ({ page }
   await expect(page.getByTestId('sales-net-value')).toHaveText('$96.00');
 });
 
+test('switching between per item and total converts the price', async ({ page }) => {
+  await setup(page);
+  await nav(page, 'Sales & Profit');
+  await page.getByRole('button', { name: 'Record your first sale' }).click();
+  const dialog = page.getByTestId('sale-form');
+  await dialog.getByLabel('Item sold').selectOption({ label: 'Retro console — 5 available' });
+  await dialog.getByLabel('Quantity sold').fill('3');
+  await dialog.getByLabel('Sale price').fill('20');
+  await expect(dialog.getByTestId('sale-preview')).toContainText('$60.00');
+  await dialog.getByRole('radio', { name: 'Total for 3' }).click();
+  await expect(dialog.getByLabel('Sale price')).toHaveValue('60.00');
+  await expect(dialog.getByTestId('sale-preview')).toContainText('Revenue$60.00');
+  await dialog.getByRole('radio', { name: 'Per item' }).click();
+  await expect(dialog.getByLabel('Sale price')).toHaveValue('20.00');
+  await expect(dialog.getByTestId('sale-preview')).toContainText('Revenue$60.00');
+  // With no price entered, only the mode changes.
+  await dialog.getByLabel('Sale price').fill('');
+  await dialog.getByRole('radio', { name: 'Total for 3' }).click();
+  await expect(dialog.getByLabel('Sale price')).toHaveValue('');
+});
+
 test('a sale can never take stock below zero', async ({ page }) => {
   await setup(page);
   await openItem(page, 'Retro console');
   await page.getByRole('button', { name: 'Record sale' }).click();
   const dialog = page.getByTestId('sale-form');
   await dialog.getByLabel('Quantity sold').fill('6');
+  // Every problem shows after one submit.
+  await dialog.getByLabel('Shipping you paid').fill('-5');
+  await dialog.getByLabel('Other expenses').fill('abc');
   await dialog.getByRole('button', { name: 'Record sale' }).click();
   await expect(dialog.getByText('Only 5 of "Retro console" are available — you entered 6.')).toBeVisible();
+  await expect(dialog.getByText("Shipping can't be negative.")).toBeVisible();
+  await expect(dialog.getByText('Enter an amount like 12.50')).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByTestId('item-quantity')).toHaveText('5');
 });
@@ -113,4 +141,32 @@ test('deleting an item keeps its sales in profit history', async ({ page }) => {
   await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Delete item' }).click();
   await nav(page, 'Sales & Profit');
   await expect(page.getByTestId('sales-net-value')).toHaveText('$50.00');
+});
+
+test('on phones, net profit and the loss warning are visible without scrolling', async ({ page }) => {
+  test.skip(!isMobile(page), 'phone-only layout');
+  await setup(page);
+  await nav(page, 'Sales & Profit');
+  await page.getByRole('button', { name: 'Record your first sale' }).click();
+  const dialog = page.getByTestId('sale-form');
+  await dialog.getByLabel('Item sold').selectOption({ label: 'Retro console — 5 available' });
+  const summary = dialog.getByTestId('sale-summary-mobile');
+  await expect(summary).toBeInViewport();
+  await expect(summary).toContainText('Net profit $60.00 · 60% margin');
+  await dialog.getByLabel('Sale price').fill('30');
+  await expect(summary).toContainText('This sale loses money');
+  await expect(summary).toContainText('-$10.00');
+  await expect(summary).toBeInViewport();
+  // The full breakdown is still in the form.
+  await expect(dialog.getByTestId('sale-preview')).toContainText('This sale loses money after costs.');
+});
+
+test('on larger screens the full breakdown is shown beside the form instead', async ({ page }) => {
+  test.skip(isMobile(page), 'desktop layout');
+  await setup(page);
+  await nav(page, 'Sales & Profit');
+  await page.getByRole('button', { name: 'Record your first sale' }).click();
+  const dialog = page.getByTestId('sale-form');
+  await expect(dialog.getByTestId('sale-summary-mobile')).toBeHidden();
+  await expect(dialog.getByTestId('sale-preview')).toBeInViewport();
 });

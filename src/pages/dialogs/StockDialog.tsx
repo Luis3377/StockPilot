@@ -67,7 +67,7 @@ export function StockDialog({ open, itemId, mode, onClose }: Props) {
       }
       onClose();
     } catch (err) {
-      if (isDomainError(err) && err.field) setErrors({ [err.field]: err.message });
+      if (isDomainError(err) && Object.keys(err.fields).length) setErrors(err.fields);
       else toast.error(isDomainError(err) ? err.message : 'Could not update the quantity.');
     }
   };

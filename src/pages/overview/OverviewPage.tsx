@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Boxes, ClipboardCheck, DollarSign, Gem, Package, PackagePlus, Receipt, ShoppingBag, TrendingUp, Wallet } from 'lucide-react';
-import { inventoryTotals, isLowStock, projectUnsold, salesByItem, salesInRange, totalSales } from '../../domain/calc';
+import { categoryLabel, inventoryTotals, isLowStock, mostCommon, nameKey, projectUnsold, salesByItem, salesInRange, splitDiscrepancies, totalSales } from '../../domain/calc';
 import { formatDate, periodRange, PERIOD_OPTIONS, previousPeriodRange, todayISO, type PeriodKey } from '../../domain/dates';
 import { formatNumber, formatPercent } from '../../domain/money';
 import { useAppState } from '../../data/store';
@@ -16,6 +16,8 @@ import { ItemThumb } from '../../ui/Photo';
 import { Badge } from '../../ui/Badge';
 import { useDialogs } from '../dialogs/DialogHub';
 import { AlertStrip, CategoryProfit, GetStarted, MonthlyTrend, RecentSales, SlowMovers } from './widgets';
+import { DeviceNotice } from '../DeviceNotice';
+import { plural, pluralWord } from '../../domain/format';
 
 const PERIOD_KEYS = PERIOD_OPTIONS.map((p) => p.key);
 
@@ -52,6 +54,7 @@ export function OverviewPage() {
           )
         }
       />
+      <DeviceNotice />
       {data.items.length === 0 && data.sales.length === 0 ? (
         <GetStarted />
       ) : settings.mode === 'collector' ? (
@@ -111,20 +114,20 @@ function ResellerOverview({ period, setPeriod }: PeriodProps) {
         </Card>
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
           <StatTile label={`Revenue ${range.label}`} value={money(t.revenue)} tag={REALIZED} icon={<DollarSign className="size-4" />} testId="stat-revenue" />
-          <StatTile label={`Items sold ${range.label}`} value={formatNumber(t.unitsSold)} sub={`${t.salesCount} ${t.salesCount === 1 ? 'sale' : 'sales'}`} icon={<ShoppingBag className="size-4" />} testId="stat-sold" />
+          <StatTile label={`Items sold ${range.label}`} value={formatNumber(t.unitsSold)} sub={plural(t.salesCount, 'sale')} icon={<ShoppingBag className="size-4" />} testId="stat-sold" />
           <StatTile label="Inventory cost" value={money(inv.costValue)} sub="What you paid for unsold stock" icon={<Wallet className="size-4" />} testId="stat-inventory-cost" />
           <StatTile
             label="Est. selling value"
             value={money(inv.askingValue)}
             tag={PROJECTED}
-            sub={inv.itemsMissingAsking ? `${inv.itemsMissingAsking} items have no asking price` : 'At your asking prices'}
+            sub={inv.itemsMissingAsking ? `${plural(inv.itemsMissingAsking, 'item')} ${pluralWord(inv.itemsMissingAsking, 'has', 'have')} no asking price` : 'At your asking prices'}
             icon={<TrendingUp className="size-4" />}
             testId="stat-selling-value"
           />
           <StatTile
             label="Items in stock"
             value={formatNumber(inv.unitsInStock)}
-            sub={`${inv.itemsInStock} ${inv.itemsInStock === 1 ? 'listing' : 'listings'}`}
+            sub={plural(inv.itemsInStock, 'listing')}
             icon={<Boxes className="size-4" />}
             testId="stat-in-stock"
           />
@@ -168,15 +171,18 @@ function CollectorOverview() {
   const gainPct = inv.estimatedCostBasis > 0 ? (gain / inv.estimatedCostBasis) * 100 : null;
   const inStock = data.items.filter((i) => i.quantity > 0);
   const snapshots = data.snapshots.slice(-60);
-  const valueByCategory = new Map<string, { value: number; count: number }>();
+  const valueByCategory = new Map<string, { labels: string[]; value: number; count: number }>();
   for (const i of inStock) {
-    const key = i.category || 'Uncategorized';
-    const v = valueByCategory.get(key) ?? { value: 0, count: 0 };
+    const key = nameKey(categoryLabel(i.category));
+    const v = valueByCategory.get(key) ?? { labels: [], value: 0, count: 0 };
+    v.labels.push(categoryLabel(i.category));
     v.value += (i.estimatedValue ?? i.unitCost) * i.quantity;
     v.count += i.quantity;
     valueByCategory.set(key, v);
   }
-  const categoryRows = [...valueByCategory.entries()].sort((a, b) => b[1].value - a[1].value);
+  const categoryRows = [...valueByCategory.values()]
+    .map((v): [string, { value: number; count: number }] => [mostCommon(v.labels), v])
+    .sort((a, b) => b[1].value - a[1].value);
   const topValued = [...inStock].sort((a, b) => (b.estimatedValue ?? b.unitCost) * b.quantity - (a.estimatedValue ?? a.unitCost) * a.quantity).slice(0, 5);
   const movers = inStock
     .filter((i) => i.estimatedValue !== null)
@@ -201,12 +207,12 @@ function CollectorOverview() {
           </p>
           <p className="mt-3 text-xs text-muted">
             {inv.itemsMissingEstimate > 0
-              ? `Based on the ${inv.itemsWithEstimate} of ${inv.itemsInStock} items you’ve valued. Add estimated values for a fuller picture.`
+              ? `Based on the ${inv.itemsWithEstimate} of ${plural(inv.itemsInStock, 'item')} you’ve valued. Add estimated values for a fuller picture.`
               : 'Based on the estimated values you’ve entered.'}
           </p>
         </Card>
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
-          <StatTile label="Items in collection" value={formatNumber(inv.unitsInStock)} sub={`${inv.itemsInStock} unique ${inv.itemsInStock === 1 ? 'item' : 'items'}`} icon={<Gem className="size-4" />} testId="stat-collection-size" />
+          <StatTile label="Items in collection" value={formatNumber(inv.unitsInStock)} sub={plural(inv.itemsInStock, 'unique item')} icon={<Gem className="size-4" />} testId="stat-collection-size" />
           <StatTile label="Acquisition cost" value={money(inv.costValue)} sub="What you paid in total" icon={<Wallet className="size-4" />} testId="stat-acquisition-cost" />
           <StatTile
             label="Unrealized gain"
@@ -218,7 +224,7 @@ function CollectorOverview() {
             testId="stat-unrealized"
           />
           {settings.collectorSalesEnabled ? (
-            <StatTile label="Profit from sales" value={money(realized.netProfit)} tag={REALIZED} sub={`${realized.unitsSold} items sold`} icon={<DollarSign className="size-4" />} testId="stat-realized" />
+            <StatTile label="Profit from sales" value={money(realized.netProfit)} tag={REALIZED} sub={`${plural(realized.unitsSold, 'item')} sold`} icon={<DollarSign className="size-4" />} testId="stat-realized" />
           ) : (
             <StatTile label="Valued items" value={`${inv.itemsWithEstimate} / ${inv.itemsInStock}`} sub="Items with an estimated value" icon={<Package className="size-4" />} testId="stat-valued" />
           )}
@@ -249,7 +255,7 @@ function CollectorOverview() {
           empty={categoryRows.length === 0 ? 'Nothing in your collection yet.' : undefined}
           table={{ columns: ['Category', 'Value', 'Items'], rows: categoryRows.map(([k, v]) => [k, money(v.value), v.count]) }}
         >
-          <BarList rows={categoryRows.slice(0, 6).map(([k, v]) => ({ key: k, label: k, value: v.value, sub: `${v.count} ${v.count === 1 ? 'item' : 'items'}` }))} format={money} />
+          <BarList rows={categoryRows.slice(0, 6).map(([k, v]) => ({ key: k, label: k, value: v.value, sub: plural(v.count, 'item') }))} format={money} />
         </ChartCard>
       </div>
 
@@ -305,8 +311,8 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
   const inv = inventoryTotals(data.items);
   const lowItems = data.items.filter((i) => isLowStock(i)).sort((a, b) => a.quantity - b.quantity);
   const topProducts = salesByItem(sales).sort((a, b) => b.netProfit - a.netProfit).slice(0, 5);
-  const shrink = report.discrepancies.findings.reduce((s, f) => s + f.adjustment.valueDifference, 0);
-  const lastCount = data.countHistory[data.countHistory.length - 1];
+  const { missing, extra } = splitDiscrepancies(report.discrepancies.findings.map((f) => f.adjustment));
+  const lastCountText = lastCountLabel(data.countHistory[data.countHistory.length - 1]?.completedAt);
 
   return (
     <>
@@ -321,7 +327,7 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
             {money(inv.costValue)}
           </div>
           <p className="mt-2 text-sm text-ink-2">
-            {formatNumber(inv.unitsInStock)} units across {inv.itemsInStock} products · {money(inv.askingValue)} at selling price
+            {plural(inv.unitsInStock, 'unit')} across {plural(inv.itemsInStock, 'product')} · {money(inv.askingValue)} at selling price
           </p>
         </Card>
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
@@ -329,7 +335,7 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
             label={`Sales ${range.label}`}
             value={money(t.revenue)}
             tag={REALIZED}
-            sub={prev && prevRange ? <Delta current={t.revenue} previous={prev.revenue} format={money} label={prevRange.label} /> : `${t.unitsSold} units · ${t.salesCount} orders`}
+            sub={prev && prevRange ? <Delta current={t.revenue} previous={prev.revenue} format={money} label={prevRange.label} /> : `${plural(t.unitsSold, 'unit')} · ${plural(t.salesCount, 'order')}`}
             icon={<DollarSign className="size-4" />}
             testId="stat-revenue"
           />
@@ -344,9 +350,9 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
           />
           <StatTile
             label="Discrepancies (90 days)"
-            value={money(shrink)}
-            tone={shrink < 0 ? 'bad' : 'default'}
-            sub={lastCount ? `Last count ${formatDate(lastCount.completedAt)}` : 'No physical count yet'}
+            value={missing < 0 ? `${money(missing)} missing` : 'Nothing missing'}
+            tone={missing < 0 ? 'bad' : 'default'}
+            sub={extra > 0 ? `+${money(extra)} extra found · ${lastCountText}` : lastCountText}
             icon={<ClipboardCheck className="size-4" />}
             testId="stat-discrepancy"
           />
@@ -394,6 +400,10 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
       </div>
     </>
   );
+}
+
+function lastCountLabel(completedAt: string | undefined): string {
+  return completedAt ? `Last count ${formatDate(completedAt)}` : 'No physical count yet';
 }
 
 function ViewAll({ to }: { to: string }) {

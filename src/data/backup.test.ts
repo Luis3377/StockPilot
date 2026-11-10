@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createBackup, parseBackup } from './backup';
-import { addItem, recordSale, startCount, setCount, completeCount } from '../domain/actions';
+import { addItem, compareCount, recordSale, startCount, setCount, completeCount } from '../domain/actions';
 import { defaultSettings, emptyData } from '../domain/types';
 import { sanitizeSettings } from './sanitize';
 
@@ -37,6 +37,18 @@ describe('backup', () => {
     const { data } = addItem(emptyData(), { name: 'A', quantity: 1, unitCost: 1, photoIds: ['gone'] });
     const backup = { ...createBackup('real', defaultSettings(), data, []), photos: [] };
     expect(parseBackup(JSON.stringify(backup)).data.items[0].photoIds).toEqual([]);
+  });
+
+  it('restores an in-progress count saved before stock-change tracking', () => {
+    const { data, item } = addItem(emptyData(), { name: 'Widget', quantity: 12, unitCost: 1 });
+    // A draft in the old shape: counts only, no recordedAtCount.
+    const oldDraft = { id: 'c1', startedAt: '2026-11-01T10:00:00.000Z', scope: { category: null, location: null }, counts: { [item.id]: 11 } };
+    const file = { ...createBackup('real', defaultSettings(), data, []), data: { ...data, countDraft: oldDraft } };
+    const parsed = parseBackup(JSON.stringify(file));
+    expect(parsed.data.countDraft).toEqual({ ...oldDraft, recordedAtCount: {} });
+    const cmp = compareCount(parsed.data.items, parsed.data.countDraft!);
+    expect(cmp.lines[0]).toMatchObject({ countedQuantity: 11, status: 'missing' });
+    expect(cmp.changedSinceCounted).toEqual({});
   });
 
   it('sanitizes settings field by field', () => {

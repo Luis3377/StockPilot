@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
 import { deleteSale } from '../domain/actions';
-import { computeSale, inventoryTotals, projectUnsold, salesByPlatform, salesInRange, totalSales, uniqueSorted } from '../domain/calc';
+import { computeSale, inventoryTotals, nameKey, platformLabel, projectUnsold, salesByPlatform, salesInRange, totalSales } from '../domain/calc';
 import { formatDate, periodRange, PERIOD_OPTIONS, todayISO, type PeriodKey } from '../domain/dates';
 import { formatPercent } from '../domain/money';
 import { store, useAppState } from '../data/store';
@@ -22,6 +22,7 @@ import { useToast } from '../ui/Toast';
 import { cn } from '../ui/cn';
 import { useDialogs } from './dialogs/DialogHub';
 import { MonthlyTrend } from './overview/widgets';
+import { plural, pluralWord } from '../domain/format';
 
 const PERIOD_KEYS = PERIOD_OPTIONS.map((p) => p.key);
 
@@ -38,10 +39,10 @@ export function SalesPage() {
   const [q, setQ] = useState('');
 
   const range = periodRange(period, todayISO());
-  const platforms = useMemo(() => uniqueSorted(data.sales.map((s) => s.platform || 'Unspecified')), [data.sales]);
+  const platforms = useMemo(() => salesByPlatform(data.sales).map((g) => g.label).sort((a, b) => a.localeCompare(b)), [data.sales]);
   const inPeriod = salesInRange(data.sales, range);
   const filtered = inPeriod
-    .filter((s) => !platform || (s.platform || 'Unspecified') === platform)
+    .filter((s) => !platform || nameKey(platformLabel(s.platform)) === nameKey(platform))
     .filter((s) => !q.trim() || `${s.itemName} ${s.itemSku} ${s.platform} ${s.notes}`.toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => b.saleDate.localeCompare(a.saleDate) || b.createdAt.localeCompare(a.createdAt));
   const t = totalSales(filtered);
@@ -61,7 +62,7 @@ export function SalesPage() {
           <p>
             {sale.quantity} × {sale.itemName} sold on {formatDate(sale.saleDate)} will be removed from your sales, revenue and profit.
           </p>
-          <p className="mt-2">{itemExists ? `The ${sale.quantity} ${sale.quantity === 1 ? 'unit goes' : 'units go'} back into stock.` : 'The item was deleted, so no stock is returned.'}</p>
+          <p className="mt-2">{itemExists ? `The ${plural(sale.quantity, 'unit')} ${pluralWord(sale.quantity, 'goes', 'go')} back into stock.` : 'The item was deleted, so no stock is returned.'}</p>
         </>
       ),
       confirmLabel: 'Cancel sale',
@@ -125,7 +126,7 @@ export function SalesPage() {
             <Badge tone="good">Money actually earned</Badge>
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <StatTile label="Revenue" value={money(t.revenue)} sub={`${t.salesCount} sales · ${t.unitsSold} units`} testId="sales-revenue" />
+            <StatTile label="Revenue" value={money(t.revenue)} sub={`${plural(t.salesCount, 'sale')} · ${plural(t.unitsSold, 'unit')}`} testId="sales-revenue" />
             <StatTile label="Cost of goods" value={money(t.costOfGoods)} sub="What the sold items cost you" testId="sales-cogs" />
             <StatTile label="Selling expenses" value={money(t.totalExpenses)} sub={`Fees ${money(t.fees)} · Ship ${money(t.shipping)} · Other ${money(t.otherExpenses)}`} testId="sales-expenses" />
             <StatTile label="Net profit" value={money(t.netProfit)} tone={t.netProfit < 0 ? 'bad' : 'good'} tag={REALIZED} testId="sales-net" />
@@ -142,7 +143,7 @@ export function SalesPage() {
             empty={byPlatform.length === 0 ? `No sales ${range.label}.` : undefined}
             table={{ columns: ['Platform', 'Sales', 'Revenue', 'Net profit', 'Margin'], rows: byPlatform.map((g) => [g.label, g.salesCount, money(g.revenue), money(g.netProfit), formatPercent(g.margin)]) }}
           >
-            <BarList rows={byPlatform.slice(0, 6).map((g) => ({ key: g.key, label: g.label, value: g.netProfit, sub: `${g.salesCount} ${g.salesCount === 1 ? 'sale' : 'sales'} · ${formatPercent(g.margin)} margin` }))} format={money} />
+            <BarList rows={byPlatform.slice(0, 6).map((g) => ({ key: g.key, label: g.label, value: g.netProfit, sub: `${plural(g.salesCount, 'sale')} · ${formatPercent(g.margin)} margin` }))} format={money} />
           </ChartCard>
         </div>
 
@@ -150,7 +151,7 @@ export function SalesPage() {
 
         <Card className="overflow-hidden">
           <div className="space-y-3 p-4 sm:p-5">
-            <SectionHeader title="Sales" description={`${filtered.length} ${filtered.length === 1 ? 'sale' : 'sales'} ${range.label}`} as="h2" />
+            <SectionHeader title="Sales" description={`${plural(filtered.length, 'sale')} ${range.label}`} as="h2" />
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
@@ -214,7 +215,7 @@ export function SalesPage() {
 function ProjectedCard({ projection, money }: { projection: ReturnType<typeof projectUnsold>; money: (n: number) => string }) {
   const rateText =
     projection.rate.source === 'history'
-      ? `Selling costs estimated at ${formatPercent(projection.rate.percent)} of price — your average across ${projection.rate.basedOnSales} recorded sales.`
+      ? `Selling costs estimated at ${formatPercent(projection.rate.percent)} of price — your average across ${plural(projection.rate.basedOnSales, 'recorded sale')}.`
       : projection.rate.source === 'setting'
         ? `Selling costs estimated at ${formatPercent(projection.rate.percent)} (from Settings).`
         : 'No selling costs assumed yet — record sales with fees, or set an estimate in Settings.';
@@ -233,7 +234,7 @@ function ProjectedCard({ projection, money }: { projection: ReturnType<typeof pr
         <StatTile label="Projected profit" value={money(projection.projectedProfit)} tone={projection.projectedProfit < 0 ? 'bad' : 'default'} tag={PROJECTED} testId="projected-profit" />
       </div>
       <p className="mt-3 text-xs text-ink-2">
-        {rateText} {projection.itemsExcluded > 0 && `${projection.itemsExcluded} in-stock ${projection.itemsExcluded === 1 ? 'item has' : 'items have'} no asking price and ${projection.itemsExcluded === 1 ? 'is' : 'are'} not included.`}
+        {rateText} {projection.itemsExcluded > 0 && `${plural(projection.itemsExcluded, 'in-stock item')} ${pluralWord(projection.itemsExcluded, 'has', 'have')} no asking price and ${pluralWord(projection.itemsExcluded, 'is', 'are')} not included.`}
       </p>
     </Card>
   );

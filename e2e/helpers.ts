@@ -37,6 +37,34 @@ export interface NewItem {
   category?: string;
   sku?: string;
   location?: string;
+  lowStockAt?: number;
+  photo?: Buffer;
+}
+
+/** A solid-color PNG made in the page's own canvas, for photo upload tests. */
+export async function solidPng(page: Page, color: string): Promise<Buffer> {
+  const dataUrl = await page.evaluate((c) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = c;
+    ctx.fillRect(0, 0, 64, 64);
+    return canvas.toDataURL('image/png');
+  }, color);
+  return Buffer.from(dataUrl.split(',')[1], 'base64');
+}
+
+/** WCAG contrast ratio between two computed CSS colors ("rgb(…)" / "rgba(…)"). */
+export function contrastRatio(fg: string, bg: string): number {
+  const lum = (css: string) => {
+    const [r, g, b] = css.match(/[\d.]+/g)!.slice(0, 3).map((v) => {
+      const c = Number(v) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
 }
 
 export async function addItem(page: Page, item: NewItem) {
@@ -48,6 +76,15 @@ export async function addItem(page: Page, item: NewItem) {
   await dialog.getByLabel('Cost per item').fill(item.cost ?? '10');
   if (item.asking !== undefined) await dialog.getByLabel(/Asking price|Selling price/).fill(item.asking);
   if (item.category) await dialog.getByLabel('Category').fill(item.category);
+  if (item.photo) {
+    await dialog.getByTestId('photo-input').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: item.photo });
+    await expect(dialog.getByText('Cover')).toBeVisible();
+  }
+  if (item.lowStockAt !== undefined) {
+    const field = dialog.getByRole('textbox', { name: 'Low-stock alert at' });
+    if (!(await field.isVisible())) await dialog.getByRole('button', { name: /More details/ }).click();
+    await field.fill(String(item.lowStockAt));
+  }
   if (item.sku || item.location) {
     await dialog.getByRole('button', { name: /More details/ }).click();
     if (item.sku) await dialog.getByLabel('SKU / ID').fill(item.sku);

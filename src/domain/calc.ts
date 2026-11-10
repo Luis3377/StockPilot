@@ -1,4 +1,4 @@
-import type { AppData, Item, PriceMode, Sale, Settings } from './types';
+import type { Adjustment, AppData, Item, PriceMode, Sale, Settings } from './types';
 import { multiplyMoney, percent, roundMoney, sumMoney, toCents, fromCents } from './money';
 import { daysBetween, inRange, monthKey, todayISO, type DateRange } from './dates';
 
@@ -33,6 +33,15 @@ export interface SaleFigureInput {
 /** Revenue = price × quantity when the price is per unit, otherwise the entered total. */
 export function saleRevenue(s: Pick<SaleFigureInput, 'quantity' | 'salePrice' | 'priceMode'>): number {
   return s.priceMode === 'per_unit' ? multiplyMoney(s.salePrice, s.quantity) : roundMoney(s.salePrice);
+}
+
+/**
+ * Converts an entered sale price when the user switches between "per item" and "total",
+ * so the revenue stays the same (a total split per item is rounded to cents).
+ */
+export function convertSalePrice(price: number, quantity: number, to: PriceMode): number {
+  if (!(quantity >= 1)) return price;
+  return to === 'total' ? multiplyMoney(price, quantity) : roundMoney(price / quantity);
 }
 
 export function computeSale(s: SaleFigureInput): SaleFigures {
@@ -98,27 +107,54 @@ export interface GroupTotals extends SalesTotals {
   label: string;
 }
 
+/** Key for free-text names, so "eBay", "ebay " and "EBAY" count as one platform. */
+export function nameKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** The most common spelling in a list (the first one seen on a tie). */
+export function mostCommon(values: Iterable<string>): string {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  let best = '';
+  let bestCount = 0;
+  for (const [v, n] of counts) {
+    if (n > bestCount) {
+      best = v;
+      bestCount = n;
+    }
+  }
+  return best;
+}
+
 function groupSales(sales: Sale[], keyOf: (s: Sale) => string, labelOf: (s: Sale) => string): GroupTotals[] {
-  const groups = new Map<string, { label: string; sales: Sale[] }>();
+  const groups = new Map<string, { labels: string[]; sales: Sale[] }>();
   for (const s of sales) {
     const key = keyOf(s);
     const g = groups.get(key);
-    if (g) g.sales.push(s);
-    else groups.set(key, { label: labelOf(s), sales: [s] });
+    if (g) {
+      g.sales.push(s);
+      g.labels.push(labelOf(s));
+    } else {
+      groups.set(key, { labels: [labelOf(s)], sales: [s] });
+    }
   }
-  return [...groups.entries()].map(([key, g]) => ({ key, label: g.label, ...totalSales(g.sales) }));
+  return [...groups.entries()].map(([key, g]) => ({ key, label: mostCommon(g.labels), ...totalSales(g.sales) }));
 }
 
 export function salesByItem(sales: Sale[]): GroupTotals[] {
   return groupSales(sales, (s) => s.itemId, (s) => s.itemName);
 }
 
+export const categoryLabel = (category: string) => category.trim() || 'Uncategorized';
+export const platformLabel = (platform: string) => platform.trim() || 'Unspecified';
+
 export function salesByCategory(sales: Sale[]): GroupTotals[] {
-  return groupSales(sales, (s) => s.itemCategory || 'Uncategorized', (s) => s.itemCategory || 'Uncategorized');
+  return groupSales(sales, (s) => nameKey(categoryLabel(s.itemCategory)), (s) => categoryLabel(s.itemCategory));
 }
 
 export function salesByPlatform(sales: Sale[]): GroupTotals[] {
-  return groupSales(sales, (s) => s.platform || 'Unspecified', (s) => s.platform || 'Unspecified');
+  return groupSales(sales, (s) => nameKey(platformLabel(s.platform)), (s) => platformLabel(s.platform));
 }
 
 /** Monthly totals for the last `months` months ending at `today`'s month, oldest first, zero-filled. */
@@ -256,6 +292,22 @@ export function projectedUnitProfit(item: Item, ratePercent: number): number | n
   return fromCents(toCents(item.askingPrice) - toCents(costs) - toCents(item.unitCost));
 }
 
+export interface PriceCheck {
+  /** "loss": below cost; "low": profitable but under the margin target; "ok" otherwise. */
+  status: 'loss' | 'low' | 'ok';
+  /** Profit per item before selling fees. */
+  profit: number;
+  margin: number | null;
+}
+
+/** Judges an asking price against its cost and the low-margin setting (before selling fees). */
+export function checkPrice(askingPrice: number, unitCost: number, lowMarginPercent: number): PriceCheck {
+  const profit = fromCents(toCents(askingPrice) - toCents(unitCost));
+  const margin = percent(profit, askingPrice);
+  const status = profit < 0 ? 'loss' : margin !== null && margin < lowMarginPercent ? 'low' : 'ok';
+  return { status, profit, margin };
+}
+
 export function projectedMargin(item: Item, ratePercent: number): number | null {
   const unit = projectedUnitProfit(item, ratePercent);
   if (unit === null || item.askingPrice === null) return null;
@@ -288,6 +340,17 @@ export function projectUnsold(items: Item[], sales: Sale[], settings: Pick<Setti
     itemsIncluded: priced.length,
     itemsExcluded: inStock.length - priced.length,
     rate,
+  };
+}
+
+/**
+ * Splits quantity corrections into value missing (negative) and extra found (positive), so a
+ * gain never hides a loss in a single net number.
+ */
+export function splitDiscrepancies(adjustments: Pick<Adjustment, 'valueDifference'>[]): { missing: number; extra: number } {
+  return {
+    missing: sumMoney(adjustments.filter((a) => a.valueDifference < 0).map((a) => a.valueDifference)),
+    extra: sumMoney(adjustments.filter((a) => a.valueDifference > 0).map((a) => a.valueDifference)),
   };
 }
 

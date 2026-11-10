@@ -8,6 +8,7 @@ import { useClickOutside } from '../lib/useClickOutside';
 import type { UserMode } from '../domain/types';
 import { cn } from '../ui/cn';
 import { useToast } from '../ui/Toast';
+import { pluralWord } from '../domain/format';
 
 interface NavItem {
   to: string;
@@ -160,8 +161,10 @@ export function Layout() {
   const location = useLocation();
 
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [location.pathname]);
+    // Links to a section (e.g. /settings#backup) scroll themselves; this parent effect runs
+    // after the page's own, so it must not jump back to the top.
+    if (!location.hash) window.scrollTo(0, 0);
+  }, [location.pathname, location.hash]);
 
   return (
     <div className="min-h-dvh">
@@ -188,7 +191,7 @@ export function Layout() {
               {n.badge ? (
                 <span className="rounded-full bg-warn px-1.5 text-xs font-semibold text-black">
                   {n.badge}
-                  <span className="sr-only"> {n.badge === 1 ? 'alert' : 'alerts'}</span>
+                  <span className="sr-only"> {pluralWord(n.badge, 'alert')}</span>
                 </span>
               ) : null}
             </NavLink>
@@ -234,7 +237,7 @@ export function Layout() {
               {n.badge ? (
                 <span className="absolute top-1 left-1/2 ml-2 rounded-full bg-warn px-1 text-[10px] leading-4 font-semibold text-black">
                   {n.badge}
-                  <span className="sr-only"> {n.badge === 1 ? 'alert' : 'alerts'}</span>
+                  <span className="sr-only"> {pluralWord(n.badge, 'alert')}</span>
                 </span>
               ) : null}
             </NavLink>

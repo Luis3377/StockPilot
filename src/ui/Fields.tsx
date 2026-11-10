@@ -9,16 +9,25 @@ export const inputClass = `${inputBase} rounded-xl`;
 
 const borderFor = (error?: string | null) => (error ? 'border-bad' : 'border-line-strong');
 
+export type HintTone = 'warn' | 'bad';
+
+const hintTones: Record<HintTone, string> = {
+  warn: 'font-medium text-warn-text',
+  bad: 'font-medium text-bad-text',
+};
+
 interface FieldProps {
   label: ReactNode;
   hint?: ReactNode;
+  /** Colors the hint when it's a warning about the value entered. */
+  hintTone?: HintTone;
   error?: string | null;
   required?: boolean;
   children: (id: string, describedBy: string | undefined) => ReactNode;
   className?: string;
 }
 
-export function Field({ label, hint, error, required, children, className }: FieldProps) {
+export function Field({ label, hint, hintTone, error, required, children, className }: FieldProps) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errId = `${id}-err`;
@@ -36,7 +45,7 @@ export function Field({ label, hint, error, required, children, className }: Fie
         </p>
       ) : (
         hint && (
-          <p id={hintId} className="mt-1 text-xs text-muted">
+          <p id={hintId} data-tone={hintTone} className={cn('mt-1 text-xs', hintTone ? hintTones[hintTone] : 'text-muted')}>
             {hint}
           </p>
         )
@@ -98,16 +107,17 @@ export function currencySymbol(currency: string): string {
 interface MoneyFieldProps extends BaseInput {
   label: ReactNode;
   hint?: ReactNode;
+  hintTone?: HintTone;
   error?: string | null;
   currency: string;
   className?: string;
   suffix?: ReactNode;
 }
 
-export function MoneyField({ label, hint, error, required, currency, className, value, onChange, suffix, ...rest }: MoneyFieldProps) {
+export function MoneyField({ label, hint, hintTone, error, required, currency, className, value, onChange, suffix, ...rest }: MoneyFieldProps) {
   const symbol = currencySymbol(currency);
   return (
-    <Field label={label} hint={hint} error={error} required={required} className={className}>
+    <Field label={label} hint={hint} hintTone={hintTone} error={error} required={required} className={className}>
       {(id, describedBy) => (
         <div className="relative flex">
           <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted">{symbol}</span>

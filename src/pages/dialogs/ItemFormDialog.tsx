@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { addItem, updateItem, type ItemInput } from '../../domain/actions';
+import { addItem, itemInputErrors, updateItem, type ItemInput } from '../../domain/actions';
 import { isDomainError } from '../../domain/errors';
-import { knownCategories, knownLocations } from '../../domain/calc';
+import { checkPrice, knownCategories, knownLocations } from '../../domain/calc';
 import { todayISO } from '../../domain/dates';
-import { multiplyMoney, parseMoneyInput } from '../../domain/money';
+import { formatPercent, multiplyMoney, parseMoneyInput } from '../../domain/money';
 import type { Item } from '../../domain/types';
 import { store, useAppState } from '../../data/store';
 import { CONDITION_SUGGESTIONS, salesEnabled } from '../../lib/modes';
@@ -14,6 +14,7 @@ import { Button } from '../../ui/Button';
 import { Checkbox, MoneyField, QuantityField, TextAreaField, TextField } from '../../ui/Fields';
 import { PhotoPicker, forgetPhotos } from '../../ui/Photo';
 import { useToast } from '../../ui/Toast';
+import { plural } from '../../domain/format';
 
 interface Props {
   open: boolean;
@@ -36,6 +37,8 @@ type FormState = {
   notes: string;
   photoIds: string[];
 };
+
+const MORE_DETAIL_FIELDS = ['sku', 'purchaseDate', 'lowStockThreshold', 'condition', 'location', 'notes', 'estimatedValue', 'askingPrice'];
 
 const moneyText = (n: number | null) => (n === null ? '' : String(n));
 
@@ -154,9 +157,11 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
     if (!form.name.trim()) fieldErrors.name = 'Give the item a name';
     if (form.unitCost.trim() === '' && !fieldErrors.unitCost) fieldErrors.unitCost = 'Enter what you paid per item (0 if it was free)';
     if (form.quantity.trim() === '') fieldErrors.quantity = 'Enter how many you have';
-    if (Object.keys(fieldErrors).length) {
-      setErrors(fieldErrors);
-      if (fieldErrors.sku || fieldErrors.lowStockThreshold || fieldErrors.estimatedValue) setShowMore(true);
+    // Show every problem after one submit: this form's own messages, plus the inventory's
+    // rules (negative amounts, duplicate SKUs…) for the other fields.
+    const allErrors = { ...itemInputErrors(data, input, item?.id ?? null), ...fieldErrors };
+    if (Object.keys(allErrors).length) {
+      showErrors(allErrors);
       return;
     }
     try {
@@ -174,26 +179,37 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
       toast.success(item ? `Saved changes to "${result.item.name}"` : `Added "${result.item.name}" to your inventory`);
       onClose();
     } catch (err) {
-      if (isDomainError(err) && err.field) {
-        setErrors({ [err.field]: err.message });
-        if (['sku', 'purchaseDate', 'lowStockThreshold', 'condition', 'location', 'notes', 'estimatedValue'].includes(err.field)) setShowMore(true);
-      } else {
-        toast.error(isDomainError(err) ? err.message : 'The item could not be saved.');
-      }
+      if (isDomainError(err) && Object.keys(err.fields).length) showErrors(err.fields);
+      else toast.error(isDomainError(err) ? err.message : 'The item could not be saved.');
     }
+  };
+
+  const showErrors = (errs: Partial<Record<string, string>>) => {
+    setErrors(errs as Partial<Record<keyof FormState, string>>);
+    // Open "More details" when an error is on a field that may be tucked away there.
+    if (Object.keys(errs).some((f) => MORE_DETAIL_FIELDS.includes(f))) setShowMore(true);
   };
 
   const mode = settings.mode;
   const selling = salesEnabled(settings);
+  const priceCheck =
+    asking !== null && !Number.isNaN(asking) && cost !== null && !Number.isNaN(cost) && cost >= 0
+      ? checkPrice(asking, cost, settings.lowMarginPercent)
+      : null;
   const priceField = (
     <MoneyField
       key="asking"
       label={mode === 'business' ? 'Selling price (per item)' : 'Asking price (per item)'}
       hint={
-        asking !== null && !Number.isNaN(asking) && cost !== null && !Number.isNaN(cost)
-          ? `${money(asking - cost)} profit per item before selling fees`
-          : 'What you plan to sell one for'
+        !priceCheck
+          ? 'What you plan to sell one for'
+          : priceCheck.status === 'loss'
+            ? `You'd lose ${money(-priceCheck.profit)} on each one before fees.`
+            : priceCheck.status === 'low'
+              ? `Only ${money(priceCheck.profit)} profit per item before fees — a ${formatPercent(priceCheck.margin, 0)} margin, under your ${settings.lowMarginPercent}% target.`
+              : `${money(priceCheck.profit)} profit per item before selling fees`
       }
+      hintTone={priceCheck?.status === 'loss' ? 'bad' : priceCheck?.status === 'low' ? 'warn' : undefined}
       currency={currency}
       value={form.askingPrice}
       onChange={(v) => set('askingPrice', v)}
@@ -286,7 +302,7 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
             <Checkbox
               checked={applyCostToSales}
               onChange={setApplyCostToSales}
-              label={`Also use this cost for ${salesCount} recorded ${salesCount === 1 ? 'sale' : 'sales'}`}
+              label={`Also use this cost for ${plural(salesCount, 'recorded sale')}`}
               description="Keep this on if you're correcting a mistake. Turn it off to keep past profit calculated with the old cost."
             />
           </div>

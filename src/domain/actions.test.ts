@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { DomainError } from './errors';
 import {
   addItem,
+  itemInputErrors,
+  saleInputErrors,
   adjustQuantity,
   completeCount,
   compareCount,
   deleteItem,
   deleteSale,
+  keepCount,
   nextSku,
   recordSale,
   restockItem,
@@ -42,6 +46,23 @@ describe('items', () => {
     expect(() => addItem(data, { name: 'x', quantity: 1, unitCost: 1, purchaseDate: '2026-02-31' })).toThrow('valid date');
   });
 
+  it('reports every invalid item field at once', () => {
+    const { data } = withItem({ sku: 'TAKEN' });
+    const errors = itemInputErrors(data, { name: ' ', sku: 'taken', quantity: 1.5, unitCost: -2, askingPrice: -1, purchaseDate: '2026-02-30' }, null);
+    expect(Object.keys(errors).sort()).toEqual(['askingPrice', 'name', 'purchaseDate', 'quantity', 'sku', 'unitCost']);
+    expect(errors.unitCost).toBe("Cost per item can't be negative.");
+    expect(itemInputErrors(data, { name: 'Fine', quantity: 1, unitCost: 1 }, null)).toEqual({});
+    // The thrown error carries all of them too, with the first as its message.
+    try {
+      addItem(data, { name: '', quantity: -1, unitCost: -2 });
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DomainError);
+      expect((e as DomainError).message).toBe('Item name is required.');
+      expect(Object.keys((e as DomainError).fields)).toEqual(['name', 'quantity', 'unitCost']);
+    }
+  });
+
   it('rejects duplicate SKUs case-insensitively', () => {
     const { data } = withItem({ sku: 'ABC-1' });
     expect(() => addItem(data, { name: 'Other', sku: 'abc-1', quantity: 1, unitCost: 1 })).toThrow('already used');
@@ -59,6 +80,18 @@ describe('items', () => {
     const corrected = updateItem(data, item.id, { name: 'Renamed', quantity: 4, unitCost: 10 }, { applyCostToSales: true });
     expect(corrected.data.sales[0].unitCost).toBe(10);
     expect(corrected.data.adjustments).toHaveLength(0);
+  });
+
+  it('saves a category with the spelling already in use', () => {
+    let { data } = withItem({ category: 'Home' });
+    const second = addItem(data, { name: 'Lamp', quantity: 1, unitCost: 1, category: ' home ' });
+    expect(second.item.category).toBe('Home');
+    data = second.data;
+    const third = addItem(data, { name: 'Vase', quantity: 1, unitCost: 1, category: 'Garden' });
+    expect(third.item.category).toBe('Garden');
+    // An item can fix its own spelling when no other item uses the old one.
+    const only = withItem({ category: 'home' });
+    expect(updateItem(only.data, only.item.id, { name: 'x', quantity: 1, unitCost: 1, category: 'Home' }).item.category).toBe('Home');
   });
 
   it('tracks estimated value history', () => {
@@ -101,6 +134,16 @@ describe('sales', () => {
     expect(r.data.items[0].quantity).toBe(3);
     expect(r.sale).toMatchObject({ unitCost: 10, itemName: 'Test item', quantity: 2 });
     expect(totalSales(r.data.sales).netProfit).toBe(35);
+  });
+
+  it('saves a platform with the spelling already in use', () => {
+    let { data, item } = withItem({ quantity: 5 });
+    data = recordSale(data, sale(item.id, 1, { platform: 'eBay' })).data;
+    const second = recordSale(data, sale(item.id, 1, { platform: 'EBAY ' }));
+    expect(second.sale.platform).toBe('eBay');
+    // Editing the only sale on a platform can change its spelling.
+    const first = data.sales[0];
+    expect(updateSale(data, first.id, sale(item.id, 1, { platform: 'EBay' })).sale.platform).toBe('EBay');
   });
 
   it('never allows selling more than is in stock', () => {
@@ -159,6 +202,25 @@ describe('sales', () => {
     expect(r.data.sales).toHaveLength(0);
   });
 
+  it('reports every invalid sale field at once', () => {
+    let { data, item } = withItem({ quantity: 2 });
+    const errors = saleInputErrors(data, sale(item.id, 5, { fees: -1, shipping: -2, saleDate: '' }), null);
+    expect(errors).toMatchObject({
+      quantity: 'Only 2 of "Test item" are available — you entered 5.',
+      fees: "Marketplace fees can't be negative.",
+      shipping: "Shipping can't be negative.",
+      saleDate: 'Enter a valid sale date.',
+    });
+    expect(saleInputErrors(data, sale('', null as unknown as number), null)).toMatchObject({ itemId: 'Choose the item you sold.', quantity: 'Quantity sold is required.' });
+    const recorded = recordSale(data, sale(item.id, 1));
+    data = recorded.data;
+    expect(saleInputErrors(data, sale(item.id, 3, { otherExpenses: -1 }), recorded.sale.id)).toMatchObject({
+      quantity: 'Only 2 of "Test item" are available — you entered 3.',
+      otherExpenses: "Other expenses can't be negative.",
+    });
+    expect(saleInputErrors(data, sale(item.id, 2), recorded.sale.id)).toEqual({});
+  });
+
   it('validates sale money fields', () => {
     const { data, item } = withItem();
     expect(() => recordSale(data, sale(item.id, 1, { fees: -1 }))).toThrow("Marketplace fees can't be negative");
@@ -212,12 +274,38 @@ describe('count check', () => {
     expect(r.record.lines.map((l) => l.applied)).toEqual([true, false]);
   });
 
-  it('compares against live quantities if a sale happens mid-count', () => {
-    let { data, a } = setup();
+  it('flags an item whose stock changed after it was counted', () => {
+    let { data, a, b } = setup();
     data = startCount(data, { category: null, location: null });
-    data = setCount(data, a.id, 8);
-    data = recordSale(data, sale(a.id, 2)).data;
-    expect(compareCount(data.items, data.countDraft!).lines[0].status).toBe('match');
+    data = setCount(data, a.id, 10);
+    data = setCount(data, b.id, 4);
+    expect(data.countDraft!.recordedAtCount).toEqual({ [a.id]: 10, [b.id]: 4 });
+    expect(compareCount(data.items, data.countDraft!).changedSinceCounted).toEqual({});
+
+    // A sale recorded mid-count: still compared live, but flagged instead of silently "missing".
+    data = recordSale(data, sale(a.id, 1)).data;
+    let cmp = compareCount(data.items, data.countDraft!);
+    expect(cmp.lines.find((l) => l.itemId === a.id)).toMatchObject({ recordedQuantity: 9, countedQuantity: 10, status: 'excess' });
+    expect(cmp.changedSinceCounted).toEqual({ [a.id]: 10 });
+
+    // Keeping the count accepts it against the new stock level.
+    const kept = keepCount(data, a.id);
+    expect(compareCount(kept.items, kept.countDraft!).changedSinceCounted).toEqual({});
+    expect(kept.countDraft!.counts[a.id]).toBe(10);
+
+    // Recounting (entering a new number) also clears the flag.
+    const recounted = setCount(data, a.id, 9);
+    cmp = compareCount(recounted.items, recounted.countDraft!);
+    expect(cmp.changedSinceCounted).toEqual({});
+    expect(cmp.lines.find((l) => l.itemId === a.id)?.status).toBe('match');
+
+    // Clearing a count clears its snapshot too.
+    const cleared = setCount(data, a.id, null);
+    expect(cleared.countDraft!.recordedAtCount).toEqual({ [b.id]: 4 });
+    // Deleting an item removes both.
+    const deleted = deleteItem(data, b.id).data;
+    expect(deleted.countDraft!.counts).not.toHaveProperty(b.id);
+    expect(deleted.countDraft!.recordedAtCount).not.toHaveProperty(b.id);
   });
 
   it('requires at least one counted item to finish', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { recordSale, updateSale, type SaleInput } from '../../domain/actions';
-import { computeSale, knownPlatforms, uniqueSorted } from '../../domain/calc';
+import { recordSale, saleInputErrors, updateSale, type SaleInput } from '../../domain/actions';
+import { computeSale, convertSalePrice, knownPlatforms, uniqueSorted } from '../../domain/calc';
 import { isDomainError } from '../../domain/errors';
 import { todayISO } from '../../domain/dates';
 import { formatPercent, parseMoneyInput, roundMoney } from '../../domain/money';
@@ -131,6 +131,17 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
     if (!priceTouched && next?.askingPrice != null) set('salePrice', String(next.askingPrice));
   };
 
+  const switchPriceMode = (mode: PriceMode) => {
+    if (mode === form.priceMode) return;
+    const price = parseMoneyInput(form.salePrice);
+    // Keep the revenue the same: $20 per item × 3 becomes a $60.00 total, and back.
+    if (price !== null && !Number.isNaN(price) && qty >= 1) {
+      setPriceTouched(true);
+      set('salePrice', convertSalePrice(price, qty, mode).toFixed(2));
+    }
+    set('priceMode', mode);
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const fieldErrors: Partial<Record<keyof FormState, string>> = {};
@@ -147,10 +158,6 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
     const feesRaw = moneyOrNull('fees');
     if (form.feeMode === 'percent' && feesRaw !== null && feesRaw >= 100) fieldErrors.fees = 'Fees must be under 100%';
     if (!form.itemId) fieldErrors.itemId = 'Choose the item you sold';
-    if (Object.keys(fieldErrors).length) {
-      setErrors(fieldErrors);
-      return;
-    }
     const input: SaleInput = {
       itemId: form.itemId,
       quantity: form.quantity.trim() === '' ? null : Number(form.quantity),
@@ -163,6 +170,13 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
       saleDate: form.saleDate,
       notes: form.notes,
     };
+    // Show every problem after one submit: this form's own messages, plus the sale rules
+    // (negative amounts, more than is in stock…) for the other fields.
+    const allErrors = { ...saleInputErrors(data, input, sale?.id ?? null), ...fieldErrors };
+    if (Object.keys(allErrors).length) {
+      setErrors(allErrors);
+      return;
+    }
     try {
       const result = sale ? store.commit((d) => updateSale(d, sale.id, input)) : store.commit((d) => recordSale(d, input));
       const f = computeSale(result.sale);
@@ -173,12 +187,13 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
       );
       onClose();
     } catch (err) {
-      if (isDomainError(err) && err.field) setErrors({ [err.field]: err.message });
+      if (isDomainError(err) && Object.keys(err.fields).length) setErrors(err.fields);
       else toast.error(isDomainError(err) ? err.message : 'The sale could not be saved.');
     }
   };
 
   const nothingToSell = !sale && sellable.length === 0;
+  const loses = preview.netProfit < 0 && preview.revenue > 0;
 
   return (
     <Dialog
@@ -189,6 +204,25 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
       size="lg"
       dismissOnBackdrop={false}
       testId="sale-form"
+      footerTop={
+        nothingToSell ? undefined : (
+          // Phones show the form in one column with the full breakdown at the bottom, so keep
+          // the bottom line next to the buttons.
+          <div
+            className={cn('mb-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 rounded-xl px-3 py-2 text-sm md:hidden', loses ? 'bg-bad-soft text-bad-text' : 'bg-surface-2 text-ink')}
+            aria-live="polite"
+            data-testid="sale-summary-mobile"
+          >
+            <span className="flex items-center gap-1.5">
+              {loses && <AlertTriangle className="size-4 shrink-0" aria-hidden />}
+              {loses ? 'This sale loses money' : 'Net profit'}
+            </span>{' '}
+            <span className="tabular shrink-0 font-semibold">
+              {money(preview.netProfit)} · {formatPercent(preview.margin, 0)} margin
+            </span>
+          </div>
+        )
+      }
       footer={
         nothingToSell ? (
           <Button onClick={onClose}>Close</Button>
@@ -257,7 +291,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
                     size="sm"
                     label="Price is"
                     value={form.priceMode}
-                    onChange={(v) => set('priceMode', v)}
+                    onChange={switchPriceMode}
                     options={[
                       { value: 'per_unit', label: 'Per item' },
                       { value: 'total', label: `Total for ${qty}` },
@@ -324,7 +358,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
               <span>Margin {formatPercent(preview.margin)}</span>
               <span>ROI {formatPercent(preview.roi)}</span>
             </div>
-            {preview.netProfit < 0 && preview.revenue > 0 && (
+            {loses && (
               <p className="mt-3 flex gap-1.5 text-xs text-bad-text">
                 <AlertTriangle className="size-4 shrink-0" /> This sale loses money after costs.
               </p>

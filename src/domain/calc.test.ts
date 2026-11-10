@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeSale, inventoryTotals, projectUnsold, salesByMonth, sellingCostRate, totalSales, daysWithoutSale } from './calc';
+import { checkPrice, splitDiscrepancies, computeSale, convertSalePrice, inventoryTotals, projectUnsold, salesByCategory, salesByMonth, salesByPlatform, sellingCostRate, totalSales, daysWithoutSale } from './calc';
 import { recordSale } from './actions';
 import { clock, withItem } from './testUtils';
 
@@ -32,6 +32,27 @@ describe('computeSale', () => {
     expect(f.revenue).toBe(59.97);
     expect(f.costOfGoods).toBe(10);
     expect(f.netProfit).toBe(41.9);
+  });
+});
+
+describe('checkPrice', () => {
+  it('flags prices below cost and margins under the target', () => {
+    expect(checkPrice(1.5, 2, 15)).toEqual({ status: 'loss', profit: -0.5, margin: expect.closeTo(-33.33, 1) });
+    expect(checkPrice(10, 9, 15)).toMatchObject({ status: 'low', profit: 1, margin: 10 });
+    expect(checkPrice(10, 5, 15)).toMatchObject({ status: 'ok', profit: 5 });
+    expect(checkPrice(10, 10, 15)).toMatchObject({ status: 'low', profit: 0 });
+    expect(checkPrice(0, 0, 15)).toMatchObject({ status: 'ok', margin: null });
+  });
+});
+
+describe('convertSalePrice', () => {
+  it('keeps revenue the same when switching between per item and total', () => {
+    expect(convertSalePrice(20, 3, 'total')).toBe(60);
+    expect(convertSalePrice(60, 3, 'per_unit')).toBe(20);
+    expect(convertSalePrice(19.99, 3, 'total')).toBe(59.97);
+    // A total that doesn't split evenly is rounded to cents.
+    expect(convertSalePrice(100, 3, 'per_unit')).toBe(33.33);
+    expect(convertSalePrice(20, 0, 'total')).toBe(20);
   });
 });
 
@@ -83,5 +104,48 @@ describe('aggregates', () => {
     expect(daysWithoutSale(item, data.sales, '2026-01-31')).toBe(30);
     data = recordSale(data, { itemId: item.id, quantity: 1, salePrice: 1, priceMode: 'per_unit', saleDate: '2026-01-21' }, clock()).data;
     expect(daysWithoutSale(item, data.sales, '2026-01-31')).toBe(10);
+  });
+});
+
+describe('grouping ignores capitalization and spacing', () => {
+  // Sales saved before spellings were matched on save can still differ in case.
+  function mixedSales() {
+    let { data, item } = withItem({ quantity: 10, unitCost: 5 });
+    for (let i = 0; i < 4; i++) {
+      data = recordSale(data, { itemId: item.id, quantity: 1, salePrice: 20, priceMode: 'per_unit', saleDate: '2026-10-02' }, clock()).data;
+    }
+    const platforms = ['eBay', 'ebay ', 'EBAY', 'Etsy'];
+    const categories = ['Home', 'home', 'Home', ' HOME'];
+    return data.sales.map((s, i) => ({ ...s, platform: platforms[i], itemCategory: categories[i] }));
+  }
+
+  it('puts "eBay", "ebay " and "EBAY" in one platform group', () => {
+    const groups = salesByPlatform(mixedSales());
+    expect(groups.map((g) => [g.label, g.salesCount])).toEqual([
+      ['eBay', 3],
+      ['Etsy', 1],
+    ]);
+    expect(groups[0].revenue).toBe(60);
+  });
+
+  it('puts "Home" and "home" in one category group, labeled with the most common spelling', () => {
+    const groups = salesByCategory(mixedSales());
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ label: 'Home', salesCount: 4 });
+  });
+
+  it('labels blank platforms and categories', () => {
+    const [sale] = mixedSales();
+    expect(salesByPlatform([{ ...sale, platform: '  ' }])[0].label).toBe('Unspecified');
+    expect(salesByCategory([{ ...sale, itemCategory: '' }])[0].label).toBe('Uncategorized');
+  });
+});
+
+describe('splitDiscrepancies', () => {
+  it('keeps missing and extra value apart instead of netting them', () => {
+    // 1 extra hoodie (+$18) and 2 missing mugs at $3.25 (−$6.50).
+    expect(splitDiscrepancies([{ valueDifference: 18 }, { valueDifference: -6.5 }])).toEqual({ missing: -6.5, extra: 18 });
+    expect(splitDiscrepancies([{ valueDifference: -0.1 }, { valueDifference: -0.2 }])).toEqual({ missing: -0.3, extra: 0 });
+    expect(splitDiscrepancies([])).toEqual({ missing: 0, extra: 0 });
   });
 });

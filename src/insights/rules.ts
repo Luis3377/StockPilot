@@ -18,6 +18,7 @@ import {
 import { addDays, todayISO } from '../domain/dates';
 import { formatMoney, formatPercent } from '../domain/money';
 import type { Adjustment, AppData, CountRecord, Item, Settings } from '../domain/types';
+import { plural, pluralWord } from '../domain/format';
 
 export type Severity = 'critical' | 'warning' | 'info' | 'good';
 
@@ -55,7 +56,6 @@ export interface InsightsReport {
 
 type RuleSettings = Pick<Settings, 'slowMovingDays' | 'lowMarginPercent' | 'sellingCostPercent' | 'currency'>;
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function lowStockSection(items: Item[]): InsightSection {
   const tracked = items.filter((i) => i.lowStockThreshold !== null);
@@ -78,8 +78,8 @@ export function lowStockSection(items: Item[]): InsightSection {
     findings,
     insufficient: tracked.length === 0 ? 'No items have a low-stock alert level yet. Set one on an item (or a default in Settings) to get restock alerts.' : null,
     summary: findings.length
-      ? `${plural(findings.length, 'item')} need restocking${out ? `, ${out} already out of stock` : ''}.`
-      : `All ${plural(tracked.length, 'tracked item')} are above their alert levels.`,
+      ? `${plural(findings.length, 'item')} ${pluralWord(findings.length, 'needs', 'need')} restocking${out ? `, ${out} already out of stock` : ''}.`
+      : tracked.length === 1 ? 'Your tracked item is above its alert level.' : `All ${plural(tracked.length, 'tracked item')} are above their alert levels.`,
   };
 }
 
@@ -91,7 +91,7 @@ export function slowMovingSection(data: AppData, settings: RuleSettings, today: 
     .sort((a, b) => b.days - a.days)
     .map(({ item, days }) => ({
       item,
-      detail: `${days} days without a sale · ${formatMoney(itemCostValue(item), settings.currency)} tied up.`,
+      detail: `${plural(days, 'day')} without a sale · ${formatMoney(itemCostValue(item), settings.currency)} tied up.`,
     }));
   const tiedUp = findings.reduce((sum, f) => sum + itemCostValue(f.item), 0);
   return {
@@ -102,8 +102,8 @@ export function slowMovingSection(data: AppData, settings: RuleSettings, today: 
     findings,
     insufficient: inStock.length === 0 ? 'Nothing is in stock right now.' : null,
     summary: findings.length
-      ? `${plural(findings.length, 'item')} haven't sold in ${settings.slowMovingDays}+ days, holding ${formatMoney(tiedUp, settings.currency)} at cost.`
-      : `Everything in stock has moved within the last ${settings.slowMovingDays} days.`,
+      ? `${plural(findings.length, 'item')} ${pluralWord(findings.length, 'hasn’t', 'haven’t')} sold in ${settings.slowMovingDays}+ days, holding ${formatMoney(tiedUp, settings.currency)} at cost.`
+      : `Everything in stock has moved within the last ${plural(settings.slowMovingDays, 'day')}.`,
   };
 }
 
@@ -164,7 +164,7 @@ export function pricingRiskSection(data: AppData, settings: RuleSettings, rate: 
     insufficient: priced.length === 0 ? 'No in-stock items have an asking price yet.' : null,
     summary: findings.length
       ? `${plural(findings.length, 'asking price')} may leave little or no profit.`
-      : `All ${plural(priced.length, 'asking price')} clear your ${settings.lowMarginPercent}% margin target.`,
+      : priced.length === 1 ? `Your asking price clears your ${settings.lowMarginPercent}% margin target.` : `All ${plural(priced.length, 'asking price')} clear your ${settings.lowMarginPercent}% margin target.`,
   };
 }
 
@@ -209,8 +209,8 @@ export function discrepancySection(data: AppData, settings: RuleSettings, today:
         ? 'No physical counts yet. Use Count Check to compare what you have on the shelf with your records.'
         : null,
     summary: recent.length
-      ? `${plural(recent.length, 'correction')} in 90 days; shortages cost ${formatMoney(-lost, settings.currency)} at cost.${unresolved ? ` ${unresolved} difference(s) from your last count were not applied.` : ''}`
-      : `No quantity corrections in the last 90 days.${unresolved ? ` ${unresolved} difference(s) from your last count were not applied.` : ''}`,
+      ? `${plural(recent.length, 'correction')} in 90 days; shortages cost ${formatMoney(-lost, settings.currency)} at cost.${unresolved ? ` ${plural(unresolved, 'difference')} from your last count ${pluralWord(unresolved, 'was', 'were')} not applied.` : ''}`
+      : `No quantity corrections in the last 90 days.${unresolved ? ` ${plural(unresolved, 'difference')} from your last count ${pluralWord(unresolved, 'was', 'were')} not applied.` : ''}`,
   };
 }
 

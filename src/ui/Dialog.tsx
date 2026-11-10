@@ -13,6 +13,8 @@ interface DialogProps {
   description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  /** Shown above the footer buttons, always in view (e.g. a running total). */
+  footerTop?: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /** Set false for forms where an accidental outside tap would lose typing. */
   dismissOnBackdrop?: boolean;
@@ -24,7 +26,7 @@ const widths = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: '
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /** Accessible modal: a centered dialog on larger screens, a bottom sheet on phones. */
-export function Dialog({ open, onClose, title, description, children, footer, size = 'md', dismissOnBackdrop = true, testId }: DialogProps) {
+export function Dialog({ open, onClose, title, description, children, footer, footerTop, size = 'md', dismissOnBackdrop = true, testId }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descId = useId();
@@ -109,6 +111,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6">{children}</div>
         {footer && (
           <div className="pb-safe border-t border-line bg-surface px-5 py-3 sm:px-6">
+            {footerTop}
             <div className="flex flex-col-reverse gap-2 pb-1 sm:flex-row sm:justify-end sm:pb-0">{footer}</div>
           </div>
         )}

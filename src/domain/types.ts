@@ -88,13 +88,22 @@ export interface CountScope {
   location: string | null;
 }
 
-/** An in-progress physical count. Counts are compared against live recorded quantities. */
+/**
+ * An in-progress physical count, which may span several sessions. Counts are compared against
+ * live recorded quantities; when an item's stock changes after it was counted (a sale, a
+ * restock), the row is flagged so the user can recount rather than see a false difference.
+ */
 export interface CountDraft {
   id: string;
   startedAt: string;
   scope: CountScope;
   /** itemId -> physically counted quantity. Items without an entry are "not counted yet". */
   counts: Record<string, number>;
+  /**
+   * itemId -> recorded quantity at the moment the item was counted. Empty for drafts saved
+   * before this existed, which simply aren't flagged.
+   */
+  recordedAtCount: Record<string, number>;
 }
 
 export type CountLineStatus = 'match' | 'missing' | 'excess';

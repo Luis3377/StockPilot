@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addItem, nav, onboard, openItem } from './helpers';
+import { addItem, contrastRatio, isMobile, nav, onboard, openItem, solidPng } from './helpers';
 
 // 1×1 PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -33,6 +33,33 @@ test('validation explains what is missing and nothing is saved', async ({ page }
   await expect(dialog.getByText('Enter an amount like 12.50')).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByTestId('get-started')).toBeVisible();
+});
+
+test('one submit shows every problem with the item form', async ({ page }) => {
+  await onboard(page, 'Reseller');
+  await page.getByRole('button', { name: 'Add your first item' }).click();
+  const dialog = page.getByTestId('item-form');
+  await dialog.getByLabel('Item name').fill('Thing');
+  await dialog.getByLabel('Cost per item').fill('-2');
+  await dialog.getByLabel('Asking price').fill('abc');
+  await dialog.getByRole('button', { name: 'Add item' }).click();
+  await expect(dialog.getByText("Cost per item can't be negative.")).toBeVisible();
+  await expect(dialog.getByText('Enter an amount like 12.50')).toBeVisible();
+});
+
+test('an asking price below cost or under the margin target is flagged', async ({ page }) => {
+  await onboard(page, 'Reseller');
+  await page.getByRole('button', { name: 'Add your first item' }).click();
+  const dialog = page.getByTestId('item-form');
+  await dialog.getByLabel('Cost per item').fill('2');
+  await dialog.getByLabel('Asking price').fill('1.50');
+  const hint = dialog.getByText("You'd lose $0.50 on each one before fees.");
+  await expect(hint).toBeVisible();
+  await expect(hint).toHaveAttribute('data-tone', 'bad');
+  await dialog.getByLabel('Asking price').fill('2.20');
+  await expect(dialog.getByText('Only $0.20 profit per item before fees — a 9% margin, under your 15% target.')).toHaveAttribute('data-tone', 'warn');
+  await dialog.getByLabel('Asking price').fill('5');
+  await expect(dialog.getByText('$3.00 profit per item before selling fees')).not.toHaveAttribute('data-tone');
 });
 
 test('duplicate SKUs are rejected with a clear message', async ({ page }) => {
@@ -176,4 +203,55 @@ test('restock averages the cost, adjust quantity requires a reason', async ({ pa
   await stock.getByRole('button', { name: 'Save quantity' }).click();
   await expect(page.getByTestId('item-quantity')).toHaveText('3');
   await expect(page.getByText('Adjustment: 4 → 3')).toBeVisible();
+});
+
+test('stock badges stay readable on bright and pale photos in both themes', async ({ page }) => {
+  await onboard(page, 'Small business');
+  const photos: [string, string][] = [
+    ['Yellow tee', '#ffd400'],
+    ['Orange tee', '#ff7a00'],
+    ['White tee', '#ffffff'],
+    ['Gray tee', '#9a9a9a'],
+  ];
+  for (const [name, color] of photos) {
+    await addItem(page, { name, quantity: 2, cost: '5', lowStockAt: name === 'White tee' ? 0 : 3, photo: await solidPng(page, color) });
+  }
+  await nav(page, 'Inventory');
+  const badges = page.getByTestId('inventory-grid').locator('[data-on-image]');
+  await expect(badges).toHaveCount(4);
+  await expect(page.getByTestId('inventory-grid')).toContainText('Low stock');
+  await expect(page.getByTestId('inventory-grid')).toContainText('In stock');
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    for (let i = 0; i < 4; i++) {
+      const { fg, bg } = await badges.nth(i).evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { fg: cs.color, bg: cs.backgroundColor };
+      });
+      // An opaque pill means the photo behind it can't wash the text out.
+      expect(bg, 'badge background must be opaque').toMatch(/^rgb\(/);
+      expect(contrastRatio(fg, bg)).toBeGreaterThan(7);
+    }
+  }
+});
+
+test('on phones the floating Add button never covers the last item cards', async ({ page }) => {
+  test.skip(!isMobile(page), 'phone-only button');
+  await onboard(page, 'Reseller', true);
+  await nav(page, 'Inventory');
+  const fab = page.getByTestId('fab-add-item');
+  const overlaps = async () => {
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(100);
+    const button = (await fab.boundingBox())!;
+    const cards = await page.getByTestId('inventory-item').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
+    return cards.filter(
+      (c) => c.right > button.x && c.left < button.x + button.width && c.bottom > button.y && c.top < button.y + button.height,
+    ).length;
+  };
+  await expect(page.getByTestId('inventory-item').first()).toBeVisible();
+  expect(await overlaps()).toBe(0);
+  await page.getByRole('radio', { name: 'List view' }).click();
+  await expect(page.getByTestId('inventory-list')).toBeVisible();
+  expect(await overlaps()).toBe(0);
 });

@@ -15,11 +15,12 @@ import type {
   Sale,
   ValuePoint,
 } from './types';
-import { DomainError } from './errors';
+import { DomainError, FieldErrors, isDomainError } from './errors';
 import { newId } from './ids';
 import { isValidISODate, todayISO } from './dates';
 import { fromCents, multiplyMoney, roundMoney, toCents } from './money';
-import { itemCostValue } from './calc';
+import { itemCostValue, mostCommon, nameKey } from './calc';
+import { plural, pluralWord } from './format';
 
 export interface Clock {
   now: Date;
@@ -81,6 +82,17 @@ function optionalDate(value: string | null | undefined, field: string, label: st
   if (value === null || value === undefined || value.trim() === '') return null;
   if (!isValidISODate(value.trim())) throw new DomainError(`${label} must be a valid date.`, field);
   return value.trim();
+}
+
+/**
+ * Reuses the spelling already in use when `value` matches it apart from capitalization and
+ * spacing, so "ebay" typed today joins the existing "eBay" instead of starting a new group.
+ */
+export function existingSpelling(value: string, existing: Iterable<string>): string {
+  const key = nameKey(value);
+  if (!key) return value.trim();
+  const matches = [...existing].map((e) => e.trim()).filter((e) => nameKey(e) === key);
+  return matches.length ? mostCommon(matches) : value.trim();
 }
 
 function findItem(data: AppData, id: string): Item {
@@ -153,33 +165,59 @@ export function nextSku(items: Item[]): string {
 }
 
 function normalizeItemInput(data: AppData, input: ItemInput, existingId: string | null) {
-  const name = requireText(input.name, 'name', 'Item name');
-  let sku = optionalText(input.sku, 'sku', 'SKU', 64);
+  const v = new FieldErrors();
+  const name = v.check(() => requireText(input.name, 'name', 'Item name'));
+  let sku = v.check(() => optionalText(input.sku, 'sku', 'SKU', 64));
   if (sku) {
-    const clash = data.items.find((i) => i.id !== existingId && i.sku.toLowerCase() === sku.toLowerCase());
-    if (clash) throw new DomainError(`SKU "${sku}" is already used by "${clash.name}".`, 'sku');
-  } else {
+    const clash = data.items.find((i) => i.id !== existingId && i.sku.toLowerCase() === sku!.toLowerCase());
+    if (clash) v.add('sku', `SKU "${sku}" is already used by "${clash.name}".`);
+  } else if (sku === '') {
     sku = nextSku(data.items.filter((i) => i.id !== existingId));
   }
+  const category = v.check(() => optionalText(input.category, 'category', 'Category', 80));
+  const quantity = v.check(() => requireWholeNumber(input.quantity, 'quantity', 'Quantity'));
+  const unitCost = v.check(() => requireMoney(input.unitCost, 'unitCost', 'Cost per item', 4));
+  const askingPrice = v.check(() => optionalMoney(input.askingPrice, 'askingPrice', 'Asking price'));
+  const estimatedValue = v.check(() => optionalMoney(input.estimatedValue, 'estimatedValue', 'Estimated value'));
+  const purchaseDate = v.check(() => optionalDate(input.purchaseDate, 'purchaseDate', 'Purchase date'));
+  const condition = v.check(() => optionalText(input.condition, 'condition', 'Condition', 80));
+  const location = v.check(() => optionalText(input.location, 'location', 'Location', 120));
   const lowStockThreshold =
     input.lowStockThreshold === null || input.lowStockThreshold === undefined
       ? null
-      : requireWholeNumber(input.lowStockThreshold, 'lowStockThreshold', 'Low-stock alert level');
+      : v.check(() => requireWholeNumber(input.lowStockThreshold, 'lowStockThreshold', 'Low-stock alert level'));
+  const notes = v.check(() => optionalText(input.notes, 'notes', 'Notes', 5000));
+  v.throwIfAny();
+  // Every check passed, so none of the values above is undefined.
   return {
-    name,
-    sku,
-    category: optionalText(input.category, 'category', 'Category', 80),
-    quantity: requireWholeNumber(input.quantity, 'quantity', 'Quantity'),
-    unitCost: requireMoney(input.unitCost, 'unitCost', 'Cost per item', 4),
-    askingPrice: optionalMoney(input.askingPrice, 'askingPrice', 'Asking price'),
-    estimatedValue: optionalMoney(input.estimatedValue, 'estimatedValue', 'Estimated value'),
-    purchaseDate: optionalDate(input.purchaseDate, 'purchaseDate', 'Purchase date'),
-    condition: optionalText(input.condition, 'condition', 'Condition', 80),
-    location: optionalText(input.location, 'location', 'Location', 120),
-    lowStockThreshold,
+    name: name!,
+    sku: sku!,
+    category: existingSpelling(category!, [
+      ...data.items.filter((i) => i.id !== existingId).map((i) => i.category),
+      ...data.sales.filter((s) => s.itemId !== existingId).map((s) => s.itemCategory),
+    ]),
+    quantity: quantity!,
+    unitCost: unitCost!,
+    askingPrice: askingPrice as number | null,
+    estimatedValue: estimatedValue as number | null,
+    purchaseDate: purchaseDate as string | null,
+    condition: condition!,
+    location: location!,
+    lowStockThreshold: lowStockThreshold as number | null,
     photoIds: [...(input.photoIds ?? [])],
-    notes: optionalText(input.notes, 'notes', 'Notes', 5000),
+    notes: notes!,
   };
+}
+
+/** Every problem with an item's fields at once ({} when it would save). */
+export function itemInputErrors(data: AppData, input: ItemInput, existingId: string | null): Record<string, string> {
+  try {
+    normalizeItemInput(data, input, existingId);
+    return {};
+  } catch (e) {
+    if (isDomainError(e)) return e.fields;
+    throw e;
+  }
 }
 
 function withValuePoint(history: ValuePoint[], value: number | null, today: string): ValuePoint[] {
@@ -253,10 +291,12 @@ export function updateItem(
 export function deleteItem(data: AppData, id: string): { data: AppData; removedPhotoIds: string[] } {
   const item = findItem(data, id);
   let countDraft = data.countDraft;
-  if (countDraft && id in countDraft.counts) {
+  if (countDraft && (id in countDraft.counts || id in countDraft.recordedAtCount)) {
     const counts = { ...countDraft.counts };
+    const recordedAtCount = { ...countDraft.recordedAtCount };
     delete counts[id];
-    countDraft = { ...countDraft, counts };
+    delete recordedAtCount[id];
+    countDraft = { ...countDraft, counts, recordedAtCount };
   }
   return {
     data: { ...data, items: data.items.filter((i) => i.id !== id), countDraft },
@@ -277,13 +317,17 @@ export function restockItem(
 ): { data: AppData; item: Item } {
   const { iso } = nowParts(clock);
   const item = findItem(data, id);
-  const qty = requireWholeNumber(addQuantity, 'restockQuantity', 'Quantity to add', 1);
-  const cost = unitCost === null ? item.unitCost : requireMoney(unitCost, 'restockCost', 'Cost per item', 4);
+  const v = new FieldErrors();
+  const checkedQty = v.check(() => requireWholeNumber(addQuantity, 'restockQuantity', 'Quantity to add', 1));
+  const checkedCost = unitCost === null ? item.unitCost : v.check(() => requireMoney(unitCost, 'restockCost', 'Cost per item', 4));
+  v.throwIfAny();
+  const qty = checkedQty!;
+  const cost = checkedCost!;
   const newQuantity = item.quantity + qty;
   const totalCents = toCents(itemCostValue(item)) + toCents(multiplyMoney(cost, qty));
   const averaged = roundUnitCost(fromCents(totalCents) / newQuantity);
   const updated: Item = { ...item, quantity: newQuantity, unitCost: averaged, updatedAt: iso };
-  const adjustment = makeAdjustment({ ...item, unitCost: cost }, newQuantity, `Restocked ${qty} ${qty === 1 ? 'unit' : 'units'}`, 'restock', iso);
+  const adjustment = makeAdjustment({ ...item, unitCost: cost }, newQuantity, `Restocked ${plural(qty, 'unit')}`, 'restock', iso);
   return {
     data: { ...data, items: replaceItem(data.items, updated), adjustments: [...data.adjustments, adjustment] },
     item: updated,
@@ -300,9 +344,13 @@ export function adjustQuantity(
 ): { data: AppData; adjustment: Adjustment } {
   const { iso } = nowParts(clock);
   const item = findItem(data, id);
-  const qty = requireWholeNumber(newQuantity, 'newQuantity', 'New quantity');
-  const why = requireText(reason, 'reason', 'Reason', 300);
-  if (qty === item.quantity) throw new DomainError('The quantity is unchanged.', 'newQuantity');
+  const v = new FieldErrors();
+  const checkedQty = v.check(() => requireWholeNumber(newQuantity, 'newQuantity', 'New quantity'));
+  const checkedReason = v.check(() => requireText(reason, 'reason', 'Reason', 300));
+  if (checkedQty === item.quantity) v.add('newQuantity', 'The quantity is unchanged.');
+  v.throwIfAny();
+  const qty = checkedQty!;
+  const why = checkedReason!;
   const adjustment = makeAdjustment(item, qty, why, 'manual', iso);
   const updated: Item = { ...item, quantity: qty, updatedAt: iso };
   return {
@@ -328,51 +376,75 @@ export interface SaleInput {
   notes?: string;
 }
 
-function validateSaleFields(input: SaleInput) {
-  if (!input.itemId) throw new DomainError('Choose the item you sold.', 'itemId');
+interface SaleFields {
+  quantity: number;
+  salePrice: number;
+  priceMode: PriceMode;
+  platform: string;
+  fees: number;
+  shipping: number;
+  otherExpenses: number;
+  saleDate: string;
+  notes: string;
+}
+
+/** Checks a sale's own fields, recording every problem in `v`. */
+function validateSaleFields(input: SaleInput, otherSales: Sale[], v: FieldErrors): Partial<SaleFields> {
+  if (!input.itemId) v.add('itemId', 'Choose the item you sold.');
+  const quantity = v.check(() => requireWholeNumber(input.quantity, 'quantity', 'Quantity sold', 1));
+  const salePrice = v.check(() => requireMoney(input.salePrice, 'salePrice', 'Sale price'));
   if (input.priceMode !== 'per_unit' && input.priceMode !== 'total') {
-    throw new DomainError('Choose whether the price is per item or the total.', 'priceMode');
+    v.add('priceMode', 'Choose whether the price is per item or the total.');
   }
+  const platform = v.check(() => optionalText(input.platform, 'platform', 'Platform', 80));
+  const fees = v.check(() => requireMoney(input.fees ?? 0, 'fees', 'Marketplace fees'));
+  const shipping = v.check(() => requireMoney(input.shipping ?? 0, 'shipping', 'Shipping'));
+  const otherExpenses = v.check(() => requireMoney(input.otherExpenses ?? 0, 'otherExpenses', 'Other expenses'));
   const saleDate = input.saleDate?.trim();
-  if (!saleDate || !isValidISODate(saleDate)) throw new DomainError('Enter a valid sale date.', 'saleDate');
+  if (!saleDate || !isValidISODate(saleDate)) v.add('saleDate', 'Enter a valid sale date.');
+  const notes = v.check(() => optionalText(input.notes, 'notes', 'Notes', 2000));
   return {
-    quantity: requireWholeNumber(input.quantity, 'quantity', 'Quantity sold', 1),
-    salePrice: requireMoney(input.salePrice, 'salePrice', 'Sale price'),
+    quantity,
+    salePrice,
     priceMode: input.priceMode,
-    platform: optionalText(input.platform, 'platform', 'Platform', 80),
-    fees: requireMoney(input.fees ?? 0, 'fees', 'Marketplace fees'),
-    shipping: requireMoney(input.shipping ?? 0, 'shipping', 'Shipping'),
-    otherExpenses: requireMoney(input.otherExpenses ?? 0, 'otherExpenses', 'Other expenses'),
+    platform: platform === undefined ? undefined : existingSpelling(platform, otherSales.map((s) => s.platform)),
+    fees,
+    shipping,
+    otherExpenses,
     saleDate,
-    notes: optionalText(input.notes, 'notes', 'Notes', 2000),
+    notes,
   };
 }
 
 function overSellMessage(item: Item, available: number, requested: number): string {
   return available === 0
     ? `"${item.name}" has no units left to sell.`
-    : `Only ${available} of "${item.name}" ${available === 1 ? 'is' : 'are'} available — you entered ${requested}.`;
+    : `Only ${available} of "${item.name}" ${pluralWord(available, 'is', 'are')} available — you entered ${requested}.`;
 }
 
 export function recordSale(data: AppData, input: SaleInput, clock?: Clock): { data: AppData; sale: Sale } {
   const { iso } = nowParts(clock);
-  const fields = validateSaleFields(input);
-  const item = findItem(data, input.itemId);
-  if (fields.quantity > item.quantity) {
-    throw new DomainError(overSellMessage(item, item.quantity, fields.quantity), 'quantity');
+  const v = new FieldErrors();
+  const checked = validateSaleFields(input, data.sales, v);
+  const item = input.itemId ? data.items.find((i) => i.id === input.itemId) : undefined;
+  if (input.itemId && !item) v.add('itemId', 'That item no longer exists.');
+  if (item && checked.quantity !== undefined && checked.quantity > item.quantity) {
+    v.add('quantity', overSellMessage(item, item.quantity, checked.quantity));
   }
+  v.throwIfAny();
+  const fields = checked as SaleFields;
   const sale: Sale = {
     id: newId(),
-    itemId: item.id,
-    itemName: item.name,
-    itemSku: item.sku,
-    itemCategory: item.category,
-    unitCost: item.unitCost,
+    itemId: item!.id,
+    itemName: item!.name,
+    itemSku: item!.sku,
+    itemCategory: item!.category,
+    unitCost: item!.unitCost,
     ...fields,
     createdAt: iso,
     updatedAt: iso,
   };
-  const updatedItem: Item = { ...item, quantity: item.quantity - fields.quantity, updatedAt: iso };
+  const updatedItem: Item = { ...item!, quantity: item!.quantity - fields.quantity, updatedAt: iso };
   return {
     data: { ...data, items: replaceItem(data.items, updatedItem), sales: [...data.sales, sale] },
     sale,
@@ -387,28 +459,30 @@ export function updateSale(data: AppData, id: string, input: SaleInput, clock?: 
   const { iso } = nowParts(clock);
   const existing = data.sales.find((s) => s.id === id);
   if (!existing) throw new DomainError('That sale no longer exists.');
-  const fields = validateSaleFields(input);
+  const v = new FieldErrors();
+  const checked = validateSaleFields(
+    input,
+    data.sales.filter((s) => s.id !== id),
+    v,
+  );
 
   let items = data.items;
   const originalItem = items.find((i) => i.id === existing.itemId);
   if (originalItem) {
     items = replaceItem(items, { ...originalItem, quantity: originalItem.quantity + existing.quantity, updatedAt: iso });
-  } else if (input.itemId === existing.itemId) {
+  } else if (input.itemId === existing.itemId && checked.quantity !== undefined && checked.quantity !== existing.quantity) {
     // The item was deleted: keep the sale editable, but stock can't be moved.
-    if (fields.quantity !== existing.quantity) {
-      throw new DomainError(
-        `"${existing.itemName}" was deleted, so the quantity on this sale can't change.`,
-        'quantity',
-      );
-    }
+    v.add('quantity', `"${existing.itemName}" was deleted, so the quantity on this sale can't change.`);
   }
 
-  let target: Item | undefined = items.find((i) => i.id === input.itemId);
-  if (!target && input.itemId !== existing.itemId) throw new DomainError('That item no longer exists.', 'itemId');
+  let target: Item | undefined = input.itemId ? items.find((i) => i.id === input.itemId) : undefined;
+  if (input.itemId && !target && input.itemId !== existing.itemId) v.add('itemId', 'That item no longer exists.');
+  if (target && checked.quantity !== undefined && checked.quantity > target.quantity) {
+    v.add('quantity', overSellMessage(target, target.quantity, checked.quantity));
+  }
+  v.throwIfAny();
+  const fields = checked as SaleFields;
   if (target) {
-    if (fields.quantity > target.quantity) {
-      throw new DomainError(overSellMessage(target, target.quantity, fields.quantity), 'quantity');
-    }
     target = { ...target, quantity: target.quantity - fields.quantity, updatedAt: iso };
     items = replaceItem(items, target);
   }
@@ -425,6 +499,18 @@ export function updateSale(data: AppData, id: string, input: SaleInput, clock?: 
     updatedAt: iso,
   };
   return { data: { ...data, items, sales: data.sales.map((s) => (s.id === id ? sale : s)) }, sale };
+}
+
+/** Every problem with a sale's fields at once ({} when it would save). */
+export function saleInputErrors(data: AppData, input: SaleInput, saleId: string | null): Record<string, string> {
+  try {
+    if (saleId) updateSale(data, saleId, input);
+    else recordSale(data, input);
+    return {};
+  } catch (e) {
+    if (isDomainError(e)) return e.fields;
+    throw e;
+  }
 }
 
 /** Cancels a sale and returns its units to stock (when the item still exists). */
@@ -455,15 +541,35 @@ export function startCount(data: AppData, scope: CountScope, clock?: Clock): App
   const { iso } = nowParts(clock);
   if (data.countDraft) throw new DomainError('A count is already in progress. Finish or discard it first.');
   if (itemsInScope(data.items, scope).length === 0) throw new DomainError('There are no items to count in that selection.');
-  return { ...data, countDraft: { id: newId(), startedAt: iso, scope, counts: {} } };
+  return { ...data, countDraft: { id: newId(), startedAt: iso, scope, counts: {}, recordedAtCount: {} } };
 }
 
+/**
+ * Records (or clears, with null) an item's physical count, remembering the recorded quantity
+ * at that moment so later stock changes can be flagged. Entering a count again is a recount.
+ */
 export function setCount(data: AppData, itemId: string, counted: number | null): AppData {
   if (!data.countDraft) throw new DomainError('Start a count first.');
   const counts = { ...data.countDraft.counts };
-  if (counted === null) delete counts[itemId];
-  else counts[itemId] = requireWholeNumber(counted, `count-${itemId}`, 'Counted quantity');
-  return { ...data, countDraft: { ...data.countDraft, counts } };
+  const recordedAtCount = { ...data.countDraft.recordedAtCount };
+  if (counted === null) {
+    delete counts[itemId];
+    delete recordedAtCount[itemId];
+  } else {
+    counts[itemId] = requireWholeNumber(counted, `count-${itemId}`, 'Counted quantity');
+    const item = data.items.find((i) => i.id === itemId);
+    if (item) recordedAtCount[itemId] = item.quantity;
+  }
+  return { ...data, countDraft: { ...data.countDraft, counts, recordedAtCount } };
+}
+
+/** Keeps an item's count as entered after its stock changed, clearing the "changed" flag. */
+export function keepCount(data: AppData, itemId: string): AppData {
+  const draft = data.countDraft;
+  if (!draft) throw new DomainError('Start a count first.');
+  const item = data.items.find((i) => i.id === itemId);
+  if (!item || draft.counts[itemId] === undefined) return data;
+  return { ...data, countDraft: { ...draft, recordedAtCount: { ...draft.recordedAtCount, [itemId]: item.quantity } } };
 }
 
 export function discardCount(data: AppData): AppData {
@@ -472,6 +578,8 @@ export function discardCount(data: AppData): AppData {
 
 export interface CountComparison {
   lines: CountLine[];
+  /** Counted items whose recorded stock changed afterwards: itemId -> recorded quantity at count time. */
+  changedSinceCounted: Record<string, number>;
   uncounted: Item[];
   totalInScope: number;
   matching: number;
@@ -487,12 +595,15 @@ export function compareCount(items: Item[], draft: CountDraft): CountComparison 
   const scoped = itemsInScope(items, draft.scope);
   const lines: CountLine[] = [];
   const uncounted: Item[] = [];
+  const changedSinceCounted: Record<string, number> = {};
   for (const item of scoped) {
     const counted = draft.counts[item.id];
     if (counted === undefined) {
       uncounted.push(item);
       continue;
     }
+    const atCount = draft.recordedAtCount[item.id];
+    if (atCount !== undefined && atCount !== item.quantity) changedSinceCounted[item.id] = atCount;
     const difference = counted - item.quantity;
     lines.push({
       itemId: item.id,
@@ -514,6 +625,7 @@ export function compareCount(items: Item[], draft: CountDraft): CountComparison 
   const excessValue = fromCents(excess.reduce((c, l) => c + toCents(l.valueDifference), 0));
   return {
     lines,
+    changedSinceCounted,
     uncounted,
     totalInScope: scoped.length,
     matching: lines.length - missing.length - excess.length,

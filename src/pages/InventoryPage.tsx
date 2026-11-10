@@ -17,6 +17,8 @@ import { inputClass } from '../ui/Fields';
 import { cn } from '../ui/cn';
 import { useDialogs } from './dialogs/DialogHub';
 import { useToast } from '../ui/Toast';
+import { DeviceNotice } from './DeviceNotice';
+import { plural, pluralWord } from '../domain/format';
 
 const SORTS = {
   newest: 'Newest first',
@@ -105,13 +107,14 @@ export function InventoryPage() {
 
   const exportCsv = () => {
     downloadText(`stockpilot-${dataset === 'demo' ? 'demo-' : ''}inventory-${fileStamp()}.csv`, inventoryCsv(data.items));
-    toast.success(`Exported ${data.items.length} items to CSV.`);
+    toast.success(`Exported ${plural(data.items.length, 'item')} to CSV.`);
   };
 
   if (data.items.length === 0) {
     return (
       <>
         <PageHeader title={title} />
+        <DeviceNotice />
         <Card>
           <EmptyState
             icon={<Boxes className="size-6" />}
@@ -138,7 +141,7 @@ export function InventoryPage() {
     <>
       <PageHeader
         title={title}
-        description={`${data.items.length} ${data.items.length === 1 ? 'item' : 'items'} · ${data.items.reduce((n, i) => n + i.quantity, 0)} units on hand`}
+        description={`${plural(data.items.length, 'item')} · ${plural(data.items.reduce((n, i) => n + i.quantity, 0), 'unit')} on hand`}
         actions={
           <>
             <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} className="hidden sm:inline-flex">
@@ -183,16 +186,22 @@ export function InventoryPage() {
             ))}
           </div>
         </div>
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <FilterSelect label="Status" value={status} onChange={(v) => setParam('status', v)} options={Object.entries(STATUSES).map(([k, l]) => [k, l])} />
           <FilterSelect label="Category" value={category} onChange={(v) => setParam('category', v)} options={[['', 'All categories'], ...categories.map((c) => [c, c])]} />
           <FilterSelect label="Location" value={location} onChange={(v) => setParam('location', v)} options={[['', 'All locations'], ...locations.map((c) => [c, c])]} />
           {conditions.length > 0 && (
             <FilterSelect label="Condition" value={condition} onChange={(v) => setParam('condition', v)} options={[['', 'Any condition'], ...conditions.map((c) => [c, c])]} />
           )}
-          <FilterSelect label="Sort" value={sort} onChange={(v) => setParam('sort', v)} options={Object.entries(SORTS).map(([k, l]) => [k, l])} />
+          <FilterSelect
+            label="Sort"
+            value={sort}
+            onChange={(v) => setParam('sort', v)}
+            options={Object.entries(SORTS).map(([k, l]) => [k, l])}
+            className={conditions.length > 0 ? 'col-span-2' : undefined}
+          />
           {activeFilters > 0 && (
-            <Button variant="ghost" size="sm" className="h-9 shrink-0" icon={<X className="size-4" />} onClick={() => {
+            <Button variant="ghost" size="sm" className="col-span-2 h-9 shrink-0 justify-self-start" icon={<X className="size-4" />} onClick={() => {
                 const current = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('sort');
                 setParams(current ? { sort: current } : {}, { replace: true });
               }}>
@@ -201,7 +210,12 @@ export function InventoryPage() {
           )}
         </div>
         <p className="text-sm text-ink-2" data-testid="result-count" aria-live="polite">
-          {results.length === data.items.length ? `Showing all ${results.length} items` : `${results.length} of ${data.items.length} items match`} · {totalUnits} units
+          {results.length === data.items.length
+            ? results.length === 1
+              ? 'Showing 1 item'
+              : `Showing all ${plural(results.length, 'item')}`
+            : `${results.length} of ${plural(data.items.length, 'item')} ${pluralWord(results.length, 'matches', 'match')}`}{' '}
+          · {plural(totalUnits, 'unit')}
         </p>
       </div>
 
@@ -212,14 +226,15 @@ export function InventoryPage() {
           </EmptyState>
         </Card>
       ) : view === 'grid' ? (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" data-testid="inventory-grid">
+        // Bottom padding lets the last cards scroll clear of the floating Add button on phones.
+        <ul className="grid grid-cols-2 gap-3 pb-24 sm:grid-cols-3 lg:grid-cols-4 lg:pb-0" data-testid="inventory-grid">
           {results.map((item) => (
             <li key={item.id}>
               <Link to={`/inventory/${item.id}`} className="group block overflow-hidden rounded-2xl border border-line bg-surface shadow-card transition-shadow hover:shadow-pop" data-testid="inventory-item">
                 <div className="relative aspect-square overflow-hidden bg-surface-2">
                   <ItemThumb photoId={item.photoIds[0]} name={item.name} className="size-full transition-transform group-hover:scale-[1.02]" />
                   <div className="absolute top-2 left-2">
-                    <StatusBadge item={item} />
+                    <StatusBadge item={item} onImage />
                   </div>
                 </div>
                 <div className="p-3">
@@ -235,7 +250,7 @@ export function InventoryPage() {
           ))}
         </ul>
       ) : (
-        <Card className="overflow-hidden" data-testid="inventory-list">
+        <Card className="mb-24 overflow-hidden lg:mb-0" data-testid="inventory-list">
           <table className="w-full text-sm">
             <thead className="hidden bg-surface-2 text-left text-xs text-ink-2 md:table-header-group">
               <tr>
@@ -279,7 +294,7 @@ export function InventoryPage() {
           </table>
         </Card>
       )}
-      <div className="fixed right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-20 lg:hidden">
+      <div className="fixed right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-20 lg:hidden" data-testid="fab-add-item">
         <IconButton label="Add item" onClick={dialogs.addItem} className="size-14 rounded-2xl bg-accent text-white shadow-pop hover:bg-accent-hover hover:text-white">
           <PackagePlus className="size-6" />
         </IconButton>
@@ -293,24 +308,30 @@ function priceLabel(item: Item, mode: string, money: (n: number) => string): str
   return item.askingPrice !== null ? money(item.askingPrice) : `Cost ${money(item.unitCost)}`;
 }
 
-export function StatusBadge({ item }: { item: Item }) {
+export function StatusBadge({ item, onImage }: { item: Item; onImage?: boolean }) {
   const s = stockStatus(item);
-  if (s === 'out') return <Badge tone={item.lowStockThreshold !== null ? 'bad' : 'neutral'}>{item.lowStockThreshold !== null ? 'Out of stock' : 'Sold out'}</Badge>;
-  if (s === 'low') return <Badge tone="warn">Low stock</Badge>;
-  return <Badge tone="good">In stock</Badge>;
+  if (s === 'out') {
+    return (
+      <Badge tone={item.lowStockThreshold !== null ? 'bad' : 'neutral'} onImage={onImage}>
+        {item.lowStockThreshold !== null ? 'Out of stock' : 'Sold out'}
+      </Badge>
+    );
+  }
+  if (s === 'low') return <Badge tone="warn" onImage={onImage}>Low stock</Badge>;
+  return <Badge tone="good" onImage={onImage}>In stock</Badge>;
 }
 
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[][] }) {
+function FilterSelect({ label, value, onChange, options, className }: { label: string; value: string; onChange: (v: string) => void; options: string[][]; className?: string }) {
   const active = value !== '' && value !== 'all' && value !== 'newest';
   return (
-    <label className="relative shrink-0">
+    <label className={cn('relative min-w-0 shrink-0', className)}>
       <span className="sr-only">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
         className={cn(
-          'h-9 appearance-none rounded-xl border pr-8 pl-3 text-sm font-medium outline-none focus:border-accent',
+          'h-9 w-full appearance-none truncate rounded-xl border pr-8 pl-3 text-sm font-medium outline-none focus:border-accent sm:w-auto',
           active ? 'border-accent bg-accent-soft text-accent-text' : 'border-line-strong bg-surface text-ink',
         )}
       >
