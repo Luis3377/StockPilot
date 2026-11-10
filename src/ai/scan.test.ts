@@ -106,12 +106,23 @@ describe('suggestionToFields', () => {
     expect(rescanned.values.name).toBe('Nike Air Force 1 07');
   });
 
+  it('empties earlier AI suggestions the new scan has nothing for, but keeps typed values', () => {
+    const current = { name: 'Nike Air Force 1 Low White', category: 'Sneakers', condition: 'Worn twice', notes: 'old AI notes' };
+    const unrecognized = result({ status: 'unrecognized', name: null, brand: null, model: null, category: null, description: null, condition: 'unknown', conditionNotes: null });
+    const fill = suggestionToFields(unrecognized, current, new Set(['name', 'category', 'notes']), []);
+    expect(fill.filled).toEqual([]);
+    expect(fill.cleared).toEqual(['name', 'category', 'notes']);
+    expect(fill.values).toEqual({ name: '', category: '', notes: '' });
+    // Condition was typed by the user, so it is left alone.
+    expect(fill.values).not.toHaveProperty('condition');
+  });
+
   it('reuses existing category spelling and leaves unknowns blank', () => {
     const fill = suggestionToFields(result({ category: 'sneakers', condition: 'unknown', conditionNotes: null }), empty, new Set(), ['Sneakers', 'Tools']);
     expect(fill.values.category).toBe('Sneakers');
     expect(fill.values).not.toHaveProperty('condition');
     const unknown = suggestionToFields(parseScanResult({ status: 'unrecognized', condition: 'unknown', confidence: 'low' }), empty, new Set(), []);
-    expect(unknown).toEqual({ values: {}, filled: [] });
+    expect(unknown).toEqual({ values: {}, filled: [], cleared: [] });
   });
 
   it('puts the brand in the name when the model left it out', () => {

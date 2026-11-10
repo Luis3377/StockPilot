@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, FlaskConical, HardDrive, Package, Sparkles, Store, Tag } from 'lucide-react';
 import { store } from '../data/store';
 import { MODES } from '../lib/modes';
+import { scannerEnabled } from '../ai/config';
 import type { UserMode } from '../domain/types';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
@@ -87,7 +88,7 @@ export function Onboarding() {
               <div className="text-sm text-ink-2">
                 <p className="font-medium text-ink">Your inventory is stored only on this device, in this browser.</p>
                 <p className="mt-1">
-                  Nothing is uploaded and no account is needed. That also means <strong className="text-ink">clearing your browser data, or using a different browser or device, won’t show your records</strong>. Download a
+                  Your records aren’t uploaded and no account is needed{scannerEnabled ? ' (only photos you choose to scan with AI are sent for analysis)' : ''}. That also means <strong className="text-ink">clearing your browser data, or using a different browser or device, won’t show your records</strong>. Download a
                   backup from Settings now and then to keep them safe.
                 </p>
               </div>

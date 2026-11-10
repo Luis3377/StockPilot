@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Download, FileUp, LayoutGrid, List, PackagePlus, Search, SearchX, X, Boxes } from 'lucide-react';
+import { Boxes, Download, FileUp, LayoutGrid, List, PackagePlus, Search, SearchX, Sparkles, X } from 'lucide-react';
 import { acquiredDate, itemCostValue, knownCategories, knownLocations, stockStatus, uniqueSorted, daysWithoutSale } from '../domain/calc';
 import { todayISO } from '../domain/dates';
 import type { Item } from '../domain/types';
@@ -18,6 +18,7 @@ import { cn } from '../ui/cn';
 import { useDialogs } from './dialogs/DialogHub';
 import { useToast } from '../ui/Toast';
 import { DeviceNotice } from './DeviceNotice';
+import { scannerEnabled } from '../ai/config';
 import { plural, pluralWord } from '../domain/format';
 
 const SORTS = {
@@ -124,6 +125,11 @@ export function InventoryPage() {
                 <Button variant="primary" icon={<PackagePlus className="size-4" />} onClick={dialogs.addItem}>
                   Add your first item
                 </Button>
+                {scannerEnabled && (
+                  <Button icon={<Sparkles className="size-4" />} onClick={dialogs.scanItem}>
+                    Scan with AI
+                  </Button>
+                )}
                 <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv}>
                   Import CSV
                 </Button>
@@ -150,6 +156,11 @@ export function InventoryPage() {
             <Button icon={<Download className="size-4" />} onClick={exportCsv}>
               Export
             </Button>
+            {scannerEnabled && (
+              <Button icon={<Sparkles className="size-4" />} onClick={dialogs.scanItem}>
+                Scan with AI
+              </Button>
+            )}
             <Button variant="primary" icon={<PackagePlus className="size-4" />} onClick={dialogs.addItem}>
               Add item
             </Button>

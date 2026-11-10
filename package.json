@@ -2,17 +2,19 @@
   "name": "stockpilot",
   "private": true,
   "version": "0.1.0",
-  "description": "StockPilot — know what you own, know what it's worth, and know what you're making.",
+  "description": "StockPilot \u2014 know what you own, know what it's worth, and know what you're making.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:scan-preview": "tsc -b && vite build --mode scanpreview --outDir dist-scan-preview",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build",
+    "test:worker": "npm --prefix worker test"
   },
   "dependencies": {
     "lucide-react": "1.63.0",

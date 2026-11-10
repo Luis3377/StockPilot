@@ -42,12 +42,16 @@ export function suggestedNotes(result: ScanResult): string | null {
 
 export interface ScanFill {
   values: Partial<Record<ScanFillableField, string>>;
+  /** Fields set from this scan. */
   filled: ScanFillableField[];
+  /** Fields an earlier scan filled that this scan has nothing for. They are emptied, so one photo's details never mix with another's. */
+  cleared: ScanFillableField[];
 }
 
 /**
  * Decides which form fields to fill from a scan. A field is filled only when it is empty or
- * was filled by an earlier scan, so nothing the user typed is overwritten. Categories reuse
+ * was filled by an earlier scan, so nothing the user typed is overwritten. The latest scan
+ * replaces every earlier AI suggestion, emptying ones it has no value for. Categories reuse
  * the spelling already in the inventory ("sneakers" → "Sneakers").
  */
 export function suggestionToFields(
@@ -64,12 +68,18 @@ export function suggestionToFields(
   };
   const values: Partial<Record<ScanFillableField, string>> = {};
   const filled: ScanFillableField[] = [];
+  const cleared: ScanFillableField[] = [];
   for (const field of SCAN_FILLABLE_FIELDS) {
     const suggestion = suggestions[field];
-    if (!suggestion) continue;
-    if (current[field].trim() !== '' && !aiFilled.has(field)) continue;
-    values[field] = suggestion;
-    filled.push(field);
+    const typedByUser = current[field].trim() !== '' && !aiFilled.has(field);
+    if (typedByUser) continue;
+    if (suggestion) {
+      values[field] = suggestion;
+      filled.push(field);
+    } else if (aiFilled.has(field)) {
+      values[field] = '';
+      cleared.push(field);
+    }
   }
-  return { values, filled };
+  return { values, filled, cleared };
 }

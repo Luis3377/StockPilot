@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Boxes, Clock, FileUp, FlaskConical, PackagePlus, Receipt, TrendingDown } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Boxes, Clock, FileUp, FlaskConical, PackagePlus, Receipt, Sparkles, TrendingDown } from 'lucide-react';
 import { computeSale, daysWithoutSale, itemCostValue, salesByCategory, salesByMonth } from '../../domain/calc';
 import { formatDate, formatMonth, todayISO } from '../../domain/dates';
 import { formatPercent } from '../../domain/money';
@@ -12,6 +12,7 @@ import { Button } from '../../ui/Button';
 import { ItemThumb } from '../../ui/Photo';
 import { useDialogs } from '../dialogs/DialogHub';
 import { useToast } from '../../ui/Toast';
+import { scannerEnabled } from '../../ai/config';
 import { plural, pluralWord } from '../../domain/format';
 
 export function MonthlyTrend({ sales, months = 6 }: { sales: Sale[]; months?: number }) {
@@ -181,6 +182,11 @@ export function GetStarted() {
             <Button variant="primary" size="lg" icon={<PackagePlus className="size-5" />} onClick={dialogs.addItem}>
               Add your first item
             </Button>
+            {scannerEnabled && (
+              <Button size="lg" icon={<Sparkles className="size-5" />} onClick={dialogs.scanItem}>
+                Scan with AI
+              </Button>
+            )}
             <Button size="lg" icon={<FileUp className="size-5" />} onClick={dialogs.importCsv}>
               Import a spreadsheet
             </Button>

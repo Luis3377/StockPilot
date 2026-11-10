@@ -20,6 +20,8 @@ import { useConfirm } from '../ui/Confirm';
 import { useToast } from '../ui/Toast';
 import { cn } from '../ui/cn';
 import { useDialogs } from './dialogs/DialogHub';
+import { ScannerSettings } from './ScannerSettings';
+import { scannerEnabled } from '../ai/config';
 import { plural, pluralWord } from '../domain/format';
 
 function Section({ id, title, description, children }: { id?: string; title: string; description?: ReactNode; children: ReactNode }) {
@@ -299,6 +301,8 @@ export function SettingsPage() {
           </div>
         </Section>
 
+        {scannerEnabled && <ScannerSettings />}
+
         <Section title="Demo mode" description="Explore StockPilot with clearly labeled sample inventory. Demo data is stored separately and never mixes with your real records.">
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -354,7 +358,7 @@ export function SettingsPage() {
           <div className="space-y-2 text-sm text-ink-2">
             <p>Version {__APP_VERSION__} · Early prototype</p>
             <p>
-              <strong className="text-ink">Smart Insights are rule-based.</strong> They are calculated from your recorded data using fixed, explainable rules. No AI model is used, and your data never leaves this device.
+              <strong className="text-ink">Smart Insights are rule-based.</strong> They are calculated from your recorded data using fixed, explainable rules. No AI model is used for insights, and your records never leave this device{scannerEnabled ? ' (only photos you choose to analyze with the AI scanner are sent, as described above)' : ''}.
             </p>
             <p>This prototype has no accounts or cloud sync. Before a public launch, secure accounts, private per-user cloud storage and automatic backups will be added.</p>
           </div>
