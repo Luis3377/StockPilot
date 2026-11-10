@@ -186,16 +186,22 @@ export function InventoryPage() {
             ))}
           </div>
         </div>
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <FilterSelect label="Status" value={status} onChange={(v) => setParam('status', v)} options={Object.entries(STATUSES).map(([k, l]) => [k, l])} />
           <FilterSelect label="Category" value={category} onChange={(v) => setParam('category', v)} options={[['', 'All categories'], ...categories.map((c) => [c, c])]} />
           <FilterSelect label="Location" value={location} onChange={(v) => setParam('location', v)} options={[['', 'All locations'], ...locations.map((c) => [c, c])]} />
           {conditions.length > 0 && (
             <FilterSelect label="Condition" value={condition} onChange={(v) => setParam('condition', v)} options={[['', 'Any condition'], ...conditions.map((c) => [c, c])]} />
           )}
-          <FilterSelect label="Sort" value={sort} onChange={(v) => setParam('sort', v)} options={Object.entries(SORTS).map(([k, l]) => [k, l])} />
+          <FilterSelect
+            label="Sort"
+            value={sort}
+            onChange={(v) => setParam('sort', v)}
+            options={Object.entries(SORTS).map(([k, l]) => [k, l])}
+            className={conditions.length > 0 ? 'col-span-2' : undefined}
+          />
           {activeFilters > 0 && (
-            <Button variant="ghost" size="sm" className="h-9 shrink-0" icon={<X className="size-4" />} onClick={() => {
+            <Button variant="ghost" size="sm" className="col-span-2 h-9 shrink-0 justify-self-start" icon={<X className="size-4" />} onClick={() => {
                 const current = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('sort');
                 setParams(current ? { sort: current } : {}, { replace: true });
               }}>
@@ -315,17 +321,17 @@ export function StatusBadge({ item, onImage }: { item: Item; onImage?: boolean }
   return <Badge tone="good" onImage={onImage}>In stock</Badge>;
 }
 
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[][] }) {
+function FilterSelect({ label, value, onChange, options, className }: { label: string; value: string; onChange: (v: string) => void; options: string[][]; className?: string }) {
   const active = value !== '' && value !== 'all' && value !== 'newest';
   return (
-    <label className="relative shrink-0">
+    <label className={cn('relative min-w-0 shrink-0', className)}>
       <span className="sr-only">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
         className={cn(
-          'h-9 appearance-none rounded-xl border pr-8 pl-3 text-sm font-medium outline-none focus:border-accent',
+          'h-9 w-full appearance-none truncate rounded-xl border pr-8 pl-3 text-sm font-medium outline-none focus:border-accent sm:w-auto',
           active ? 'border-accent bg-accent-soft text-accent-text' : 'border-line-strong bg-surface text-ink',
         )}
       >

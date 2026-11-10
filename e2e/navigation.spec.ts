@@ -88,3 +88,23 @@ test('mobile layout uses bottom tabs and never scrolls sideways', async ({ page 
   const tabs = page.getByRole('navigation', { name: 'Main' }).getByRole('link');
   await expect(tabs).toHaveCount(6);
 });
+
+test('on phones the date-range tabs and inventory filters are all on screen', async ({ page }) => {
+  test.skip(!isMobile(page), 'phone-only layout');
+  await onboard(page, 'Reseller', true);
+  const width = page.viewportSize()!.width;
+  const onScreen = async (locator: import('@playwright/test').Locator) => {
+    const box = (await locator.boundingBox())!;
+    expect(box.x, 'starts on screen').toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, 'ends on screen').toBeLessThanOrEqual(width);
+  };
+  for (const label of ['This month', 'Last 30 days', 'Last 90 days', 'This year', 'All time']) {
+    await onScreen(page.getByRole('radio', { name: label }));
+  }
+  await nav(page, 'Inventory');
+  await expect(page.getByTestId('inventory-item').first()).toBeVisible();
+  for (const label of ['Status', 'Category', 'Location', 'Condition', 'Sort']) {
+    await onScreen(page.getByLabel(label, { exact: true }));
+  }
+  await noHorizontalOverflow(page);
+});
