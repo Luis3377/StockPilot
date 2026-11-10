@@ -124,6 +124,8 @@ test('demo data is clearly labeled and kept separate from real data', async ({ p
   await nav(page, 'Settings');
   await page.getByRole('button', { name: 'Try demo mode' }).click();
   await expect(page.getByTestId('demo-banner')).toContainText('Demo mode');
+  await nav(page, 'Overview');
+  await expect(page.getByTestId('device-notice')).toHaveCount(0);
   await nav(page, 'Inventory');
   await expect(page.getByTestId('inventory-item').first()).toBeVisible();
   await expect(page.getByText('My real item')).toHaveCount(0);
@@ -138,4 +140,22 @@ test('demo data is clearly labeled and kept separate from real data', async ({ p
   await expect(page.getByTestId('demo-banner')).toHaveCount(0);
   await expect(page.getByTestId('inventory-item')).toHaveCount(1);
   await expect(page.getByTestId('inventory-item')).toContainText('My real item');
+});
+
+test('a one-time notice explains that data stays in this browser', async ({ page }) => {
+  await onboard(page, 'Reseller');
+  const notice = page.getByTestId('device-notice');
+  await expect(notice).toContainText('Your data lives only in this browser. To move it to another device, use Download backup here and Restore on the other device.');
+  await notice.getByRole('link', { name: 'Go to Backup & restore' }).click();
+  await expect(page).toHaveURL(/#\/settings#backup$/);
+  await expect(page.getByRole('button', { name: 'Download backup' })).toBeInViewport();
+
+  // Shown on the empty inventory screen too, until dismissed.
+  await nav(page, 'Inventory');
+  await page.getByTestId('device-notice').getByRole('button', { name: 'Got it' }).click();
+  await expect(page.getByTestId('device-notice')).toHaveCount(0);
+  await page.reload();
+  await nav(page, 'Overview');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.getByTestId('device-notice')).toHaveCount(0);
 });

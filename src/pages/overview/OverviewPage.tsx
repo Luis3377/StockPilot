@@ -16,6 +16,7 @@ import { ItemThumb } from '../../ui/Photo';
 import { Badge } from '../../ui/Badge';
 import { useDialogs } from '../dialogs/DialogHub';
 import { AlertStrip, CategoryProfit, GetStarted, MonthlyTrend, RecentSales, SlowMovers } from './widgets';
+import { DeviceNotice } from '../DeviceNotice';
 import { plural, pluralWord } from '../../domain/format';
 
 const PERIOD_KEYS = PERIOD_OPTIONS.map((p) => p.key);
@@ -53,6 +54,7 @@ export function OverviewPage() {
           )
         }
       />
+      <DeviceNotice />
       {data.items.length === 0 && data.sales.length === 0 ? (
         <GetStarted />
       ) : settings.mode === 'collector' ? (

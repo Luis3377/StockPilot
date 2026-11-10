@@ -17,6 +17,7 @@ import { inputClass } from '../ui/Fields';
 import { cn } from '../ui/cn';
 import { useDialogs } from './dialogs/DialogHub';
 import { useToast } from '../ui/Toast';
+import { DeviceNotice } from './DeviceNotice';
 import { plural, pluralWord } from '../domain/format';
 
 const SORTS = {
@@ -113,6 +114,7 @@ export function InventoryPage() {
     return (
       <>
         <PageHeader title={title} />
+        <DeviceNotice />
         <Card>
           <EmptyState
             icon={<Boxes className="size-6" />}

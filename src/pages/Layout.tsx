@@ -161,8 +161,10 @@ export function Layout() {
   const location = useLocation();
 
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [location.pathname]);
+    // Links to a section (e.g. /settings#backup) scroll themselves; this parent effect runs
+    // after the page's own, so it must not jump back to the top.
+    if (!location.hash) window.scrollTo(0, 0);
+  }, [location.pathname, location.hash]);
 
   return (
     <div className="min-h-dvh">

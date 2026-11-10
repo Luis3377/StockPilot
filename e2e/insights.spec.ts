@@ -29,6 +29,9 @@ test('insights explain when there is not enough data', async ({ page }) => {
   await nav(page, 'Smart Insights');
   await expect(page.getByTestId('insight-low-stock')).toContainText('No items have a low-stock alert level yet');
   await expect(page.getByTestId('insight-top-revenue')).toContainText('No sales recorded yet.');
+  await page.getByRole('link', { name: 'Adjust thresholds' }).click();
+  await expect(page.getByText('Slow-moving after')).toBeInViewport();
+  await nav(page, 'Smart Insights');
   await page.getByTestId('assistant').getByRole('button', { name: 'How much profit have I made this month?' }).click();
   await expect(page.getByTestId('assistant-answer')).toContainText("haven't recorded any sales");
 });

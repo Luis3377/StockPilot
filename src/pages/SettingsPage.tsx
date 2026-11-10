@@ -265,7 +265,7 @@ export function SettingsPage() {
             </div>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <ActionGroup title="Backup & restore" icon={<Database className="size-4" />}>
+            <ActionGroup id="backup" title="Backup & restore" icon={<Database className="size-4" />}>
               <Button variant="primary" icon={<Download className="size-4" />} onClick={() => void backup()} loading={busy}>
                 Download backup
               </Button>
@@ -364,9 +364,9 @@ export function SettingsPage() {
   );
 }
 
-function ActionGroup({ title, icon, children, wide }: { title: string; icon: ReactNode; children: ReactNode; wide?: boolean }) {
+function ActionGroup({ id, title, icon, children, wide }: { id?: string; title: string; icon: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
-    <div className={cn('rounded-2xl border border-line p-4', wide && 'md:col-span-2')}>
+    <div id={id} className={cn('scroll-mt-24 rounded-2xl border border-line p-4', wide && 'md:col-span-2')}>
       <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
         <span className="text-muted">{icon}</span>
         {title}
