@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Boxes, ClipboardCheck, DollarSign, Gem, Package, PackagePlus, Receipt, ShoppingBag, TrendingUp, Wallet } from 'lucide-react';
-import { categoryLabel, inventoryTotals, isLowStock, mostCommon, nameKey, projectUnsold, salesByItem, salesInRange, totalSales } from '../../domain/calc';
+import { categoryLabel, inventoryTotals, isLowStock, mostCommon, nameKey, projectUnsold, salesByItem, salesInRange, splitDiscrepancies, totalSales } from '../../domain/calc';
 import { formatDate, periodRange, PERIOD_OPTIONS, previousPeriodRange, todayISO, type PeriodKey } from '../../domain/dates';
 import { formatNumber, formatPercent } from '../../domain/money';
 import { useAppState } from '../../data/store';
@@ -311,8 +311,8 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
   const inv = inventoryTotals(data.items);
   const lowItems = data.items.filter((i) => isLowStock(i)).sort((a, b) => a.quantity - b.quantity);
   const topProducts = salesByItem(sales).sort((a, b) => b.netProfit - a.netProfit).slice(0, 5);
-  const shrink = report.discrepancies.findings.reduce((s, f) => s + f.adjustment.valueDifference, 0);
-  const lastCount = data.countHistory[data.countHistory.length - 1];
+  const { missing, extra } = splitDiscrepancies(report.discrepancies.findings.map((f) => f.adjustment));
+  const lastCountText = lastCountLabel(data.countHistory[data.countHistory.length - 1]?.completedAt);
 
   return (
     <>
@@ -350,9 +350,9 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
           />
           <StatTile
             label="Discrepancies (90 days)"
-            value={money(shrink)}
-            tone={shrink < 0 ? 'bad' : 'default'}
-            sub={lastCount ? `Last count ${formatDate(lastCount.completedAt)}` : 'No physical count yet'}
+            value={missing < 0 ? `${money(missing)} missing` : 'Nothing missing'}
+            tone={missing < 0 ? 'bad' : 'default'}
+            sub={extra > 0 ? `+${money(extra)} extra found · ${lastCountText}` : lastCountText}
             icon={<ClipboardCheck className="size-4" />}
             testId="stat-discrepancy"
           />
@@ -400,6 +400,10 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
       </div>
     </>
   );
+}
+
+function lastCountLabel(completedAt: string | undefined): string {
+  return completedAt ? `Last count ${formatDate(completedAt)}` : 'No physical count yet';
 }
 
 function ViewAll({ to }: { to: string }) {

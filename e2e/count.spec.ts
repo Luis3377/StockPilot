@@ -72,3 +72,26 @@ test('a count can be discarded without changing inventory', async ({ page }) => 
   await openItem(page, 'Lone item');
   await expect(page.getByTestId('item-quantity')).toHaveText('2');
 });
+
+test('the Overview shows missing stock on its own, with extras in the small text', async ({ page }) => {
+  await onboard(page, 'Small business');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await addItem(page, { name: 'Hoodie', quantity: 4, cost: '18' });
+  await addItem(page, { name: 'Mug', quantity: 6, cost: '3.25' });
+  await expect(page.getByTestId('stat-discrepancy-value')).toHaveText('Nothing missing');
+  await expect(page.getByTestId('stat-discrepancy')).toContainText('No physical count yet');
+
+  await nav(page, 'Count Check');
+  await page.getByRole('button', { name: 'Start counting 2 items' }).click();
+  await page.getByLabel('Counted quantity for Hoodie').fill('5');
+  await page.getByLabel('Counted quantity for Hoodie').press('Enter');
+  await page.getByLabel('Counted quantity for Mug').fill('4');
+  await page.getByLabel('Counted quantity for Mug').press('Enter');
+  await page.getByRole('button', { name: 'Review & finish' }).click();
+  await page.getByTestId('count-review').getByRole('button', { name: 'Apply 2 adjustments & finish' }).click();
+  await expect(page.getByText('Past counts')).toBeVisible();
+
+  await nav(page, 'Overview');
+  await expect(page.getByTestId('stat-discrepancy-value')).toHaveText('-$6.50 missing');
+  await expect(page.getByTestId('stat-discrepancy')).toContainText('+$18.00 extra found · Last count');
+});

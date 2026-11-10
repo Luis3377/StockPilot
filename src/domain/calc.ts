@@ -1,4 +1,4 @@
-import type { AppData, Item, PriceMode, Sale, Settings } from './types';
+import type { Adjustment, AppData, Item, PriceMode, Sale, Settings } from './types';
 import { multiplyMoney, percent, roundMoney, sumMoney, toCents, fromCents } from './money';
 import { daysBetween, inRange, monthKey, todayISO, type DateRange } from './dates';
 
@@ -340,6 +340,17 @@ export function projectUnsold(items: Item[], sales: Sale[], settings: Pick<Setti
     itemsIncluded: priced.length,
     itemsExcluded: inStock.length - priced.length,
     rate,
+  };
+}
+
+/**
+ * Splits quantity corrections into value missing (negative) and extra found (positive), so a
+ * gain never hides a loss in a single net number.
+ */
+export function splitDiscrepancies(adjustments: Pick<Adjustment, 'valueDifference'>[]): { missing: number; extra: number } {
+  return {
+    missing: sumMoney(adjustments.filter((a) => a.valueDifference < 0).map((a) => a.valueDifference)),
+    extra: sumMoney(adjustments.filter((a) => a.valueDifference > 0).map((a) => a.valueDifference)),
   };
 }
 

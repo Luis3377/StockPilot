@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkPrice, computeSale, convertSalePrice, inventoryTotals, projectUnsold, salesByCategory, salesByMonth, salesByPlatform, sellingCostRate, totalSales, daysWithoutSale } from './calc';
+import { checkPrice, splitDiscrepancies, computeSale, convertSalePrice, inventoryTotals, projectUnsold, salesByCategory, salesByMonth, salesByPlatform, sellingCostRate, totalSales, daysWithoutSale } from './calc';
 import { recordSale } from './actions';
 import { clock, withItem } from './testUtils';
 
@@ -138,5 +138,14 @@ describe('grouping ignores capitalization and spacing', () => {
     const [sale] = mixedSales();
     expect(salesByPlatform([{ ...sale, platform: '  ' }])[0].label).toBe('Unspecified');
     expect(salesByCategory([{ ...sale, itemCategory: '' }])[0].label).toBe('Uncategorized');
+  });
+});
+
+describe('splitDiscrepancies', () => {
+  it('keeps missing and extra value apart instead of netting them', () => {
+    // 1 extra hoodie (+$18) and 2 missing mugs at $3.25 (−$6.50).
+    expect(splitDiscrepancies([{ valueDifference: 18 }, { valueDifference: -6.5 }])).toEqual({ missing: -6.5, extra: 18 });
+    expect(splitDiscrepancies([{ valueDifference: -0.1 }, { valueDifference: -0.2 }])).toEqual({ missing: -0.3, extra: 0 });
+    expect(splitDiscrepancies([])).toEqual({ missing: 0, extra: 0 });
   });
 });
