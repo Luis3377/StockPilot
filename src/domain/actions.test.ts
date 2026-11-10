@@ -61,6 +61,18 @@ describe('items', () => {
     expect(corrected.data.adjustments).toHaveLength(0);
   });
 
+  it('saves a category with the spelling already in use', () => {
+    let { data } = withItem({ category: 'Home' });
+    const second = addItem(data, { name: 'Lamp', quantity: 1, unitCost: 1, category: ' home ' });
+    expect(second.item.category).toBe('Home');
+    data = second.data;
+    const third = addItem(data, { name: 'Vase', quantity: 1, unitCost: 1, category: 'Garden' });
+    expect(third.item.category).toBe('Garden');
+    // An item can fix its own spelling when no other item uses the old one.
+    const only = withItem({ category: 'home' });
+    expect(updateItem(only.data, only.item.id, { name: 'x', quantity: 1, unitCost: 1, category: 'Home' }).item.category).toBe('Home');
+  });
+
   it('tracks estimated value history', () => {
     let { data, item } = withItem({ estimatedValue: 50 });
     expect(item.valueHistory).toEqual([{ date: '2026-10-28', value: 50 }]);
@@ -101,6 +113,16 @@ describe('sales', () => {
     expect(r.data.items[0].quantity).toBe(3);
     expect(r.sale).toMatchObject({ unitCost: 10, itemName: 'Test item', quantity: 2 });
     expect(totalSales(r.data.sales).netProfit).toBe(35);
+  });
+
+  it('saves a platform with the spelling already in use', () => {
+    let { data, item } = withItem({ quantity: 5 });
+    data = recordSale(data, sale(item.id, 1, { platform: 'eBay' })).data;
+    const second = recordSale(data, sale(item.id, 1, { platform: 'EBAY ' }));
+    expect(second.sale.platform).toBe('eBay');
+    // Editing the only sale on a platform can change its spelling.
+    const first = data.sales[0];
+    expect(updateSale(data, first.id, sale(item.id, 1, { platform: 'EBay' })).sale.platform).toBe('EBay');
   });
 
   it('never allows selling more than is in stock', () => {

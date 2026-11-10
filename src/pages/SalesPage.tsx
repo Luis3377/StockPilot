@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
 import { deleteSale } from '../domain/actions';
-import { computeSale, inventoryTotals, projectUnsold, salesByPlatform, salesInRange, totalSales, uniqueSorted } from '../domain/calc';
+import { computeSale, inventoryTotals, nameKey, platformLabel, projectUnsold, salesByPlatform, salesInRange, totalSales } from '../domain/calc';
 import { formatDate, periodRange, PERIOD_OPTIONS, todayISO, type PeriodKey } from '../domain/dates';
 import { formatPercent } from '../domain/money';
 import { store, useAppState } from '../data/store';
@@ -38,10 +38,10 @@ export function SalesPage() {
   const [q, setQ] = useState('');
 
   const range = periodRange(period, todayISO());
-  const platforms = useMemo(() => uniqueSorted(data.sales.map((s) => s.platform || 'Unspecified')), [data.sales]);
+  const platforms = useMemo(() => salesByPlatform(data.sales).map((g) => g.label).sort((a, b) => a.localeCompare(b)), [data.sales]);
   const inPeriod = salesInRange(data.sales, range);
   const filtered = inPeriod
-    .filter((s) => !platform || (s.platform || 'Unspecified') === platform)
+    .filter((s) => !platform || nameKey(platformLabel(s.platform)) === nameKey(platform))
     .filter((s) => !q.trim() || `${s.itemName} ${s.itemSku} ${s.platform} ${s.notes}`.toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => b.saleDate.localeCompare(a.saleDate) || b.createdAt.localeCompare(a.createdAt));
   const t = totalSales(filtered);

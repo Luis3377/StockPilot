@@ -98,27 +98,54 @@ export interface GroupTotals extends SalesTotals {
   label: string;
 }
 
+/** Key for free-text names, so "eBay", "ebay " and "EBAY" count as one platform. */
+export function nameKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** The most common spelling in a list (the first one seen on a tie). */
+export function mostCommon(values: Iterable<string>): string {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  let best = '';
+  let bestCount = 0;
+  for (const [v, n] of counts) {
+    if (n > bestCount) {
+      best = v;
+      bestCount = n;
+    }
+  }
+  return best;
+}
+
 function groupSales(sales: Sale[], keyOf: (s: Sale) => string, labelOf: (s: Sale) => string): GroupTotals[] {
-  const groups = new Map<string, { label: string; sales: Sale[] }>();
+  const groups = new Map<string, { labels: string[]; sales: Sale[] }>();
   for (const s of sales) {
     const key = keyOf(s);
     const g = groups.get(key);
-    if (g) g.sales.push(s);
-    else groups.set(key, { label: labelOf(s), sales: [s] });
+    if (g) {
+      g.sales.push(s);
+      g.labels.push(labelOf(s));
+    } else {
+      groups.set(key, { labels: [labelOf(s)], sales: [s] });
+    }
   }
-  return [...groups.entries()].map(([key, g]) => ({ key, label: g.label, ...totalSales(g.sales) }));
+  return [...groups.entries()].map(([key, g]) => ({ key, label: mostCommon(g.labels), ...totalSales(g.sales) }));
 }
 
 export function salesByItem(sales: Sale[]): GroupTotals[] {
   return groupSales(sales, (s) => s.itemId, (s) => s.itemName);
 }
 
+export const categoryLabel = (category: string) => category.trim() || 'Uncategorized';
+export const platformLabel = (platform: string) => platform.trim() || 'Unspecified';
+
 export function salesByCategory(sales: Sale[]): GroupTotals[] {
-  return groupSales(sales, (s) => s.itemCategory || 'Uncategorized', (s) => s.itemCategory || 'Uncategorized');
+  return groupSales(sales, (s) => nameKey(categoryLabel(s.itemCategory)), (s) => categoryLabel(s.itemCategory));
 }
 
 export function salesByPlatform(sales: Sale[]): GroupTotals[] {
-  return groupSales(sales, (s) => s.platform || 'Unspecified', (s) => s.platform || 'Unspecified');
+  return groupSales(sales, (s) => nameKey(platformLabel(s.platform)), (s) => platformLabel(s.platform));
 }
 
 /** Monthly totals for the last `months` months ending at `today`'s month, oldest first, zero-filled. */

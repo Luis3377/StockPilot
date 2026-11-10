@@ -42,6 +42,15 @@ describe('rule-based insights', () => {
     expect(report.discrepancies.findings[0].adjustment.reason).toContain('Damaged');
   });
 
+  it('shows one category row when spellings differ only in capitalization', () => {
+    let { data, item } = addItem(emptyData(), { name: 'Rug', quantity: 3, unitCost: 10, category: 'Home' });
+    for (let i = 0; i < 2; i++) data = recordSale(data, { itemId: item.id, quantity: 1, salePrice: 30, priceMode: 'per_unit', saleDate: '2026-10-20' }).data;
+    // Simulate a sale saved before spellings were matched.
+    data = { ...data, sales: data.sales.map((s, i) => (i === 1 ? { ...s, itemCategory: 'home' } : s)) };
+    const rows = buildInsights(data, settings, TODAY).categories.findings;
+    expect(rows.map((r) => r.group.label)).toEqual(['Home']);
+  });
+
   it('explains when there is not enough data', () => {
     const empty = buildInsights(emptyData(), settings, TODAY);
     expect(empty.lowStock.insufficient).toBeTruthy();

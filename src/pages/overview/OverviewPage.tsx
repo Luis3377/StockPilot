@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Boxes, ClipboardCheck, DollarSign, Gem, Package, PackagePlus, Receipt, ShoppingBag, TrendingUp, Wallet } from 'lucide-react';
-import { inventoryTotals, isLowStock, projectUnsold, salesByItem, salesInRange, totalSales } from '../../domain/calc';
+import { categoryLabel, inventoryTotals, isLowStock, mostCommon, nameKey, projectUnsold, salesByItem, salesInRange, totalSales } from '../../domain/calc';
 import { formatDate, periodRange, PERIOD_OPTIONS, previousPeriodRange, todayISO, type PeriodKey } from '../../domain/dates';
 import { formatNumber, formatPercent } from '../../domain/money';
 import { useAppState } from '../../data/store';
@@ -168,15 +168,18 @@ function CollectorOverview() {
   const gainPct = inv.estimatedCostBasis > 0 ? (gain / inv.estimatedCostBasis) * 100 : null;
   const inStock = data.items.filter((i) => i.quantity > 0);
   const snapshots = data.snapshots.slice(-60);
-  const valueByCategory = new Map<string, { value: number; count: number }>();
+  const valueByCategory = new Map<string, { labels: string[]; value: number; count: number }>();
   for (const i of inStock) {
-    const key = i.category || 'Uncategorized';
-    const v = valueByCategory.get(key) ?? { value: 0, count: 0 };
+    const key = nameKey(categoryLabel(i.category));
+    const v = valueByCategory.get(key) ?? { labels: [], value: 0, count: 0 };
+    v.labels.push(categoryLabel(i.category));
     v.value += (i.estimatedValue ?? i.unitCost) * i.quantity;
     v.count += i.quantity;
     valueByCategory.set(key, v);
   }
-  const categoryRows = [...valueByCategory.entries()].sort((a, b) => b[1].value - a[1].value);
+  const categoryRows = [...valueByCategory.values()]
+    .map((v): [string, { value: number; count: number }] => [mostCommon(v.labels), v])
+    .sort((a, b) => b[1].value - a[1].value);
   const topValued = [...inStock].sort((a, b) => (b.estimatedValue ?? b.unitCost) * b.quantity - (a.estimatedValue ?? a.unitCost) * a.quantity).slice(0, 5);
   const movers = inStock
     .filter((i) => i.estimatedValue !== null)

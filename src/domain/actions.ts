@@ -19,7 +19,7 @@ import { DomainError } from './errors';
 import { newId } from './ids';
 import { isValidISODate, todayISO } from './dates';
 import { fromCents, multiplyMoney, roundMoney, toCents } from './money';
-import { itemCostValue } from './calc';
+import { itemCostValue, mostCommon, nameKey } from './calc';
 
 export interface Clock {
   now: Date;
@@ -81,6 +81,17 @@ function optionalDate(value: string | null | undefined, field: string, label: st
   if (value === null || value === undefined || value.trim() === '') return null;
   if (!isValidISODate(value.trim())) throw new DomainError(`${label} must be a valid date.`, field);
   return value.trim();
+}
+
+/**
+ * Reuses the spelling already in use when `value` matches it apart from capitalization and
+ * spacing, so "ebay" typed today joins the existing "eBay" instead of starting a new group.
+ */
+export function existingSpelling(value: string, existing: Iterable<string>): string {
+  const key = nameKey(value);
+  if (!key) return value.trim();
+  const matches = [...existing].map((e) => e.trim()).filter((e) => nameKey(e) === key);
+  return matches.length ? mostCommon(matches) : value.trim();
 }
 
 function findItem(data: AppData, id: string): Item {
@@ -168,7 +179,10 @@ function normalizeItemInput(data: AppData, input: ItemInput, existingId: string 
   return {
     name,
     sku,
-    category: optionalText(input.category, 'category', 'Category', 80),
+    category: existingSpelling(optionalText(input.category, 'category', 'Category', 80), [
+      ...data.items.filter((i) => i.id !== existingId).map((i) => i.category),
+      ...data.sales.filter((s) => s.itemId !== existingId).map((s) => s.itemCategory),
+    ]),
     quantity: requireWholeNumber(input.quantity, 'quantity', 'Quantity'),
     unitCost: requireMoney(input.unitCost, 'unitCost', 'Cost per item', 4),
     askingPrice: optionalMoney(input.askingPrice, 'askingPrice', 'Asking price'),
@@ -328,7 +342,7 @@ export interface SaleInput {
   notes?: string;
 }
 
-function validateSaleFields(input: SaleInput) {
+function validateSaleFields(input: SaleInput, otherSales: Sale[]) {
   if (!input.itemId) throw new DomainError('Choose the item you sold.', 'itemId');
   if (input.priceMode !== 'per_unit' && input.priceMode !== 'total') {
     throw new DomainError('Choose whether the price is per item or the total.', 'priceMode');
@@ -339,7 +353,10 @@ function validateSaleFields(input: SaleInput) {
     quantity: requireWholeNumber(input.quantity, 'quantity', 'Quantity sold', 1),
     salePrice: requireMoney(input.salePrice, 'salePrice', 'Sale price'),
     priceMode: input.priceMode,
-    platform: optionalText(input.platform, 'platform', 'Platform', 80),
+    platform: existingSpelling(
+      optionalText(input.platform, 'platform', 'Platform', 80),
+      otherSales.map((s) => s.platform),
+    ),
     fees: requireMoney(input.fees ?? 0, 'fees', 'Marketplace fees'),
     shipping: requireMoney(input.shipping ?? 0, 'shipping', 'Shipping'),
     otherExpenses: requireMoney(input.otherExpenses ?? 0, 'otherExpenses', 'Other expenses'),
@@ -356,7 +373,7 @@ function overSellMessage(item: Item, available: number, requested: number): stri
 
 export function recordSale(data: AppData, input: SaleInput, clock?: Clock): { data: AppData; sale: Sale } {
   const { iso } = nowParts(clock);
-  const fields = validateSaleFields(input);
+  const fields = validateSaleFields(input, data.sales);
   const item = findItem(data, input.itemId);
   if (fields.quantity > item.quantity) {
     throw new DomainError(overSellMessage(item, item.quantity, fields.quantity), 'quantity');
@@ -387,7 +404,10 @@ export function updateSale(data: AppData, id: string, input: SaleInput, clock?: 
   const { iso } = nowParts(clock);
   const existing = data.sales.find((s) => s.id === id);
   if (!existing) throw new DomainError('That sale no longer exists.');
-  const fields = validateSaleFields(input);
+  const fields = validateSaleFields(
+    input,
+    data.sales.filter((s) => s.id !== id),
+  );
 
   let items = data.items;
   const originalItem = items.find((i) => i.id === existing.itemId);
