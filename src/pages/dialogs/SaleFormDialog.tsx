@@ -190,6 +190,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
   };
 
   const nothingToSell = !sale && sellable.length === 0;
+  const loses = preview.netProfit < 0 && preview.revenue > 0;
 
   return (
     <Dialog
@@ -200,6 +201,25 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
       size="lg"
       dismissOnBackdrop={false}
       testId="sale-form"
+      footerTop={
+        nothingToSell ? undefined : (
+          // Phones show the form in one column with the full breakdown at the bottom, so keep
+          // the bottom line next to the buttons.
+          <div
+            className={cn('mb-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 rounded-xl px-3 py-2 text-sm md:hidden', loses ? 'bg-bad-soft text-bad-text' : 'bg-surface-2 text-ink')}
+            aria-live="polite"
+            data-testid="sale-summary-mobile"
+          >
+            <span className="flex items-center gap-1.5">
+              {loses && <AlertTriangle className="size-4 shrink-0" aria-hidden />}
+              {loses ? 'This sale loses money' : 'Net profit'}
+            </span>{' '}
+            <span className="tabular shrink-0 font-semibold">
+              {money(preview.netProfit)} · {formatPercent(preview.margin, 0)} margin
+            </span>
+          </div>
+        )
+      }
       footer={
         nothingToSell ? (
           <Button onClick={onClose}>Close</Button>
@@ -335,7 +355,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
               <span>Margin {formatPercent(preview.margin)}</span>
               <span>ROI {formatPercent(preview.roi)}</span>
             </div>
-            {preview.netProfit < 0 && preview.revenue > 0 && (
+            {loses && (
               <p className="mt-3 flex gap-1.5 text-xs text-bad-text">
                 <AlertTriangle className="size-4 shrink-0" /> This sale loses money after costs.
               </p>
