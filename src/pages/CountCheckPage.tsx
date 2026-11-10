@@ -19,6 +19,7 @@ import { ItemThumb } from '../ui/Photo';
 import { useConfirm } from '../ui/Confirm';
 import { useToast } from '../ui/Toast';
 import { cn } from '../ui/cn';
+import { plural } from '../domain/format';
 
 const REASONS = ['Miscounted before', 'Damaged', 'Lost', 'Stolen', 'Sold but not recorded', 'Found extra', 'Received but not recorded', 'Other'];
 
@@ -97,9 +98,9 @@ function StartCount() {
                 variant="primary"
                 className="w-full"
                 disabled={(by !== 'all' && !value) || inScope === 0}
-                onClick={() => run(() => store.update((d) => startCount(d, scope)), `Count started for ${inScope} items.`)}
+                onClick={() => run(() => store.update((d) => startCount(d, scope)), `Count started for ${plural(inScope, 'item')}.`)}
               >
-                Start counting {inScope > 0 && `${inScope} ${inScope === 1 ? 'item' : 'items'}`}
+                Start counting {inScope > 0 && plural(inScope, 'item')}
               </Button>
             </div>
           </div>
@@ -122,7 +123,7 @@ function StartCount() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-ink">{formatDateTime(c.completedAt)}</p>
                       <p className="text-xs text-ink-2">
-                        {scopeLabel(c.scope)} · {c.lines.length} counted · {diffs.length} {diffs.length === 1 ? 'difference' : 'differences'} · {applied.length} applied ({money(net)})
+                        {scopeLabel(c.scope)} · {c.lines.length} counted · {plural(diffs.length, 'difference')} · {applied.length} applied ({money(net)})
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-1">
@@ -251,7 +252,10 @@ function ActiveCount() {
   const discard = async () => {
     const ok = await confirm({
       title: 'Discard this count?',
-      message: `The ${counted} counts you’ve entered will be thrown away. Inventory quantities are not changed.`,
+      message:
+        counted === 0
+          ? 'Nothing has been counted yet. Inventory quantities are not changed.'
+          : `The ${plural(counted, 'count')} you’ve entered will be thrown away. Inventory quantities are not changed.`,
       confirmLabel: 'Discard count',
     });
     if (ok) {
@@ -284,8 +288,8 @@ function ActiveCount() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="count-summary">
         <SummaryTile label="Counted" value={`${counted} / ${cmp.totalInScope}`} />
         <SummaryTile label="Matching" value={String(cmp.matching)} tone="good" />
-        <SummaryTile label="Missing" value={`${cmp.missingUnits} units`} sub={money(cmp.missingValue)} tone={cmp.missingUnits ? 'bad' : undefined} testId="count-missing" />
-        <SummaryTile label="Extra" value={`${cmp.excessUnits} units`} sub={money(cmp.excessValue)} tone={cmp.excessUnits ? 'warn' : undefined} testId="count-excess" />
+        <SummaryTile label="Missing" value={plural(cmp.missingUnits, 'unit')} sub={money(cmp.missingValue)} tone={cmp.missingUnits ? 'bad' : undefined} testId="count-missing" />
+        <SummaryTile label="Extra" value={plural(cmp.excessUnits, 'unit')} sub={money(cmp.excessValue)} tone={cmp.excessUnits ? 'warn' : undefined} testId="count-excess" />
         <SummaryTile label="Net value difference" value={money(cmp.netValueDifference)} tone={cmp.netValueDifference < 0 ? 'bad' : undefined} testId="count-net" />
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3" aria-hidden>
@@ -409,7 +413,7 @@ function ReviewDialog({ open, onClose, lines, uncounted }: { open: boolean; onCl
     });
     try {
       const r = store.commit((data) => completeCount(data, list));
-      toast.success(r.appliedCount ? `Count finished. ${r.appliedCount} ${r.appliedCount === 1 ? 'adjustment' : 'adjustments'} applied.` : 'Count finished. No quantities changed.');
+      toast.success(r.appliedCount ? `Count finished. ${plural(r.appliedCount, 'adjustment')} applied.` : 'Count finished. No quantities changed.');
       setDecisions({});
       onClose();
     } catch (e) {
@@ -422,14 +426,14 @@ function ReviewDialog({ open, onClose, lines, uncounted }: { open: boolean; onCl
       open={open}
       onClose={onClose}
       title="Review differences"
-      description={`${lines.length} counted · ${diffs.length} ${diffs.length === 1 ? 'difference' : 'differences'}${uncounted ? ` · ${uncounted} not counted (left unchanged)` : ''}`}
+      description={`${lines.length} counted · ${plural(diffs.length, 'difference')}${uncounted ? ` · ${uncounted} not counted (left unchanged)` : ''}`}
       size="lg"
       testId="count-review"
       footer={
         <>
           <Button onClick={onClose}>Keep counting</Button>
           <Button variant="primary" onClick={finish}>
-            {applyCount ? `Apply ${applyCount} ${applyCount === 1 ? 'adjustment' : 'adjustments'} & finish` : 'Finish without changes'}
+            {applyCount ? `Apply ${plural(applyCount, 'adjustment')} & finish` : 'Finish without changes'}
           </Button>
         </>
       }

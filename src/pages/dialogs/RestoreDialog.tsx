@@ -10,6 +10,7 @@ import { Dialog } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
 import { Checkbox } from '../../ui/Fields';
 import { useToast } from '../../ui/Toast';
+import { plural } from '../../domain/format';
 
 export function RestoreDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const current = useAppState((s) => s.data);
@@ -47,7 +48,7 @@ export function RestoreDialog({ open, onClose }: { open: boolean; onClose: () =>
     try {
       forgetPhotos(current.items.flatMap((i) => i.photoIds));
       await store.restore(backup, withSettings);
-      toast.success(`Restored ${backup.data.items.length} items and ${backup.data.sales.length} sales.`);
+      toast.success(`Restored ${plural(backup.data.items.length, 'item')} and ${plural(backup.data.sales.length, 'sale')}.`);
       onClose();
     } catch {
       toast.error('Restore failed. Your existing data was not changed.');
@@ -93,13 +94,13 @@ export function RestoreDialog({ open, onClose }: { open: boolean; onClose: () =>
               {backup.dataset === 'demo' && ' (demo data)'}
             </p>
             <ul className="grid grid-cols-2 gap-2 text-ink-2">
-              <li>{backup.data.items.length} items</li>
-              <li>{backup.data.sales.length} sales</li>
-              <li>{backup.photos.length} photos</li>
-              <li>{backup.data.countHistory.length} counts</li>
+              <li>{plural(backup.data.items.length, 'item')}</li>
+              <li>{plural(backup.data.sales.length, 'sale')}</li>
+              <li>{plural(backup.photos.length, 'photo')}</li>
+              <li>{plural(backup.data.countHistory.length, 'count')}</li>
             </ul>
             <p className="rounded-lg bg-warn-soft p-2 text-warn-text">
-              Your current {current.items.length} items and {current.sales.length} sales will be replaced. Consider downloading a backup of them first.
+              Your current {plural(current.items.length, 'item')} and {plural(current.sales.length, 'sale')} will be replaced. Consider downloading a backup of them first.
             </p>
             <Checkbox checked={withSettings} onChange={setWithSettings} label="Also restore settings" description="Mode, theme, currency and alert thresholds." />
           </div>

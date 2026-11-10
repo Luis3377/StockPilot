@@ -14,6 +14,7 @@ import { Button } from '../../ui/Button';
 import { Checkbox, MoneyField, QuantityField, TextAreaField, TextField } from '../../ui/Fields';
 import { PhotoPicker, forgetPhotos } from '../../ui/Photo';
 import { useToast } from '../../ui/Toast';
+import { plural } from '../../domain/format';
 
 interface Props {
   open: boolean;
@@ -286,7 +287,7 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
             <Checkbox
               checked={applyCostToSales}
               onChange={setApplyCostToSales}
-              label={`Also use this cost for ${salesCount} recorded ${salesCount === 1 ? 'sale' : 'sales'}`}
+              label={`Also use this cost for ${plural(salesCount, 'recorded sale')}`}
               description="Keep this on if you're correcting a mistake. Turn it off to keep past profit calculated with the old cost."
             />
           </div>

@@ -30,6 +30,7 @@ test('recording a sale reduces stock and profit includes every expense', async (
   await nav(page, 'Sales & Profit');
   await page.getByRole('radio', { name: 'All time' }).click();
   await expect(page.getByTestId('sales-revenue-value')).toHaveText('$190.00');
+  await expect(page.getByTestId('sales-revenue')).toContainText('1 sale · 2 units');
   await expect(page.getByTestId('sales-cogs-value')).toHaveText('$80.00');
   await expect(page.getByTestId('sales-expenses-value')).toHaveText('$46.58');
   await expect(page.getByTestId('sales-net-value')).toHaveText('$63.42');

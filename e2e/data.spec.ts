@@ -99,7 +99,9 @@ test('backup and restore round-trip all data', async ({ page }) => {
   await page.getByRole('button', { name: 'Restore from backup' }).click();
   const dialog = page.getByTestId('restore-dialog');
   await dialog.getByTestId('restore-file').setInputFiles(await backup.path());
-  await expect(dialog).toContainText('1 items');
+  await expect(dialog).toContainText('1 item');
+  await expect(dialog).not.toContainText('1 items');
+  await expect(dialog).toContainText('0 sales');
   await dialog.getByRole('button', { name: 'Replace my data' }).click();
   await nav(page, 'Collection');
   await expect(page.getByTestId('inventory-item')).toContainText('Rookie card');

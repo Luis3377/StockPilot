@@ -19,6 +19,7 @@ import { useConfirm } from '../ui/Confirm';
 import { useToast } from '../ui/Toast';
 import { useDialogs } from './dialogs/DialogHub';
 import { StatusBadge } from './InventoryPage';
+import { plural, pluralWord } from '../domain/format';
 
 const SOURCE_LABEL = { count_check: 'Count Check', manual: 'Adjustment', edit: 'Edited', restock: 'Restock', import: 'CSV import' } as const;
 
@@ -69,8 +70,8 @@ export function ItemDetailPage() {
       title: `Delete "${item.name}"?`,
       message: (
         <>
-          <p>This permanently removes the item{item.photoIds.length ? ` and its ${item.photoIds.length} photo${item.photoIds.length === 1 ? '' : 's'}` : ''}.</p>
-          {sales.length > 0 && <p className="mt-2">Its {sales.length} recorded {sales.length === 1 ? 'sale stays' : 'sales stay'} in your sales history so your profit totals don’t change.</p>}
+          <p>This permanently removes the item{item.photoIds.length ? ` and its ${plural(item.photoIds.length, 'photo')}` : ''}.</p>
+          {sales.length > 0 && <p className="mt-2">Its {plural(sales.length, 'recorded sale')} {pluralWord(sales.length, 'stays', 'stay')} in your sales history so your profit totals don’t change.</p>}
         </>
       ),
       confirmLabel: 'Delete item',

@@ -17,6 +17,7 @@ import { inputClass } from '../ui/Fields';
 import { cn } from '../ui/cn';
 import { useDialogs } from './dialogs/DialogHub';
 import { useToast } from '../ui/Toast';
+import { plural, pluralWord } from '../domain/format';
 
 const SORTS = {
   newest: 'Newest first',
@@ -105,7 +106,7 @@ export function InventoryPage() {
 
   const exportCsv = () => {
     downloadText(`stockpilot-${dataset === 'demo' ? 'demo-' : ''}inventory-${fileStamp()}.csv`, inventoryCsv(data.items));
-    toast.success(`Exported ${data.items.length} items to CSV.`);
+    toast.success(`Exported ${plural(data.items.length, 'item')} to CSV.`);
   };
 
   if (data.items.length === 0) {
@@ -138,7 +139,7 @@ export function InventoryPage() {
     <>
       <PageHeader
         title={title}
-        description={`${data.items.length} ${data.items.length === 1 ? 'item' : 'items'} · ${data.items.reduce((n, i) => n + i.quantity, 0)} units on hand`}
+        description={`${plural(data.items.length, 'item')} · ${plural(data.items.reduce((n, i) => n + i.quantity, 0), 'unit')} on hand`}
         actions={
           <>
             <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} className="hidden sm:inline-flex">
@@ -201,7 +202,12 @@ export function InventoryPage() {
           )}
         </div>
         <p className="text-sm text-ink-2" data-testid="result-count" aria-live="polite">
-          {results.length === data.items.length ? `Showing all ${results.length} items` : `${results.length} of ${data.items.length} items match`} · {totalUnits} units
+          {results.length === data.items.length
+            ? results.length === 1
+              ? 'Showing 1 item'
+              : `Showing all ${plural(results.length, 'item')}`
+            : `${results.length} of ${plural(data.items.length, 'item')} ${pluralWord(results.length, 'matches', 'match')}`}{' '}
+          · {plural(totalUnits, 'unit')}
         </p>
       </div>
 

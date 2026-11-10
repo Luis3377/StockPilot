@@ -7,6 +7,7 @@ import { Dialog } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
 import { Segmented } from '../../ui/Fields';
 import { useToast } from '../../ui/Toast';
+import { plural, pluralWord } from '../../domain/format';
 
 export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const data = useAppState((s) => s.data);
@@ -70,7 +71,7 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
         <>
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" onClick={run} disabled={!preview || willImport === 0}>
-            {willImport > 0 ? `Import ${willImport} ${willImport === 1 ? 'item' : 'items'}` : 'Import'}
+            {willImport > 0 ? `Import ${plural(willImport, 'item')}` : 'Import'}
           </Button>
         </>
       }
@@ -116,7 +117,7 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
             {duplicates > 0 && (
               <div className="rounded-xl border border-line p-3">
                 <p className="mb-2 text-sm text-ink">
-                  {duplicates} {duplicates === 1 ? 'row matches an item' : 'rows match items'} you already have (same SKU, or same name and category). What should happen?
+                  {plural(duplicates, 'row')} {pluralWord(duplicates, 'matches an item', 'match items')} you already have (same SKU, or same name and category). What should happen?
                 </p>
                 <Segmented
                   label="Duplicates"
@@ -131,12 +132,12 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
             )}
             {preview.ignoredColumns.length > 0 && <p className="text-xs text-muted">Ignored columns: {preview.ignoredColumns.join(', ')}</p>}
             {preview.errors.length > 0 && (
-              <IssueList title={`${preview.errors.length} ${preview.errors.length === 1 ? 'row' : 'rows'} will be skipped`} issues={preview.errors} tone="bad" />
+              <IssueList title={`${plural(preview.errors.length, 'row')} will be skipped`} issues={preview.errors} tone="bad" />
             )}
             {preview.warnings.length > 0 && <IssueList title="Worth checking" issues={preview.warnings} tone="warn" />}
             {preview.errors.length === 0 && preview.rows.length > 0 && (
               <p className="flex items-center gap-2 text-sm text-good-text">
-                <CheckCircle2 className="size-4" /> All {preview.rows.length} rows look good.
+                <CheckCircle2 className="size-4" /> {preview.rows.length === 1 ? 'The row looks good.' : `All ${plural(preview.rows.length, 'row')} look good.`}
               </p>
             )}
             {preview.fileRows === 0 && <p className="text-sm text-ink-2">The file has a header but no rows.</p>}

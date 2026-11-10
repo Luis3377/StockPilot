@@ -23,6 +23,7 @@ import { addDays, formatDate, periodRange, todayISO, type DateRange } from '../d
 import { formatMoney, formatPercent, roundMoney } from '../domain/money';
 import type { AppData, Item, Settings } from '../domain/types';
 import { buildInsights } from './rules';
+import { plural, pluralWord } from '../domain/format';
 
 export interface AnswerTable {
   columns: string[];
@@ -225,7 +226,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
       });
     }
     const breakEven = (item: Item) => (rate.percent < 100 ? roundMoney(item.unitCost / (1 - rate.percent / 100)) : null);
-    return b.answer('discount', `${candidates.length} ${candidates.length === 1 ? 'item is a candidate' : 'items are candidates'} for a discount. These are suggestions based on your data, not market research — check current prices before changing yours.`, {
+    return b.answer('discount', `${plural(candidates.length, 'item')} ${pluralWord(candidates.length, 'is a candidate', 'are candidates')} for a discount. These are suggestions based on your data, not market research — check current prices before changing yours.`, {
       details: [
         `Listed because they haven't sold in ${settings.slowMovingDays}+ days, or their asking price is above your own estimated value.`,
         `"Break-even price" is the lowest price that still covers your cost after ~${formatPercent(rate.percent)} selling costs${rate.source === 'history' ? ' (your historical average)' : rate.source === 'none' ? ' (no fee history yet)' : ' (from Settings)'}.`,
@@ -250,7 +251,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     const tied = slow.reduce((s, r) => s + itemCostValue(r.item), 0);
     return b.answer(
       'slow-moving',
-      `${ranked[0].item.name} has been sitting the longest — ${ranked[0].days} days without a sale. ${slow.length ? `${slow.length} ${slow.length === 1 ? 'item has' : 'items have'} gone ${settings.slowMovingDays}+ days, holding ${b.money(tied)} at cost.` : `Nothing has passed your ${settings.slowMovingDays}-day slow-moving threshold.`}`,
+      `${ranked[0].item.name} has been sitting the longest — ${plural(ranked[0].days, 'day')} without a sale. ${slow.length ? `${plural(slow.length, 'item')} ${pluralWord(slow.length, 'has', 'have')} gone ${settings.slowMovingDays}+ days, holding ${b.money(tied)} at cost.` : `Nothing has passed your ${settings.slowMovingDays}-day slow-moving threshold.`}`,
       {
         details: ['Days are counted from the purchase date or the most recent sale, whichever is later.'],
         table: {
@@ -268,13 +269,13 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     const t = inventoryTotals(data.items);
     const projection = projectUnsold(data.items, data.sales, settings);
     const details = [
-      `${t.unitsInStock} units across ${t.itemsInStock} items are in stock.`,
+      `${plural(t.unitsInStock, 'unit')} across ${plural(t.itemsInStock, 'item')} ${pluralWord(t.unitsInStock, 'is', 'are')} in stock.`,
     ];
     if (t.itemsWithEstimate) {
       const gain = t.estimatedValue - t.estimatedCostBasis;
-      details.push(`Estimated value: ${b.money(t.estimatedValue)} for the ${t.itemsWithEstimate} items you've valued (${gain >= 0 ? 'up' : 'down'} ${b.money(Math.abs(gain))} vs. what you paid for them).`);
+      details.push(`Estimated value: ${b.money(t.estimatedValue)} for the ${plural(t.itemsWithEstimate, 'item')} you've valued (${gain >= 0 ? 'up' : 'down'} ${b.money(Math.abs(gain))} vs. what you paid for them).`);
     }
-    if (t.itemsMissingEstimate && t.itemsWithEstimate) details.push(`${t.itemsMissingEstimate} items have no estimated value and aren't included in that figure.`);
+    if (t.itemsMissingEstimate && t.itemsWithEstimate) details.push(`${plural(t.itemsMissingEstimate, 'item')} ${pluralWord(t.itemsMissingEstimate, 'has', 'have')} no estimated value and ${pluralWord(t.itemsMissingEstimate, 'isn’t', 'aren’t')} included in that figure.`);
     if (projection.itemsIncluded) {
       details.push(`Projected (not yet realized): selling the ${projection.itemsIncluded} priced items at asking would bring ${b.money(projection.projectedRevenue)}, or about ${b.money(projection.projectedProfit)} profit after ~${formatPercent(projection.rate.percent)} selling costs.`);
     }
@@ -288,7 +289,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   if (/\bcategor/.test(q)) {
     if (!data.sales.length) {
       const t = uniqueSorted(data.items.map((i) => i.category || 'Uncategorized'));
-      return b.answer('categories', `No sales yet, so category performance can't be measured. You have ${t.length} ${t.length === 1 ? 'category' : 'categories'} in stock.`);
+      return b.answer('categories', `No sales yet, so category performance can't be measured. You have ${plural(t.length, 'category', 'categories')} in stock.`);
     }
     const range = parseTimeframe(q, today) ?? periodRange('all', today);
     const groups = salesByCategory(salesInRange(data.sales, range)).sort((a, c) => c.netProfit - a.netProfit);
@@ -306,7 +307,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     const range = parseTimeframe(q, today) ?? periodRange('all', today);
     const groups = salesByPlatform(salesInRange(data.sales, range)).sort((a, c) => c.netProfit - a.netProfit);
     if (!groups.length) return b.answer('platforms', `No sales ${range.label}.`);
-    return b.answer('platforms', `${groups[0].label} earns you the most ${range.label}: ${b.money(groups[0].netProfit)} net profit across ${groups[0].salesCount} ${groups[0].salesCount === 1 ? 'sale' : 'sales'}.`, {
+    return b.answer('platforms', `${groups[0].label} earns you the most ${range.label}: ${b.money(groups[0].netProfit)} net profit across ${plural(groups[0].salesCount, 'sale')}.`, {
       details: ['Compare margins too: a platform with higher fees can earn less per sale even with more revenue.'],
       table: b.groupTable(groups, 'Platform'),
     });
@@ -381,12 +382,12 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     }
     const t = totalSales(sales);
     const headline = /\brevenue|sales|sold\b/.test(q) && !/\bprofit|made|make|earn/.test(q)
-      ? `Revenue ${where} is ${b.money(t.revenue)} from ${t.salesCount} ${t.salesCount === 1 ? 'sale' : 'sales'} (${t.unitsSold} units).`
+      ? `Revenue ${where} is ${b.money(t.revenue)} from ${plural(t.salesCount, 'sale')} (${plural(t.unitsSold, 'unit')}).`
       : `You've made ${b.money(t.netProfit)} in net profit ${where}, from ${b.money(t.revenue)} in sales.`;
     return b.answer('profit', headline, {
       details: [
         `Revenue ${b.money(t.revenue)} − cost of goods ${b.money(t.costOfGoods)} − fees ${b.money(t.fees)} − shipping ${b.money(t.shipping)} − other ${b.money(t.otherExpenses)} = ${b.money(t.netProfit)} net profit.`,
-        `Profit margin ${formatPercent(t.margin)} · ROI ${formatPercent(t.roi)} · ${t.salesCount} ${t.salesCount === 1 ? 'sale' : 'sales'}, ${t.unitsSold} units.`,
+        `Profit margin ${formatPercent(t.margin)} · ROI ${formatPercent(t.roi)} · ${plural(t.salesCount, 'sale')}, ${plural(t.unitsSold, 'unit')}.`,
         ...(explicit ? [] : ['No time period was mentioned, so this covers all time. Try "this month" or "last 30 days".']),
         'This is realized profit from recorded sales only — unsold inventory is not included.',
       ],
@@ -401,9 +402,9 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     const details = [
       `On hand: ${item.quantity} · Cost per item: ${b.money(item.unitCost)} · Asking: ${item.askingPrice === null ? 'not set' : b.money(item.askingPrice)} · Estimated value: ${item.estimatedValue === null ? 'not set' : b.money(item.estimatedValue)}.`,
       sales.length
-        ? `Sold ${t.unitsSold} for ${b.money(t.revenue)} revenue and ${b.money(t.netProfit)} net profit (${formatPercent(t.margin)} margin).`
+        ? `Sold ${plural(t.unitsSold, 'unit')} for ${b.money(t.revenue)} revenue and ${b.money(t.netProfit)} net profit (${formatPercent(t.margin)} margin).`
         : 'No sales recorded for this item yet.',
-      `${daysWithoutSale(item, data.sales, today)} days since it was bought or last sold.`,
+      `${plural(daysWithoutSale(item, data.sales, today), 'day')} since it was bought or last sold.`,
     ];
     return b.answer('item', `Here's what I know about ${item.name}${item.sku ? ` (${item.sku})` : ''}.`, {
       details,
@@ -414,8 +415,8 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   // --- Inventory counts -----------------------------------------------------
   if (/\bhow many\b|\bcount of\b|\bnumber of\b/.test(q)) {
     const t = inventoryTotals(data.items);
-    return b.answer('counts', `You have ${t.unitsInStock} units in stock across ${t.itemsInStock} items (${t.totalItems} items recorded in total).`, {
-      details: [`${t.totalItems - t.itemsInStock} items are sold out or at zero.`],
+    return b.answer('counts', `You have ${plural(t.unitsInStock, 'unit')} in stock across ${plural(t.itemsInStock, 'item')} (${plural(t.totalItems, 'item')} recorded in total).`, {
+      details: [`${plural(t.totalItems - t.itemsInStock, 'item')} ${pluralWord(t.totalItems - t.itemsInStock, 'is', 'are')} sold out or at zero.`],
     });
   }
 

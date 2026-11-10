@@ -12,6 +12,7 @@ import { Button } from '../../ui/Button';
 import { ItemThumb } from '../../ui/Photo';
 import { useDialogs } from '../dialogs/DialogHub';
 import { useToast } from '../../ui/Toast';
+import { plural, pluralWord } from '../../domain/format';
 
 export function MonthlyTrend({ sales, months = 6 }: { sales: Sale[]; months?: number }) {
   const { money, compact } = useMoney();
@@ -124,7 +125,7 @@ export function SlowMovers({ data, limit = 5 }: { data: AppData; limit?: number 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-ink">{item.name}</p>
                   <p className="flex items-center gap-1 text-xs text-ink-2">
-                    <Clock className="size-3" /> {daysWithoutSale(item, data.sales, today)} days without a sale
+                    <Clock className="size-3" /> {plural(daysWithoutSale(item, data.sales, today), 'day')} without a sale
                   </p>
                 </div>
                 <span className="tabular shrink-0 text-sm text-ink">{money(itemCostValue(item))}</span>
@@ -144,9 +145,9 @@ export function AlertStrip() {
   const pricing = report.pricingRisks.findings.length;
   const losses = report.lowMarginSales.findings.filter((f) => f.group.netProfit < 0).length;
   const alerts = [
-    low > 0 && { icon: <AlertTriangle className="size-4" />, text: `${low} ${low === 1 ? 'item is' : 'items are'} low on stock`, tone: 'warn' },
-    pricing > 0 && { icon: <TrendingDown className="size-4" />, text: `${pricing} asking ${pricing === 1 ? 'price' : 'prices'} may not be profitable`, tone: 'warn' },
-    losses > 0 && { icon: <TrendingDown className="size-4" />, text: `${losses} ${losses === 1 ? 'item' : 'items'} sold at a loss`, tone: 'bad' },
+    low > 0 && { icon: <AlertTriangle className="size-4" />, text: `${plural(low, 'item')} ${pluralWord(low, 'is', 'are')} low on stock`, tone: 'warn' },
+    pricing > 0 && { icon: <TrendingDown className="size-4" />, text: `${plural(pricing, 'asking price')} may not be profitable`, tone: 'warn' },
+    losses > 0 && { icon: <TrendingDown className="size-4" />, text: `${plural(losses, 'item')} sold at a loss`, tone: 'bad' },
   ].filter(Boolean) as { icon: React.ReactNode; text: string; tone: string }[];
   if (!alerts.length) return null;
   return (

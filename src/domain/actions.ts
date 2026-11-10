@@ -20,6 +20,7 @@ import { newId } from './ids';
 import { isValidISODate, todayISO } from './dates';
 import { fromCents, multiplyMoney, roundMoney, toCents } from './money';
 import { itemCostValue, mostCommon, nameKey } from './calc';
+import { plural, pluralWord } from './format';
 
 export interface Clock {
   now: Date;
@@ -297,7 +298,7 @@ export function restockItem(
   const totalCents = toCents(itemCostValue(item)) + toCents(multiplyMoney(cost, qty));
   const averaged = roundUnitCost(fromCents(totalCents) / newQuantity);
   const updated: Item = { ...item, quantity: newQuantity, unitCost: averaged, updatedAt: iso };
-  const adjustment = makeAdjustment({ ...item, unitCost: cost }, newQuantity, `Restocked ${qty} ${qty === 1 ? 'unit' : 'units'}`, 'restock', iso);
+  const adjustment = makeAdjustment({ ...item, unitCost: cost }, newQuantity, `Restocked ${plural(qty, 'unit')}`, 'restock', iso);
   return {
     data: { ...data, items: replaceItem(data.items, updated), adjustments: [...data.adjustments, adjustment] },
     item: updated,
@@ -368,7 +369,7 @@ function validateSaleFields(input: SaleInput, otherSales: Sale[]) {
 function overSellMessage(item: Item, available: number, requested: number): string {
   return available === 0
     ? `"${item.name}" has no units left to sell.`
-    : `Only ${available} of "${item.name}" ${available === 1 ? 'is' : 'are'} available — you entered ${requested}.`;
+    : `Only ${available} of "${item.name}" ${pluralWord(available, 'is', 'are')} available — you entered ${requested}.`;
 }
 
 export function recordSale(data: AppData, input: SaleInput, clock?: Clock): { data: AppData; sale: Sale } {

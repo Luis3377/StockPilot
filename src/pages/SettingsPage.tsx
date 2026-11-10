@@ -20,6 +20,7 @@ import { useConfirm } from '../ui/Confirm';
 import { useToast } from '../ui/Toast';
 import { cn } from '../ui/cn';
 import { useDialogs } from './dialogs/DialogHub';
+import { plural, pluralWord } from '../domain/format';
 
 function Section({ id, title, description, children }: { id?: string; title: string; description?: ReactNode; children: ReactNode }) {
   return (
@@ -108,7 +109,7 @@ export function SettingsPage() {
       const file = createBackup(dataset, settings, data, photos);
       downloadText(`${prefix}backup-${fileStamp()}.json`, JSON.stringify(file), 'application/json');
       if (!demo) store.updateSettings({ lastBackupAt: new Date().toISOString() });
-      toast.success(`Backup downloaded: ${data.items.length} items, ${data.sales.length} sales, ${file.photos.length} photos.`);
+      toast.success(`Backup downloaded: ${plural(data.items.length, 'item')}, ${plural(data.sales.length, 'sale')}, ${plural(file.photos.length, 'photo')}.`);
     } catch {
       toast.error('The backup could not be created.');
     } finally {
@@ -191,16 +192,16 @@ export function SettingsPage() {
                   onClick={async () => {
                     const ok = await confirm({
                       title: 'Apply to existing items?',
-                      message: `Set a low-stock alert of ${settings.defaultLowStockThreshold} on the ${withoutThreshold} items that don’t have one.`,
+                      message: `Set a low-stock alert of ${settings.defaultLowStockThreshold} on the ${plural(withoutThreshold, 'item')} that ${pluralWord(withoutThreshold, 'doesn’t', 'don’t')} have one.`,
                       confirmLabel: 'Apply',
                       tone: 'primary',
                     });
                     if (!ok) return;
                     store.update((d) => ({ ...d, items: d.items.map((i) => (i.lowStockThreshold === null ? { ...i, lowStockThreshold: settings.defaultLowStockThreshold, updatedAt: new Date().toISOString() } : i)) }));
-                    toast.success(`Low-stock alert set on ${withoutThreshold} items.`);
+                    toast.success(`Low-stock alert set on ${plural(withoutThreshold, 'item')}.`);
                   }}
                 >
-                  Apply to {withoutThreshold} items without one
+                  Apply to {plural(withoutThreshold, 'item')} without one
                 </Button>
               )}
             </div>
@@ -220,7 +221,7 @@ export function SettingsPage() {
                 ]}
               />
               {settings.sellingCostPercent === null ? (
-                <p className="mt-2 text-xs text-ink-2">{rate.source === 'history' ? `Currently ${formatPercent(rate.percent)}, learned from ${rate.basedOnSales} sales.` : 'No sales yet, so 0% is assumed.'}</p>
+                <p className="mt-2 text-xs text-ink-2">{rate.source === 'history' ? `Currently ${formatPercent(rate.percent)}, learned from ${plural(rate.basedOnSales, 'sale')}.` : 'No sales yet, so 0% is assumed.'}</p>
               ) : (
                 <div className="mt-2">
                   <NumberSetting label="Estimated selling costs" value={settings.sellingCostPercent} min={0} max={99} onSave={(v) => save({ sellingCostPercent: v })} suffix="% of price" />
@@ -334,7 +335,7 @@ export function SettingsPage() {
               onClick={async () => {
                 const ok = await confirm({
                   title: 'Erase all your data?',
-                  message: `This deletes ${data.items.length} items, ${data.sales.length} sales and all photos from this device. It can’t be undone unless you have a backup.`,
+                  message: `This deletes ${plural(data.items.length, 'item')}, ${plural(data.sales.length, 'sale')} and all photos from this device. It can’t be undone unless you have a backup.`,
                   confirmLabel: 'Erase everything',
                   requireText: 'DELETE',
                 });

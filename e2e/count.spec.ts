@@ -19,7 +19,8 @@ test('Count Check finds shortages and overages and applies approved adjustments'
 
   await expect(page.getByTestId('count-missing')).toContainText('2 units');
   await expect(page.getByTestId('count-missing')).toContainText('-$8.00');
-  await expect(page.getByTestId('count-excess')).toContainText('1 units');
+  await expect(page.getByTestId('count-excess')).toContainText('1 unit');
+  await expect(page.getByTestId('count-excess')).not.toContainText('1 units');
   await expect(page.getByTestId('count-excess')).toContainText('$5.00');
   await expect(page.getByTestId('count-net')).toContainText('-$3.00');
 
@@ -57,10 +58,15 @@ test('a count can be discarded without changing inventory', async ({ page }) => 
   await onboard(page, 'Reseller');
   await addItem(page, { name: 'Lone item', quantity: 2 });
   await nav(page, 'Count Check');
-  await page.getByRole('button', { name: /Start counting/ }).click();
+  await page.getByRole('button', { name: 'Start counting 1 item' }).click();
+  // Nothing counted yet: the message says so instead of "0 counts".
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByTestId('confirm-dialog')).toContainText('Nothing has been counted yet. Inventory quantities are not changed.');
+  await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Cancel' }).click();
   await page.getByLabel('Counted quantity for Lone item').fill('0');
   await page.getByLabel('Counted quantity for Lone item').press('Enter');
   await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByTestId('confirm-dialog')).toContainText('The 1 count you’ve entered will be thrown away.');
   await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Discard count' }).click();
   await expect(page.getByText('Start a new count')).toBeVisible();
   await openItem(page, 'Lone item');
