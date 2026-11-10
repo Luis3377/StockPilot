@@ -47,6 +47,21 @@ test('one submit shows every problem with the item form', async ({ page }) => {
   await expect(dialog.getByText('Enter an amount like 12.50')).toBeVisible();
 });
 
+test('an asking price below cost or under the margin target is flagged', async ({ page }) => {
+  await onboard(page, 'Reseller');
+  await page.getByRole('button', { name: 'Add your first item' }).click();
+  const dialog = page.getByTestId('item-form');
+  await dialog.getByLabel('Cost per item').fill('2');
+  await dialog.getByLabel('Asking price').fill('1.50');
+  const hint = dialog.getByText("You'd lose $0.50 on each one before fees.");
+  await expect(hint).toBeVisible();
+  await expect(hint).toHaveAttribute('data-tone', 'bad');
+  await dialog.getByLabel('Asking price').fill('2.20');
+  await expect(dialog.getByText('Only $0.20 profit per item before fees — a 9% margin, under your 15% target.')).toHaveAttribute('data-tone', 'warn');
+  await dialog.getByLabel('Asking price').fill('5');
+  await expect(dialog.getByText('$3.00 profit per item before selling fees')).not.toHaveAttribute('data-tone');
+});
+
 test('duplicate SKUs are rejected with a clear message', async ({ page }) => {
   await onboard(page, 'Small business');
   await addItem(page, { name: 'Candle A', sku: 'CAN-1' });

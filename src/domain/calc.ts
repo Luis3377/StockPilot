@@ -292,6 +292,22 @@ export function projectedUnitProfit(item: Item, ratePercent: number): number | n
   return fromCents(toCents(item.askingPrice) - toCents(costs) - toCents(item.unitCost));
 }
 
+export interface PriceCheck {
+  /** "loss": below cost; "low": profitable but under the margin target; "ok" otherwise. */
+  status: 'loss' | 'low' | 'ok';
+  /** Profit per item before selling fees. */
+  profit: number;
+  margin: number | null;
+}
+
+/** Judges an asking price against its cost and the low-margin setting (before selling fees). */
+export function checkPrice(askingPrice: number, unitCost: number, lowMarginPercent: number): PriceCheck {
+  const profit = fromCents(toCents(askingPrice) - toCents(unitCost));
+  const margin = percent(profit, askingPrice);
+  const status = profit < 0 ? 'loss' : margin !== null && margin < lowMarginPercent ? 'low' : 'ok';
+  return { status, profit, margin };
+}
+
 export function projectedMargin(item: Item, ratePercent: number): number | null {
   const unit = projectedUnitProfit(item, ratePercent);
   if (unit === null || item.askingPrice === null) return null;

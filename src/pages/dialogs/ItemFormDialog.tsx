@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { addItem, itemInputErrors, updateItem, type ItemInput } from '../../domain/actions';
 import { isDomainError } from '../../domain/errors';
-import { knownCategories, knownLocations } from '../../domain/calc';
+import { checkPrice, knownCategories, knownLocations } from '../../domain/calc';
 import { todayISO } from '../../domain/dates';
-import { multiplyMoney, parseMoneyInput } from '../../domain/money';
+import { formatPercent, multiplyMoney, parseMoneyInput } from '../../domain/money';
 import type { Item } from '../../domain/types';
 import { store, useAppState } from '../../data/store';
 import { CONDITION_SUGGESTIONS, salesEnabled } from '../../lib/modes';
@@ -192,15 +192,24 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
 
   const mode = settings.mode;
   const selling = salesEnabled(settings);
+  const priceCheck =
+    asking !== null && !Number.isNaN(asking) && cost !== null && !Number.isNaN(cost) && cost >= 0
+      ? checkPrice(asking, cost, settings.lowMarginPercent)
+      : null;
   const priceField = (
     <MoneyField
       key="asking"
       label={mode === 'business' ? 'Selling price (per item)' : 'Asking price (per item)'}
       hint={
-        asking !== null && !Number.isNaN(asking) && cost !== null && !Number.isNaN(cost)
-          ? `${money(asking - cost)} profit per item before selling fees`
-          : 'What you plan to sell one for'
+        !priceCheck
+          ? 'What you plan to sell one for'
+          : priceCheck.status === 'loss'
+            ? `You'd lose ${money(-priceCheck.profit)} on each one before fees.`
+            : priceCheck.status === 'low'
+              ? `Only ${money(priceCheck.profit)} profit per item before fees — a ${formatPercent(priceCheck.margin, 0)} margin, under your ${settings.lowMarginPercent}% target.`
+              : `${money(priceCheck.profit)} profit per item before selling fees`
       }
+      hintTone={priceCheck?.status === 'loss' ? 'bad' : priceCheck?.status === 'low' ? 'warn' : undefined}
       currency={currency}
       value={form.askingPrice}
       onChange={(v) => set('askingPrice', v)}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeSale, convertSalePrice, inventoryTotals, projectUnsold, salesByCategory, salesByMonth, salesByPlatform, sellingCostRate, totalSales, daysWithoutSale } from './calc';
+import { checkPrice, computeSale, convertSalePrice, inventoryTotals, projectUnsold, salesByCategory, salesByMonth, salesByPlatform, sellingCostRate, totalSales, daysWithoutSale } from './calc';
 import { recordSale } from './actions';
 import { clock, withItem } from './testUtils';
 
@@ -32,6 +32,16 @@ describe('computeSale', () => {
     expect(f.revenue).toBe(59.97);
     expect(f.costOfGoods).toBe(10);
     expect(f.netProfit).toBe(41.9);
+  });
+});
+
+describe('checkPrice', () => {
+  it('flags prices below cost and margins under the target', () => {
+    expect(checkPrice(1.5, 2, 15)).toEqual({ status: 'loss', profit: -0.5, margin: expect.closeTo(-33.33, 1) });
+    expect(checkPrice(10, 9, 15)).toMatchObject({ status: 'low', profit: 1, margin: 10 });
+    expect(checkPrice(10, 5, 15)).toMatchObject({ status: 'ok', profit: 5 });
+    expect(checkPrice(10, 10, 15)).toMatchObject({ status: 'low', profit: 0 });
+    expect(checkPrice(0, 0, 15)).toMatchObject({ status: 'ok', margin: null });
   });
 });
 
