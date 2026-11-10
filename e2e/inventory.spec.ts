@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addItem, nav, onboard, openItem } from './helpers';
+import { addItem, contrastRatio, nav, onboard, openItem, solidPng } from './helpers';
 
 // 1×1 PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -176,4 +176,34 @@ test('restock averages the cost, adjust quantity requires a reason', async ({ pa
   await stock.getByRole('button', { name: 'Save quantity' }).click();
   await expect(page.getByTestId('item-quantity')).toHaveText('3');
   await expect(page.getByText('Adjustment: 4 → 3')).toBeVisible();
+});
+
+test('stock badges stay readable on bright and pale photos in both themes', async ({ page }) => {
+  await onboard(page, 'Small business');
+  const photos: [string, string][] = [
+    ['Yellow tee', '#ffd400'],
+    ['Orange tee', '#ff7a00'],
+    ['White tee', '#ffffff'],
+    ['Gray tee', '#9a9a9a'],
+  ];
+  for (const [name, color] of photos) {
+    await addItem(page, { name, quantity: 2, cost: '5', lowStockAt: name === 'White tee' ? 0 : 3, photo: await solidPng(page, color) });
+  }
+  await nav(page, 'Inventory');
+  const badges = page.getByTestId('inventory-grid').locator('[data-on-image]');
+  await expect(badges).toHaveCount(4);
+  await expect(page.getByTestId('inventory-grid')).toContainText('Low stock');
+  await expect(page.getByTestId('inventory-grid')).toContainText('In stock');
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    for (let i = 0; i < 4; i++) {
+      const { fg, bg } = await badges.nth(i).evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { fg: cs.color, bg: cs.backgroundColor };
+      });
+      // An opaque pill means the photo behind it can't wash the text out.
+      expect(bg, 'badge background must be opaque').toMatch(/^rgb\(/);
+      expect(contrastRatio(fg, bg)).toBeGreaterThan(7);
+    }
+  }
 });

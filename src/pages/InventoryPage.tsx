@@ -219,7 +219,7 @@ export function InventoryPage() {
                 <div className="relative aspect-square overflow-hidden bg-surface-2">
                   <ItemThumb photoId={item.photoIds[0]} name={item.name} className="size-full transition-transform group-hover:scale-[1.02]" />
                   <div className="absolute top-2 left-2">
-                    <StatusBadge item={item} />
+                    <StatusBadge item={item} onImage />
                   </div>
                 </div>
                 <div className="p-3">
@@ -293,11 +293,17 @@ function priceLabel(item: Item, mode: string, money: (n: number) => string): str
   return item.askingPrice !== null ? money(item.askingPrice) : `Cost ${money(item.unitCost)}`;
 }
 
-export function StatusBadge({ item }: { item: Item }) {
+export function StatusBadge({ item, onImage }: { item: Item; onImage?: boolean }) {
   const s = stockStatus(item);
-  if (s === 'out') return <Badge tone={item.lowStockThreshold !== null ? 'bad' : 'neutral'}>{item.lowStockThreshold !== null ? 'Out of stock' : 'Sold out'}</Badge>;
-  if (s === 'low') return <Badge tone="warn">Low stock</Badge>;
-  return <Badge tone="good">In stock</Badge>;
+  if (s === 'out') {
+    return (
+      <Badge tone={item.lowStockThreshold !== null ? 'bad' : 'neutral'} onImage={onImage}>
+        {item.lowStockThreshold !== null ? 'Out of stock' : 'Sold out'}
+      </Badge>
+    );
+  }
+  if (s === 'low') return <Badge tone="warn" onImage={onImage}>Low stock</Badge>;
+  return <Badge tone="good" onImage={onImage}>In stock</Badge>;
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[][] }) {
