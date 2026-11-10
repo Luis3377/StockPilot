@@ -234,7 +234,11 @@ async function admin(request: Request, path: string, deps: HandlerDeps): Promise
   }
 
   if (path === '/admin/codes' && request.method === 'GET') return json(200, { codes: await ledger.listCodes(now()) });
-  if (path === '/admin/usage' && request.method === 'GET') return json(200, await ledger.usage(now(), config.limits));
+  if (path === '/admin/usage' && request.method === 'GET') {
+    // Configuration problems are listed by name only (never secret values) to help with setup.
+    const scanner = { ready: config.enabled, model: config.model, effort: config.effort, problems: config.problems };
+    return json(200, { ...(await ledger.usage(now(), config.limits)), scanner });
+  }
   if (path === '/admin/codes' && request.method === 'POST') {
     let body: Record<string, unknown> = {};
     try {

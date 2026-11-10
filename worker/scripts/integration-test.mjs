@@ -155,7 +155,8 @@ try {
   check('admin CLI creates a code', /SP-[0-9A-Z]{5}-/.test(cliCreated) && cliCreated.includes('5 scans/day'), cliCreated);
   const cliList = cli('list');
   check('admin CLI lists codes without revealing them', cliList.includes('CLI tester') && cliList.includes('Integration') && !cliList.includes('SP-'), cliList);
-  check('admin CLI reports usage', cli('usage').includes('scans'));
+  const usageOut = cli('usage');
+  check('admin CLI reports usage', usageOut.includes('scans') && usageOut.includes('Scanner: ready'));
 
   await admin(`/admin/codes/${created.id}/revoke`, { method: 'POST' });
   const revoked = await scan(created.code);

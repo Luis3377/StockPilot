@@ -57,6 +57,9 @@ if (command === 'create') {
   console.log(`Revoked ${args[0]}.`);
 } else if (command === 'usage') {
   const u = await call('/admin/usage');
+  if (u.scanner) {
+    console.log(u.scanner.ready ? `Scanner: ready · ${u.scanner.model} · effort ${u.scanner.effort}` : `Scanner: OFF · ${u.scanner.problems.join('; ')}`);
+  }
   console.log(`Today (${u.day} UTC): ${u.scansToday}/${u.dailyGlobalLimit} scans`);
   console.log(`This month (${u.month}): $${(u.spentMicros / 1e6).toFixed(4)} spent, $${(u.reservedMicros / 1e6).toFixed(4)} in flight, budget $${(u.monthlyBudgetMicros / 1e6).toFixed(2)}`);
 } else {

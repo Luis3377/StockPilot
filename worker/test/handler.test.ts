@@ -212,7 +212,7 @@ describe('admin endpoints', () => {
     const revoked = await t.send(`/admin/codes/${created.id}/revoke`, { method: 'POST', origin: null, headers: { Authorization: `Bearer ${ADMIN}` } });
     expect(revoked.status).toBe(200);
     const usage = (await (await t.send('/admin/usage', { origin: null, headers: { Authorization: `Bearer ${ADMIN}` } })).json()) as any;
-    expect(usage).toMatchObject({ scansToday: 0, monthlyBudgetMicros: 10_000_000 });
+    expect(usage).toMatchObject({ scansToday: 0, monthlyBudgetMicros: 10_000_000, scanner: { ready: true, model: 'claude-sonnet-5-5', problems: [] } });
     const missingLabel = await t.send('/admin/codes', { method: 'POST', origin: null, headers: { Authorization: `Bearer ${ADMIN}` }, body: '{}' });
     expect(missingLabel.status).toBe(400);
   });
