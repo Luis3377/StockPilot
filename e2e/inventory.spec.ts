@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addItem, contrastRatio, nav, onboard, openItem, solidPng } from './helpers';
+import { addItem, contrastRatio, isMobile, nav, onboard, openItem, solidPng } from './helpers';
 
 // 1×1 PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -233,4 +233,25 @@ test('stock badges stay readable on bright and pale photos in both themes', asyn
       expect(contrastRatio(fg, bg)).toBeGreaterThan(7);
     }
   }
+});
+
+test('on phones the floating Add button never covers the last item cards', async ({ page }) => {
+  test.skip(!isMobile(page), 'phone-only button');
+  await onboard(page, 'Reseller', true);
+  await nav(page, 'Inventory');
+  const fab = page.getByTestId('fab-add-item');
+  const overlaps = async () => {
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(100);
+    const button = (await fab.boundingBox())!;
+    const cards = await page.getByTestId('inventory-item').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
+    return cards.filter(
+      (c) => c.right > button.x && c.left < button.x + button.width && c.bottom > button.y && c.top < button.y + button.height,
+    ).length;
+  };
+  await expect(page.getByTestId('inventory-item').first()).toBeVisible();
+  expect(await overlaps()).toBe(0);
+  await page.getByRole('radio', { name: 'List view' }).click();
+  await expect(page.getByTestId('inventory-list')).toBeVisible();
+  expect(await overlaps()).toBe(0);
 });

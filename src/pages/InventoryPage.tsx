@@ -220,7 +220,8 @@ export function InventoryPage() {
           </EmptyState>
         </Card>
       ) : view === 'grid' ? (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" data-testid="inventory-grid">
+        // Bottom padding lets the last cards scroll clear of the floating Add button on phones.
+        <ul className="grid grid-cols-2 gap-3 pb-24 sm:grid-cols-3 lg:grid-cols-4 lg:pb-0" data-testid="inventory-grid">
           {results.map((item) => (
             <li key={item.id}>
               <Link to={`/inventory/${item.id}`} className="group block overflow-hidden rounded-2xl border border-line bg-surface shadow-card transition-shadow hover:shadow-pop" data-testid="inventory-item">
@@ -243,7 +244,7 @@ export function InventoryPage() {
           ))}
         </ul>
       ) : (
-        <Card className="overflow-hidden" data-testid="inventory-list">
+        <Card className="mb-24 overflow-hidden lg:mb-0" data-testid="inventory-list">
           <table className="w-full text-sm">
             <thead className="hidden bg-surface-2 text-left text-xs text-ink-2 md:table-header-group">
               <tr>
@@ -287,7 +288,7 @@ export function InventoryPage() {
           </table>
         </Card>
       )}
-      <div className="fixed right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-20 lg:hidden">
+      <div className="fixed right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] z-20 lg:hidden" data-testid="fab-add-item">
         <IconButton label="Add item" onClick={dialogs.addItem} className="size-14 rounded-2xl bg-accent text-white shadow-pop hover:bg-accent-hover hover:text-white">
           <PackagePlus className="size-6" />
         </IconButton>
