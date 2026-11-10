@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 4174;
+/** A second build with the AI scanner switched on (its API is mocked in the tests). */
+export const SCAN_PORT = 4175;
 
 export default defineConfig({
   testDir: './e2e',
@@ -17,10 +19,18 @@ export default defineConfig({
     // iPhone-sized viewport with touch, run in Chromium.
     { name: 'mobile', use: { ...devices['iPhone 13'], browserName: 'chromium' } },
   ],
-  webServer: {
-    command: `npx vite build && npx vite preview --port ${PORT} --strictPort`,
-    port: PORT,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: `npx vite build && npx vite preview --port ${PORT} --strictPort`,
+      port: PORT,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command: `npx vite build --mode scantest --outDir dist-scan-test && npx vite preview --outDir dist-scan-test --port ${SCAN_PORT} --strictPort`,
+      port: SCAN_PORT,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 });
