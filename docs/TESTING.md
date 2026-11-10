@@ -1,6 +1,8 @@
 # How StockPilot is tested
 
-Run `npm test` for unit tests and `npm run test:e2e` for browser tests (each browser test runs on a desktop viewport and an iPhone-sized touch viewport).
+Run `npm test` for unit tests and `npm run test:e2e` for browser tests (each browser test runs on a desktop viewport and an iPhone-sized touch viewport). The browser tests start two builds: the standard one (port 4174) and one with the AI scanner switched on (port 4175), whose backend is mocked.
+
+The AI scanner's backend has its own tests: `cd worker && npm ci && npm test && npm run test:integration`. **No test calls a real AI service or costs anything**; every AI response is mocked.
 
 ## Functional requirements → tests
 
@@ -25,3 +27,23 @@ Run `npm test` for unit tests and `npm run test:e2e` for browser tests (each bro
 | Empty states, invalid entries, errors | `e2e/inventory.spec.ts` (validation, duplicate SKU), `e2e/data.spec.ts` (bad CSV rows, missing columns, invalid backup), `e2e/insights.spec.ts` (insufficient data) |
 | Backups & restore | `e2e/data.spec.ts`; `src/data/backup.test.ts` |
 | Insights use real data and are labeled rule-based | `e2e/insights.spec.ts`; `src/insights/insights.test.ts` |
+
+## AI Inventory Scanner → tests
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Correct identification fills the form (shoes, electronics, clothing, collectibles, tools) | `e2e/scanner.spec.ts` — “scan shoes/electronics/clothing/collectibles/tools…”, each saved as a real item with its photo |
+| Unknown or ambiguous items | `e2e/scanner.spec.ts` — “an unrecognized item fills nothing…”, “a partly identified item…”; `src/ai/scan.test.ts` (unknown-style answers become blanks, status kept consistent) |
+| Incorrect, incomplete or malformed AI answers | `e2e/scanner.spec.ts` — “malformed or unusable answers…”; `src/ai/scan.test.ts`; `worker/test/claude.test.ts` (bad JSON, missing text, `max_tokens`, refusals) |
+| Prices, quantities and invented details are never filled | `e2e/scanner.spec.ts` — “prices, quantities and other invented fields… are ignored”, plus a check in every scan test; `src/ai/scan.test.ts` |
+| Invalid uploads | `e2e/scanner.spec.ts` — non-image and corrupt files are rejected on the device and nothing is sent; `worker/test/image.test.ts` (size, base64, real file type) |
+| API failures and timeouts | `e2e/scanner.spec.ts` — AI outage with retry, no connection, timeout, cancel, daily limit, budget; `worker/test/handler.test.ts` (every error code, refunds) |
+| Manual corrections before saving | `e2e/scanner.spec.ts` — “the user’s corrections are kept when they scan again”; `src/ai/scan.test.ts` (typed values never overwritten) |
+| Record creation through the existing Add Item | every e2e scan test saves the item and opens it |
+| Images sent only on request | `e2e/scanner.spec.ts` — no request before Analyze; hidden scanner sends nothing |
+| Invite codes: entry, rejection, revocation, lockout, never in backups | `e2e/scanner.spec.ts`; `worker/test/codes.test.ts`, `ledger.test.ts`, `handler.test.ts`; `worker/scripts/integration-test.mjs` |
+| Limits and budget hold under concurrent use | `worker/test/ledger.test.ts` (400 simultaneous requests); integration test (10 concurrent scans in the real Workers runtime) |
+| API key never reaches the browser | `worker/scripts/integration-test.mjs`; the app only ever sends the invite code |
+| Existing features unchanged; scanner absent from the standard build | the full existing suite; `e2e/scanner.spec.ts` — “standard build… shows no scanner anywhere”; edit-item shows no scanner |
+| Phone layout | `e2e/scanner.spec.ts` — “scanner panel and result fit a phone screen” |
+

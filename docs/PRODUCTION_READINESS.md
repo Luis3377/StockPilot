@@ -25,6 +25,7 @@ The prototype is intentionally local-only: no accounts, no servers, no paid serv
 - [ ] Privacy policy and terms of service; cookie/analytics consent where required.
 - [ ] Never store payment card data directly — use a payment provider if subscriptions are added.
 - [ ] If AI features are added, follow `AI_INTEGRATION.md` (server-side keys, minimal data, consent).
+- [ ] AI scanner: replace private-beta invite codes with real accounts before any public launch. Invite codes only gate the beta (anyone holding one can use its daily allowance); they are not authentication. Tie scan limits to the signed-in user or plan, re-check costs and limits, finish the model comparison, and update the privacy policy to cover photos sent to Anthropic (`AI_SCANNER.md`).
 - [ ] Dependency and secret scanning in CI.
 
 ## Product

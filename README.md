@@ -12,6 +12,7 @@ StockPilot is an inventory and profit assistant for resellers, collectors and sm
 | **Overview** | A dashboard per mode with a period filter (this month, 30/90 days, this year, all time): realized profit, revenue, items sold, inventory cost, selling value, projected profit, slow movers, recent sales, collection value over time, stock levels to watch, discrepancies and more. |
 | **Inventory** | Add, edit and delete (with confirmation) items with photos (resized on-device), SKU (auto-generated if blank), category, quantity, unit cost, asking price, estimated value, purchase date, condition, location, low-stock alert and notes. Search, filter (status, category, location, condition), sort and grid/list views. Restock (weighted-average cost) and manual quantity adjustments with reasons. |
 | **Sales & Profit** | Record a sale against an item; stock goes down automatically and can never go below zero. Price per item or total, fees as an amount or %, seller-paid shipping and other expenses, with a live profit preview. Edit or cancel sales without double-counting stock. Realized and projected figures are always shown separately. |
+| **AI Inventory Scanner (private beta, off by default)** | “Scan with AI” in Add Item: take or upload a photo and Claude suggests the name, brand, model, category, condition and a description. Suggestions are marked “AI” and must be checked; cost, quantity and prices are never filled in. Needs a build with the scanner enabled, the Cloudflare Worker in `worker/` and an invite code. See [docs/AI_SCANNER.md](docs/AI_SCANNER.md). |
 | **Smart Insights** | Rule-based alerts (low stock, slow movers, low/negative margins, prices that may not be profitable, top earners, category performance, discrepancies) and a question box that answers questions like “How much profit have I made this month?” from your own data. Clearly labeled as rule-based — no AI model is used yet. |
 | **Count Check** | Count physical stock (all items, a category or a location), see missing/extra units and their value, approve adjustments with reasons, and keep a history and adjustment log. Progress is saved as you go. |
 | **Import / export / backup** | CSV import with validation, row-level errors and duplicate protection; CSV exports for inventory, sales & profit, monthly profit summary, adjustments and count discrepancy reports; full JSON backup (including photos) and restore. |
@@ -35,6 +36,8 @@ npm run preview      # serve the production build
 npm test             # unit tests (Vitest)
 npm run test:e2e     # browser tests (Playwright; desktop + iPhone-sized viewport)
 npm run check        # typecheck + unit tests + build
+npm run build:scan-preview   # build with the AI scanner switched on (private preview only)
+npm run test:worker  # scanner backend unit tests (run `npm ci` in worker/ first)
 ```
 
 For the end-to-end tests, install a browser once with `npx playwright install chromium` (CI does this automatically).
@@ -45,7 +48,7 @@ For the end-to-end tests, install a browser once with `npx playwright install ch
 
 ## How data is stored
 
-Everything is stored **only on the user's device**, in the browser's IndexedDB (photos included). Nothing is uploaded. The app tells users this during onboarding and in Settings, asks the browser to protect the data from automatic cleanup, and makes backups one click away. Clearing browser data deletes the records, so users should download backups regularly.
+Everything is stored **only on the user's device**, in the browser's IndexedDB (photos included). Nothing is uploaded. (Exception, only in builds with the AI scanner enabled: a photo the user chooses to analyze is sent to the scanner backend and Anthropic for that one request, and is not stored there. See [docs/AI_SCANNER.md](docs/AI_SCANNER.md).) The app tells users this during onboarding and in Settings, asks the browser to protect the data from automatic cleanup, and makes backups one click away. Clearing browser data deletes the records, so users should download backups regularly.
 
 Real data and demo data live in separate datasets. If two tabs are open, a change in one is reflected in the other.
 
@@ -69,9 +72,11 @@ src/
   data/        Storage adapter (IndexedDB), app store, backup/restore, input sanitising, demo data
   csv/         CSV parser/writer, inventory import with validation, exports
   insights/    Rule-based alerts and the question-answering assistant (provider interface for future AI)
+  ai/          AI scanner: shared result schema and validator, form mapping, backend client
   ui/          Design-system components (buttons, dialogs, fields, charts, photos…)
   pages/       Screens, dialogs and the app shell
 e2e/           Playwright browser tests
+worker/        AI scanner backend (Cloudflare Worker): invite codes, limits, budget, Claude call
 docs/          AI integration plan, production-readiness checklist, test coverage map
 ```
 
@@ -80,5 +85,6 @@ The domain layer is pure TypeScript with no browser dependencies, so the same in
 ## Further reading
 
 - [docs/TESTING.md](docs/TESTING.md) — how each functional requirement is tested
+- [docs/AI_SCANNER.md](docs/AI_SCANNER.md) — the AI Inventory Scanner: how it works, costs, safeguards and how to switch on the private beta
 - [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) — how to add genuine AI insights securely
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) — what must be done before launching with real users
