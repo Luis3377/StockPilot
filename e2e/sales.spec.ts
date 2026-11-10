@@ -86,8 +86,13 @@ test('a sale can never take stock below zero', async ({ page }) => {
   await page.getByRole('button', { name: 'Record sale' }).click();
   const dialog = page.getByTestId('sale-form');
   await dialog.getByLabel('Quantity sold').fill('6');
+  // Every problem shows after one submit.
+  await dialog.getByLabel('Shipping you paid').fill('-5');
+  await dialog.getByLabel('Other expenses').fill('abc');
   await dialog.getByRole('button', { name: 'Record sale' }).click();
   await expect(dialog.getByText('Only 5 of "Retro console" are available — you entered 6.')).toBeVisible();
+  await expect(dialog.getByText("Shipping can't be negative.")).toBeVisible();
+  await expect(dialog.getByText('Enter an amount like 12.50')).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByTestId('item-quantity')).toHaveText('5');
 });

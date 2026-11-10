@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { recordSale, updateSale, type SaleInput } from '../../domain/actions';
+import { recordSale, saleInputErrors, updateSale, type SaleInput } from '../../domain/actions';
 import { computeSale, convertSalePrice, knownPlatforms, uniqueSorted } from '../../domain/calc';
 import { isDomainError } from '../../domain/errors';
 import { todayISO } from '../../domain/dates';
@@ -158,10 +158,6 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
     const feesRaw = moneyOrNull('fees');
     if (form.feeMode === 'percent' && feesRaw !== null && feesRaw >= 100) fieldErrors.fees = 'Fees must be under 100%';
     if (!form.itemId) fieldErrors.itemId = 'Choose the item you sold';
-    if (Object.keys(fieldErrors).length) {
-      setErrors(fieldErrors);
-      return;
-    }
     const input: SaleInput = {
       itemId: form.itemId,
       quantity: form.quantity.trim() === '' ? null : Number(form.quantity),
@@ -174,6 +170,13 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
       saleDate: form.saleDate,
       notes: form.notes,
     };
+    // Show every problem after one submit: this form's own messages, plus the sale rules
+    // (negative amounts, more than is in stock…) for the other fields.
+    const allErrors = { ...saleInputErrors(data, input, sale?.id ?? null), ...fieldErrors };
+    if (Object.keys(allErrors).length) {
+      setErrors(allErrors);
+      return;
+    }
     try {
       const result = sale ? store.commit((d) => updateSale(d, sale.id, input)) : store.commit((d) => recordSale(d, input));
       const f = computeSale(result.sale);
@@ -184,7 +187,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
       );
       onClose();
     } catch (err) {
-      if (isDomainError(err) && err.field) setErrors({ [err.field]: err.message });
+      if (isDomainError(err) && Object.keys(err.fields).length) setErrors(err.fields);
       else toast.error(isDomainError(err) ? err.message : 'The sale could not be saved.');
     }
   };

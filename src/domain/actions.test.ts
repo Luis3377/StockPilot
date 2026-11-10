@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { DomainError } from './errors';
 import {
   addItem,
+  itemInputErrors,
+  saleInputErrors,
   adjustQuantity,
   completeCount,
   compareCount,
@@ -40,6 +43,23 @@ describe('items', () => {
     expect(() => addItem(data, { name: 'x', quantity: 1.5, unitCost: 1 })).toThrow('whole number');
     expect(() => addItem(data, { name: 'x', quantity: 1, unitCost: null })).toThrow('Cost per item is required');
     expect(() => addItem(data, { name: 'x', quantity: 1, unitCost: 1, purchaseDate: '2026-02-31' })).toThrow('valid date');
+  });
+
+  it('reports every invalid item field at once', () => {
+    const { data } = withItem({ sku: 'TAKEN' });
+    const errors = itemInputErrors(data, { name: ' ', sku: 'taken', quantity: 1.5, unitCost: -2, askingPrice: -1, purchaseDate: '2026-02-30' }, null);
+    expect(Object.keys(errors).sort()).toEqual(['askingPrice', 'name', 'purchaseDate', 'quantity', 'sku', 'unitCost']);
+    expect(errors.unitCost).toBe("Cost per item can't be negative.");
+    expect(itemInputErrors(data, { name: 'Fine', quantity: 1, unitCost: 1 }, null)).toEqual({});
+    // The thrown error carries all of them too, with the first as its message.
+    try {
+      addItem(data, { name: '', quantity: -1, unitCost: -2 });
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DomainError);
+      expect((e as DomainError).message).toBe('Item name is required.');
+      expect(Object.keys((e as DomainError).fields)).toEqual(['name', 'quantity', 'unitCost']);
+    }
   });
 
   it('rejects duplicate SKUs case-insensitively', () => {
@@ -179,6 +199,25 @@ describe('sales', () => {
     const r = deleteSale(data, s.sale.id);
     expect(r.restored).toBe(false);
     expect(r.data.sales).toHaveLength(0);
+  });
+
+  it('reports every invalid sale field at once', () => {
+    let { data, item } = withItem({ quantity: 2 });
+    const errors = saleInputErrors(data, sale(item.id, 5, { fees: -1, shipping: -2, saleDate: '' }), null);
+    expect(errors).toMatchObject({
+      quantity: 'Only 2 of "Test item" are available — you entered 5.',
+      fees: "Marketplace fees can't be negative.",
+      shipping: "Shipping can't be negative.",
+      saleDate: 'Enter a valid sale date.',
+    });
+    expect(saleInputErrors(data, sale('', null as unknown as number), null)).toMatchObject({ itemId: 'Choose the item you sold.', quantity: 'Quantity sold is required.' });
+    const recorded = recordSale(data, sale(item.id, 1));
+    data = recorded.data;
+    expect(saleInputErrors(data, sale(item.id, 3, { otherExpenses: -1 }), recorded.sale.id)).toMatchObject({
+      quantity: 'Only 2 of "Test item" are available — you entered 3.',
+      otherExpenses: "Other expenses can't be negative.",
+    });
+    expect(saleInputErrors(data, sale(item.id, 2), recorded.sale.id)).toEqual({});
   });
 
   it('validates sale money fields', () => {

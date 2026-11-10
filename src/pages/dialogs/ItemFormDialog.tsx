@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { addItem, updateItem, type ItemInput } from '../../domain/actions';
+import { addItem, itemInputErrors, updateItem, type ItemInput } from '../../domain/actions';
 import { isDomainError } from '../../domain/errors';
 import { knownCategories, knownLocations } from '../../domain/calc';
 import { todayISO } from '../../domain/dates';
@@ -37,6 +37,8 @@ type FormState = {
   notes: string;
   photoIds: string[];
 };
+
+const MORE_DETAIL_FIELDS = ['sku', 'purchaseDate', 'lowStockThreshold', 'condition', 'location', 'notes', 'estimatedValue', 'askingPrice'];
 
 const moneyText = (n: number | null) => (n === null ? '' : String(n));
 
@@ -155,9 +157,11 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
     if (!form.name.trim()) fieldErrors.name = 'Give the item a name';
     if (form.unitCost.trim() === '' && !fieldErrors.unitCost) fieldErrors.unitCost = 'Enter what you paid per item (0 if it was free)';
     if (form.quantity.trim() === '') fieldErrors.quantity = 'Enter how many you have';
-    if (Object.keys(fieldErrors).length) {
-      setErrors(fieldErrors);
-      if (fieldErrors.sku || fieldErrors.lowStockThreshold || fieldErrors.estimatedValue) setShowMore(true);
+    // Show every problem after one submit: this form's own messages, plus the inventory's
+    // rules (negative amounts, duplicate SKUs…) for the other fields.
+    const allErrors = { ...itemInputErrors(data, input, item?.id ?? null), ...fieldErrors };
+    if (Object.keys(allErrors).length) {
+      showErrors(allErrors);
       return;
     }
     try {
@@ -175,13 +179,15 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
       toast.success(item ? `Saved changes to "${result.item.name}"` : `Added "${result.item.name}" to your inventory`);
       onClose();
     } catch (err) {
-      if (isDomainError(err) && err.field) {
-        setErrors({ [err.field]: err.message });
-        if (['sku', 'purchaseDate', 'lowStockThreshold', 'condition', 'location', 'notes', 'estimatedValue'].includes(err.field)) setShowMore(true);
-      } else {
-        toast.error(isDomainError(err) ? err.message : 'The item could not be saved.');
-      }
+      if (isDomainError(err) && Object.keys(err.fields).length) showErrors(err.fields);
+      else toast.error(isDomainError(err) ? err.message : 'The item could not be saved.');
     }
+  };
+
+  const showErrors = (errs: Partial<Record<string, string>>) => {
+    setErrors(errs as Partial<Record<keyof FormState, string>>);
+    // Open "More details" when an error is on a field that may be tucked away there.
+    if (Object.keys(errs).some((f) => MORE_DETAIL_FIELDS.includes(f))) setShowMore(true);
   };
 
   const mode = settings.mode;

@@ -35,6 +35,18 @@ test('validation explains what is missing and nothing is saved', async ({ page }
   await expect(page.getByTestId('get-started')).toBeVisible();
 });
 
+test('one submit shows every problem with the item form', async ({ page }) => {
+  await onboard(page, 'Reseller');
+  await page.getByRole('button', { name: 'Add your first item' }).click();
+  const dialog = page.getByTestId('item-form');
+  await dialog.getByLabel('Item name').fill('Thing');
+  await dialog.getByLabel('Cost per item').fill('-2');
+  await dialog.getByLabel('Asking price').fill('abc');
+  await dialog.getByRole('button', { name: 'Add item' }).click();
+  await expect(dialog.getByText("Cost per item can't be negative.")).toBeVisible();
+  await expect(dialog.getByText('Enter an amount like 12.50')).toBeVisible();
+});
+
 test('duplicate SKUs are rejected with a clear message', async ({ page }) => {
   await onboard(page, 'Small business');
   await addItem(page, { name: 'Candle A', sku: 'CAN-1' });
