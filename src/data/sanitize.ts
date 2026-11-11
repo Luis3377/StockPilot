@@ -3,6 +3,7 @@
 
 import { DomainError } from '../domain/errors';
 import { isValidISODate } from '../domain/dates';
+import { newId } from '../domain/ids';
 import {
   defaultSettings,
   type Adjustment,
@@ -12,6 +13,11 @@ import {
   type CountLine,
   type CountRecord,
   type Item,
+  type Lot,
+  type LotChange,
+  type LotExtraCost,
+  type LotLine,
+  type LotLineChange,
   type Sale,
   type Settings,
   type ValueSnapshot,
@@ -209,6 +215,88 @@ function sanitizeSnapshot(raw: unknown): ValueSnapshot | null {
   return { date: d, units: units as number, cost: cost as number, value: value as number };
 }
 
+const isMethod = (v: unknown) => v === 'relative_value' || v === 'equal';
+
+function sanitizeExtraCost(raw: unknown, where: string): LotExtraCost {
+  if (!isObj(raw)) fail(where, 'has an invalid extra cost');
+  return { id: str(raw, 'id', where) || newId(), label: str(raw, 'label', where), amount: num(raw, 'amount', where, { min: 0 }) };
+}
+
+function sanitizeLotLine(raw: unknown, where: string): LotLine {
+  if (!isObj(raw)) fail(where, 'has an invalid item line');
+  return {
+    id: str(raw, 'id', where) || newId(),
+    itemId: str(raw, 'itemId', where, true),
+    itemName: str(raw, 'itemName', where),
+    quantity: num(raw, 'quantity', where, { integer: true, min: 1 }),
+    estimatedUnitValue: optNum(raw, 'estimatedUnitValue', where, { min: 0 }),
+    estimateSource: 'user',
+    allocatedCost: num(raw, 'allocatedCost', where),
+  };
+}
+
+function sanitizeLotLineChange(raw: unknown): LotLineChange | null {
+  if (!isObj(raw)) return null;
+  const n = (k: string) => (typeof raw[k] === 'number' && Number.isFinite(raw[k]) ? (raw[k] as number) : 0);
+  const optN = (k: string) => (typeof raw[k] === 'number' && Number.isFinite(raw[k]) ? (raw[k] as number) : null);
+  const s = (k: string) => (typeof raw[k] === 'string' ? (raw[k] as string) : '');
+  return {
+    lineId: s('lineId'),
+    itemId: s('itemId'),
+    itemName: s('itemName'),
+    unitsAffected: n('unitsAffected'),
+    previousUnitCost: n('previousUnitCost'),
+    newUnitCost: n('newUnitCost'),
+    previousRemainingCost: n('previousRemainingCost'),
+    newRemainingCost: n('newRemainingCost'),
+    previousEstimate: optN('previousEstimate'),
+    newEstimate: optN('newEstimate'),
+  };
+}
+
+/** History is informational: entries that can't be read are dropped rather than failing a restore. */
+function sanitizeLotChange(raw: unknown): LotChange | null {
+  if (!isObj(raw) || typeof raw.date !== 'string') return null;
+  const kind = raw.kind === 'costs' || raw.kind === 'details' ? raw.kind : 'created';
+  const n = (k: string) => (typeof raw[k] === 'number' && Number.isFinite(raw[k]) ? (raw[k] as number) : 0);
+  return {
+    id: typeof raw.id === 'string' ? raw.id : newId(),
+    date: raw.date,
+    kind,
+    changedFields: Array.isArray(raw.changedFields) ? raw.changedFields.filter((f): f is string => typeof f === 'string') : [],
+    note: typeof raw.note === 'string' ? raw.note : '',
+    previousTotal: n('previousTotal'),
+    newTotal: n('newTotal'),
+    previousMethod: isMethod(raw.previousMethod) ? (raw.previousMethod as LotChange['previousMethod']) : 'relative_value',
+    newMethod: isMethod(raw.newMethod) ? (raw.newMethod as LotChange['newMethod']) : 'relative_value',
+    lockedCost: n('lockedCost'),
+    lines: (Array.isArray(raw.lines) ? raw.lines : []).map(sanitizeLotLineChange).filter((l): l is LotLineChange => l !== null),
+  };
+}
+
+function sanitizeLot(raw: unknown, n: number): Lot {
+  const where = `Lot ${n}`;
+  if (!isObj(raw)) fail(where, 'is not an object');
+  const lines = arr(raw, 'lines', where).map((l) => sanitizeLotLine(l, where));
+  if (lines.length === 0) fail(where, 'has no items');
+  return {
+    id: str(raw, 'id', where, true),
+    name: str(raw, 'name', where, true),
+    purchasePrice: num(raw, 'purchasePrice', where, { min: 0 }),
+    extraCosts: arr(raw, 'extraCosts', where).map((c) => sanitizeExtraCost(c, where)),
+    purchaseDate: optDate(raw, 'purchaseDate', where),
+    source: str(raw, 'source', where),
+    notes: str(raw, 'notes', where),
+    method: raw.method === 'equal' ? 'equal' : 'relative_value',
+    lines,
+    history: arr(raw, 'history', where)
+      .map(sanitizeLotChange)
+      .filter((c): c is LotChange => c !== null),
+    createdAt: str(raw, 'createdAt', where) || new Date().toISOString(),
+    updatedAt: str(raw, 'updatedAt', where) || new Date().toISOString(),
+  };
+}
+
 export function sanitizeAppData(raw: unknown): AppData {
   if (!isObj(raw)) throw new DomainError('The data is not in the expected format.');
   const items = arr(raw, 'items', 'Data').map((r, i) => sanitizeItem(r, i + 1));
@@ -227,6 +315,8 @@ export function sanitizeAppData(raw: unknown): AppData {
     snapshots: arr(raw, 'snapshots', 'Data')
       .map(sanitizeSnapshot)
       .filter((s): s is ValueSnapshot => s !== null),
+    // Data and backups from before bulk lots have no "lots": they load with none.
+    lots: arr(raw, 'lots', 'Data').map((r, i) => sanitizeLot(r, i + 1)),
   };
 }
 
