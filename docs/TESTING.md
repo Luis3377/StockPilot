@@ -47,3 +47,24 @@ The AI scanner's backend has its own tests: `cd worker && npm ci && npm test && 
 | Existing features unchanged; scanner absent from the standard build | the full existing suite; `e2e/scanner.spec.ts` — “standard build… shows no scanner anywhere”; edit-item shows no scanner |
 | Phone layout | `e2e/scanner.spec.ts` — “scanner panel and result fit a phone screen” |
 
+## Trust & usability fixes (Phase 2) → tests
+
+`e2e/trust.spec.ts` (desktop and iPhone-sized), plus unit tests. What can only be confirmed on a real iPhone is listed in [MANUAL_TESTS_IOS.md](MANUAL_TESTS_IOS.md). **No automated test exercises real iOS storage behaviour.**
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Onboarding explains where data is saved, the risks, and how to protect it; iPhone users see Home Screen advice without guarantees | `trust.spec.ts` — "onboarding explains where inventory is saved…" (iPhone advice checked in the phone project) |
+| Backup reminder appears when needed, Back up now downloads a backup, Remind me later persists | `trust.spec.ts` — backup reminder tests; `src/data/backupStatus.test.ts` (when it's due) |
+| Moving data safely: backup, then Restore from the welcome screen in a fresh browser/app, with photos and settings; the original is untouched | `trust.spec.ts` — "moving inventory: back up here, then restore…" |
+| Settings explains storage, persistent-storage status, how to move data and what could delete it | `trust.spec.ts` — "Settings explains where data is saved…" |
+| Backup & restore, data and photos surviving a reload | `data.spec.ts`, `inventory.spec.ts` (reloads now wait for saves to finish) |
+| Distinct, defined financial terms on the dashboard, cards and item page | `trust.spec.ts` — "every dashboard money figure is named…"; `src/insights/consistency.test.ts` |
+| Assistant uses the same figures and definitions ("invested" = inventory cost; "worth" = all three) | `consistency.test.ts`; `trust.spec.ts` — "the assistant answers with the same figures…" |
+| Slow-moving amounts labeled as inventory cost | `trust.spec.ts`; `consistency.test.ts` |
+| Same period on Overview and Insights; identical margins for identical filters; every section labeled with its period | `consistency.test.ts` (all five periods); `trust.spec.ts` — "Smart Insights uses the dashboard’s period…" |
+| Keyboard-only onboarding with visible focus; accessible names | `trust.spec.ts` — keyboard test |
+| No WCAG 2.1 A/AA violations (axe) on onboarding, Overview, Inventory, item page, Insights, Settings, Add Item | `trust.spec.ts` — "no accessibility violations…" |
+| Zero stock is always "Out of stock" | `trust.spec.ts` |
+| Long names wrap, full name available, no overflow (cards, item page, AI result) | `trust.spec.ts`; `scanner.spec.ts` — "scanner panel and result fit phone screens, with long names shown in full" |
+| Form text ≥ 16px on phones (no iOS zoom); scanner panel fits at 320/375/390/414 px | `trust.spec.ts`; `scanner.spec.ts` |
+

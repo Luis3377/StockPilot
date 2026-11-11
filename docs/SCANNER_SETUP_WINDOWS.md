@@ -256,7 +256,7 @@ npm ci
 npm run deploy:preview
 ```
 
-Secrets and invite codes stay as they are.
+Secrets and invite codes stay as they are. Testers' inventory also stays: it lives in their own browsers, at the same web address, and a new version doesn't touch it. It's still wise to ask testers to tap **Back up now** before a bigger update.
 
 ## Optional: compare Haiku, Sonnet and Opus on your own photos
 
