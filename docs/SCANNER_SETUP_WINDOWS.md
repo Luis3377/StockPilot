@@ -35,7 +35,7 @@ node --version
 git --version
 ```
 
-You should see something like `v22.x.x` and `git version 2.x`. If you see "not recognized", close PowerShell, open it again, and retry.
+You should see `v22.12.0` or higher (v24 or v26 are fine too) and `git version 2.x`. If you see "not recognized", close PowerShell, open it again, and retry. If Node is older than 22.12, install the current LTS from nodejs.org over it: Cloudflare's tools need 22.12 or newer.
 
 ### 0.4 Allow npm to run (one time)
 Windows blocks some scripts by default, including the one that runs `npm`. Allow scripts for your user account only:

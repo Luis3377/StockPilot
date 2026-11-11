@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "description": "Backend for the StockPilot AI Inventory Scanner (Cloudflare Worker).",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
@@ -17,12 +20,12 @@
     "@anthropic-ai/sdk": "1.3.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20261015.1",
+    "@cloudflare/workers-types": "5.20261110.1",
     "@types/node": "^24.10.1",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
     "vite": "8.3.5",
     "vitest": "5.0.5",
-    "wrangler": "4.151.3"
+    "wrangler": "4.160.0"
   }
 }

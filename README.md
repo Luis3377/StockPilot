@@ -21,7 +21,7 @@ StockPilot is an inventory and profit assistant for resellers, collectors and sm
 
 ## Getting started
 
-Requires Node.js 20+.
+Requires Node.js 20+ (the AI scanner backend in `worker/` needs Node.js 22.12 or newer).
 
 ```bash
 npm install
