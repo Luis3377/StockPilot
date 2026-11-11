@@ -3,6 +3,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { parseScanResult, ScanResultError, SCAN_JSON_SCHEMA, SCAN_SYSTEM_PROMPT, SCAN_USER_PROMPT, type ScanResult } from '../../src/ai/scanSchema';
+import { AssistantResultError } from '../../src/ai/explainSchema';
 import { AI_TIMEOUT_MS, costMicros, MAX_OUTPUT_TOKENS, type Effort, type ScanModel } from './config';
 import type { ImageMediaType } from './image';
 
@@ -93,6 +94,30 @@ export function interpretMessage(message: Anthropic.Message, model: ScanModel): 
   }
 }
 
+type AiFailure = Extract<AiOutcome, { kind: 'error' }>;
+
+/**
+ * Maps an SDK error to an outcome. Requests rejected up front (4xx, 529 overloaded) are not
+ * processed or billed; anything that may have reached the model without a reply is treated as
+ * billed, and the caller charges the reserved worst case.
+ */
+export function classifyError(e: unknown): AiFailure {
+  const fail = (error: AiFailure['error'], mayBeBilled: boolean, detail: string): AiFailure => ({ kind: 'error', error, usage: null, costMicros: 0, mayBeBilled, detail });
+  if (e instanceof Anthropic.APIConnectionTimeoutError) return fail('timeout', true, 'timeout');
+  if (e instanceof Anthropic.APIUserAbortError) return fail('timeout', true, 'aborted');
+  if (e instanceof Anthropic.APIConnectionError) return fail('upstream', true, 'connection lost');
+  if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) return fail('config', false, `auth ${e.status}`);
+  if (e instanceof Anthropic.RateLimitError) return fail('busy', false, 'rate limited');
+  if (e instanceof Anthropic.BadRequestError) return fail('upstream', false, `bad request: ${e.message.slice(0, 200)}`);
+  if (e instanceof Anthropic.APIError) {
+    const status = e.status;
+    if (status === 529) return fail('busy', false, 'overloaded');
+    if (typeof status === 'number' && status >= 400 && status < 500) return fail('upstream', false, `status ${status}`);
+    return fail('upstream', true, `status ${status ?? 'none'}`);
+  }
+  return fail('upstream', true, e instanceof Error ? e.message.slice(0, 200) : 'unknown');
+}
+
 /**
  * Sends one image to Claude. Errors are mapped to a small set of outcomes. Answers that came
  * back (even unusable ones) carry their exact cost. Failures where the provider may still
@@ -109,28 +134,53 @@ export async function analyzeImage(
     });
     return interpretMessage(message, args.model);
   } catch (e) {
-    const fail = (error: Extract<AiOutcome, { kind: 'error' }>['error'], mayBeBilled: boolean, detail: string): AiOutcome => ({
-      kind: 'error',
-      error,
-      usage: null,
-      costMicros: 0,
-      mayBeBilled,
-      detail,
-    });
-    // Most specific first. Requests rejected up front (4xx, 529 overloaded) are not processed
-    // or billed; anything that may have reached the model without a reply is treated as billed.
-    if (e instanceof Anthropic.APIConnectionTimeoutError) return fail('timeout', true, 'timeout');
-    if (e instanceof Anthropic.APIUserAbortError) return fail('timeout', true, 'aborted');
-    if (e instanceof Anthropic.APIConnectionError) return fail('upstream', true, 'connection lost');
-    if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) return fail('config', false, `auth ${e.status}`);
-    if (e instanceof Anthropic.RateLimitError) return fail('busy', false, 'rate limited');
-    if (e instanceof Anthropic.BadRequestError) return fail('upstream', false, `bad request: ${e.message.slice(0, 200)}`);
-    if (e instanceof Anthropic.APIError) {
-      const status = e.status;
-      if (status === 529) return fail('busy', false, 'overloaded');
-      if (typeof status === 'number' && status >= 400 && status < 500) return fail('upstream', false, `status ${status}`);
-      return fail('upstream', true, `status ${status ?? 'none'}`);
-    }
-    return fail('upstream', true, e instanceof Error ? e.message.slice(0, 200) : 'unknown');
+    return classifyError(e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Assistant: structured text-only calls (interpret a question, explain a calculation)
+// ---------------------------------------------------------------------------
+
+export type TextOutcome<T> = { kind: 'ok'; value: T; usage: AiUsage; costMicros: number } | AiFailure;
+
+export interface TextRequest {
+  model: ScanModel;
+  effort: Effort;
+  system: string;
+  user: string;
+  schema: Record<string, unknown>;
+  maxTokens: number;
+}
+
+export function buildTextRequest(r: TextRequest): Anthropic.MessageCreateParamsNonStreaming {
+  return {
+    model: r.model,
+    max_tokens: r.maxTokens,
+    system: r.system,
+    output_config: { effort: r.effort, format: { type: 'json_schema', schema: r.schema } },
+    messages: [{ role: 'user', content: r.user }],
+  };
+}
+
+/** One structured, text-only call; the answer is validated by `parse` before anything returns. */
+export async function callStructured<T>(client: MessagesClient, r: TextRequest, parse: (raw: unknown) => T, signal?: AbortSignal): Promise<TextOutcome<T>> {
+  let message: Anthropic.Message;
+  try {
+    message = await client.messages.create(buildTextRequest(r), { signal, timeout: AI_TIMEOUT_MS });
+  } catch (e) {
+    return classifyError(e);
+  }
+  const usage = usageOf(message);
+  const cost = costMicros(r.model, usage.inputTokens, usage.outputTokens, usage.cacheWriteTokens);
+  const bad = (detail: string): AiFailure => ({ kind: 'error', error: 'bad_response', usage, costMicros: cost, mayBeBilled: false, detail });
+  if (message.stop_reason === 'refusal') return bad('refusal');
+  if (message.stop_reason === 'max_tokens') return bad('max_tokens');
+  const text = message.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text;
+  if (!text) return bad('no text block');
+  try {
+    return { kind: 'ok', value: parse(JSON.parse(text)), usage, costMicros: cost };
+  } catch (e) {
+    return bad(e instanceof AssistantResultError ? e.message : 'invalid JSON');
   }
 }

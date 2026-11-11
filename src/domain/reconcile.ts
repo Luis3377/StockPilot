@@ -312,8 +312,9 @@ export interface ReconciliationReport {
   coverage: { start: string | null; end: string | null };
 }
 
-const PENDING_STATUS = /initiat|process|pending|schedul|progress|queued|in transit/i;
-const FAILED_STATUS = /fail|revers|return|cancel|reject/i;
+/** eBay payout statuses meaning the money hasn't reached the bank yet, or never will. */
+export const PENDING_STATUS = /initiat|process|pending|schedul|progress|queued|in transit/i;
+export const FAILED_STATUS = /fail|revers|return|cancel|reject/i;
 const HOLD_STATUS = /hold/i;
 
 export const reviewTarget = {

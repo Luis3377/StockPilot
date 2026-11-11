@@ -13,5 +13,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "../src/ai/scanSchema.ts"]
+  "include": ["src", "../src/ai/scanSchema.ts", "../src/ai/explainSchema.ts"]
 }

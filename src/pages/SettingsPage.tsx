@@ -386,7 +386,7 @@ export function SettingsPage() {
           <div className="space-y-2 text-sm text-ink-2">
             <p>Version {__APP_VERSION__} · Early prototype</p>
             <p>
-              <strong className="text-ink">Smart Insights are rule-based.</strong> They are calculated from your recorded data using fixed, explainable rules. No AI model is used for insights, and your records never leave this device{scannerEnabled ? ' (only photos you choose to analyze with the AI scanner are sent, as described above)' : ''}.
+              <strong className="text-ink">Smart Insights are rule-based.</strong> They are calculated from your recorded data using fixed, explainable rules. No AI model is used for insights, and your records never leave this device{scannerEnabled ? ' (except a photo you choose to analyze with the AI scanner, or the question and figures of an answer you choose to have AI explain, as described above)' : ''}.
             </p>
             <p>This prototype has no accounts or cloud sync. Before a public launch, secure accounts, private per-user cloud storage and automatic backups will be added.</p>
           </div>

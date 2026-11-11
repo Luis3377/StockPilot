@@ -255,11 +255,11 @@ There is **no migration and no schema bump**:
 - Backups include everything, still as backup version 1. Restoring a new backup in an older version keeps all items, sales and profits but drops the marketplace data and order numbers.
 - Buyer names and addresses from eBay's report are not stored.
 
-## 9. For a future AI assistant
+## 9. In the assistant
 
 `payoutFacts()` returns a payout's exact figures, lines and findings with their supporting records as plain data. `explainPayout()` turns them into sentences.
 
-The current rule-based assistant already answers "Why doesn't my eBay payout match?" from these figures, word for word. A future AI model would receive the same facts and only phrase them. It never calculates or invents an amount. No AI service is used or added.
+The Smart Insights assistant answers "Why doesn't my eBay payout match?" and "Why is my eBay payout $4.05 short?" from these figures, with the calculation and links to the evidence (Feature 3, see [EXPLAINABLE_AI.md](EXPLAINABLE_AI.md)). In AI-enabled beta builds the AI may only reword those figures. It never calculates or invents an amount.
 
 ## 10. Known limitations
 
