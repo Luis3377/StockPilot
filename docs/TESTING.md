@@ -111,3 +111,21 @@ All tests use sanitized eBay reports in `src/marketplace/fixtures/` (documented 
 | Backup/restore compatibility and persistence | `src/domain/reconcile.test.ts` — round trip, older backups, broken data; `e2e/payouts.spec.ts` — backup and restore, reload |
 | Phones and accessibility | every `e2e/payouts.spec.ts` test runs on desktop and an iPhone-sized viewport with no sideways scrolling; axe on the dashboard, payout page and empty state |
 
+## AI that shows its work (assistant calculations) → tests
+
+The full map is in [EXPLAINABLE_AI.md §7](EXPLAINABLE_AI.md#7-tests). In short:
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Every figure reproducible from its records, to the cent | `src/insights/calculations.test.ts` — `expectReproducible` on every answer, 25 random shops, rounding |
+| Profit, revenue, periods, clarification, zero sales, losses | `src/insights/calculations.test.ts`; `e2e/assistant.spec.ts` |
+| Inventory cost vs value, inventory purchases, lots, partial lot sales | `src/insights/calculations.test.ts` |
+| Payout explanations (confirmed vs possible, no invented fees), cash received | `src/insights/calculations.test.ts`; `e2e/assistant.spec.ts` |
+| Refunds, duplicates, $0 cost, missing records | `src/insights/calculations.test.ts` |
+| Calculation view, records, links, mobile, accessibility | `e2e/assistant.spec.ts` (desktop + iPhone-sized, axe) |
+| AI wording with wrong numbers refused (Worker and app) | `src/ai/explainSchema.test.ts`, `worker/test/assistant.test.ts`, `e2e/assistant.spec.ts` |
+| Prompt injection via names, notes and CSV text | `src/insights/calculations.test.ts`, `src/ai/explainSchema.test.ts`, `worker/test/assistant.test.ts` |
+| Shared daily limit and monthly budget, reservations, kill switch | `worker/test/assistant.test.ts` |
+| Only the question / capped facts sent; nothing sent by the standard build | `worker/test/assistant.test.ts`, `e2e/assistant.spec.ts` |
+| Backup and restore | `src/insights/calculations.test.ts` |
+

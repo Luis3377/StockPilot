@@ -57,6 +57,8 @@ Phone / browser (StockPilot preview build)        Cloudflare Worker (worker/)   
 
 ## 2. Safeguards
 
+> The same Worker also serves the assistant's optional AI layer (`POST /v1/assistant`: explain a verified answer, or interpret a question). It uses the same invite codes, and the limits and monthly budget below are **shared**: an AI answer counts like a scan. See [EXPLAINABLE_AI.md §5](EXPLAINABLE_AI.md#5-the-ai-layer-security-and-budget).
+
 **API key.** Only in the Worker, as an encrypted Cloudflare secret. It is never in the app, the repository, the build or the logs.
 
 **Invite codes** (private beta access, not user accounts):
