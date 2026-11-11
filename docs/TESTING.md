@@ -129,3 +129,19 @@ The full map is in [EXPLAINABLE_AI.md §7](EXPLAINABLE_AI.md#7-tests). In short:
 | Only the question / capped facts sent; nothing sent by the standard build | `worker/test/assistant.test.ts`, `e2e/assistant.spec.ts` |
 | Backup and restore | `src/insights/calculations.test.ts` |
 
+## Max Bid Calculator → tests
+
+The full map is in [MAX_BID.md](MAX_BID.md#tests). In short:
+
+| Requirement | Where it's tested |
+| --- | --- |
+| $1,000 → $340 example; target ROIs; fees, shipping, unsold; fixed costs; buyer's premium and tax | `src/domain/bids.test.ts` |
+| Zero/negative bids explained; missing and invalid inputs; rounding (400 random cases) | `src/domain/bids.test.ts`; `e2e/maxbid.spec.ts` |
+| Scenarios, budget, planned bid | `src/domain/bids.test.ts`; `e2e/maxbid.spec.ts` |
+| Drafts, edit, duplicate, passed/lost/reopen | `src/domain/bids.test.ts`; `e2e/maxbid.spec.ts` |
+| Converting to a bulk lot once; original estimate kept; linking an existing lot | `src/domain/bids.test.ts`; `e2e/maxbid.spec.ts` |
+| Plans never change inventory, money figures or assistant answers | `src/domain/bids.test.ts`; `e2e/maxbid.spec.ts` (inventory stays empty) |
+| Backup and restore | `src/domain/bids.test.ts`; `e2e/maxbid.spec.ts` |
+| AI scanner identifies, never prices | `e2e/maxbid.spec.ts` (mocked) |
+| Phones and accessibility | `e2e/maxbid.spec.ts` (desktop + iPhone-sized, axe) |
+
