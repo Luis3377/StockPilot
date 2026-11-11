@@ -74,17 +74,57 @@ Phone / browser (StockPilot preview build)        Cloudflare Worker (worker/)   
 | Scans per day, all testers | 200 | `DAILY_SCANS_GLOBAL` |
 | AI spend per calendar month | $10 | `MONTHLY_BUDGET_USD` |
 
-Days and months are UTC (daily limits reset at midnight UTC). Failed scans are refunded to the daily counts; their actual AI cost (if any) still counts toward the budget.
+Days and months are UTC (daily limits reset at midnight UTC). A scan that ends without any charge (a rejected upload, a request Anthropic refused up front) is given back to the tester's daily count. A failed scan that was or may have been billed still counts, so repeated failures can't get around the daily limit.
 
-**Budget enforcement.** Before every AI call the Worker reserves the worst-case cost of that scan (6,500 input + 2,048 output tokens at the model's price: Haiku $0.0017, Sonnet $0.0335, Opus $0.067). A scan is refused if the month's settled spend plus all in-flight reservations plus this reservation would exceed the budget. After the call the reservation is replaced by the actual cost from the API's token counts. A timed-out call is charged at the worst case (the provider may have billed it), and a reservation that is never settled is charged in full after 10 minutes. Prices are in `worker/src/config.ts`; update them if Anthropic's published prices change.
+### The monthly budget
 
-**Spending safeguards, in layers.** The Worker's budget is the main control, but it is software that depends on correct prices and configuration, so also use these backstops:
-1. The Worker's enforced monthly budget and scan limits (above).
+> **The internal budget is a software safeguard, not an absolute guarantee against external billing.** It is calculated by the Worker from token counts and the prices written in its code. Anthropic bills from its own records. A wrong price in the code, a change in Anthropic's pricing, or a bug could make the two differ. Keep the outside backstops below in place, and compare the Worker's figures with the Claude Console during testing.
+
+**How a scan is paid for.** Before calling Claude, the Worker reserves the **most a scan could possibly cost**. The scan is refused if the month's charges, plus every scan still in progress, plus this reservation would go over the budget. When Claude answers, the reservation is replaced by the actual cost from the token counts Anthropic reports. Simultaneous scans each hold their own reservation inside a single, serialized ledger, so they can't add up to more than the budget. This is tested with 400 simultaneous reservations, 10 simultaneous scans through the API, and 10 concurrent scans in the real Workers runtime.
+
+**Why the reservation covers the worst case.**
+
+| Part of a scan | Most it can be | Why |
+| --- | --- | --- |
+| The photo | 4,784 tokens | Anthropic shrinks any larger image to this on Haiku, Sonnet and Opus 5.5 (2,576 px long edge). The Worker refuses images over 8000 px, which the API would reject. The app's 1600×1200 photos are 2,494 tokens. |
+| Instructions and answer format | 1,351 tokens | Worked out from the actual prompt and JSON schema at 1 token per 2 characters (real text is 3–4 characters per token). Recomputed automatically if the prompt changes. |
+| What the API adds (format rules, framing) | 1,000 tokens | Allowance. The comparison script checks real usage against it. |
+| **Input total** | **7,135 tokens** | |
+| Answer (including reasoning) | 2,048 tokens | A hard cap sent with every request; the API can't exceed it. |
+
+So the reservation per scan is **Haiku $0.0017, Sonnet $0.0348, Opus $0.0695**. Cache tokens (the scanner doesn't use caching) would be charged at the highest cache rates, so they can only make a scan look more expensive, never cheaper.
+
+**Failures are charged conservatively.**
+
+| What happened | Charged | Scan given back? |
+| --- | --- | --- |
+| Upload rejected (too large, bad size header, not an image, over 8000 px) | $0, and Claude is never called | Yes |
+| Anthropic refused the request up front (bad request, rate limit, overloaded, bad key) | $0, since these aren't processed | Yes |
+| Claude answered, but the answer couldn't be used | The reported cost | No |
+| Timeout, dropped connection, server error, unknown error: the request may have been processed | The full reservation (the real cost is unknown) | No |
+| The Worker stopped mid-scan and never settled | The full reservation, after 10 minutes | No |
+
+**If a scan ever costs more than its reservation**, it is still charged in full and recorded as an overrun. The Worker then reserves at least that much for every later scan that month, so the budget corrects itself after the first overrun. The overrun appears as a WARNING in `node scripts/admin.mjs usage` and as a `budget_overrun` line in the logs.
+
+**Prices and budget can't be silently wrong.** Prices are written in code (`worker/src/config.ts`), not in Cloudflare settings, so a dashboard typo can't change them. A test pins them to Anthropic's published rates, so changing one also means changing the test. If the selected model's price is missing, zero, negative or not a number, the scanner switches off. `MONTHLY_BUDGET_USD` must be a plain amount from 0 to 100 (e.g. `10` or `12.50`); anything else, such as `10O`, `$10`, or `1000`, switches the scanner off rather than guessing. `node scripts/admin.mjs usage` prints the prices and reservation in use, so you can compare them with Anthropic's pricing page.
+
+**Spending safeguards, in layers.** The Worker's budget is the main control, but because it is software (see above), also use these backstops:
+1. The Worker's enforced monthly budget and scan limits.
 2. A dedicated Anthropic workspace for the scanner with its own API key, and a monthly spend limit on that workspace if the Console offers one for your account.
-3. Prepaid credits with **auto-reload turned off**, so the API stops when the credit runs out. This is a last-resort backstop, not a guarantee: billing is not instantaneous, so do not rely on it alone.
+3. Prepaid credits with **auto-reload turned off**, so the API stops when the credit runs out. This is a last-resort backstop, not a guarantee: usage is billed with a short delay, so do not rely on it alone.
 4. The kill switch (`SCANNER_ENABLED=false`) and key revocation in the Console, which stop all AI calls immediately.
+5. Checking the Claude Console's usage and cost pages against `node scripts/admin.mjs usage` daily during the first week.
 
-**Images.** Accepted only as JPEG, PNG or WebP, detected from the file's actual bytes (not its name or declared type), 512 bytes to 4 MB, exactly one per request. A request that declares a body over the limit is refused before the body is read; others are checked as they're read. The image is held in memory for the request only — never written to storage, logs or analytics.
+### Uploads
+
+- **Size, enforced while reading:** the body is limited to what a 4 MB image needs (about 5.6 MB as base64 text).
+  - A `Content-Length` over the limit is refused immediately, before the request is authenticated or anything is reserved.
+  - Uploads with no `Content-Length` are counted byte by byte as they arrive, and reading stops the moment the limit is passed.
+  - A `Content-Length` that isn't a plain number, or that doesn't match the body actually sent, is refused.
+  - Too large → `413` "That photo is too large"; bad size → `400`.
+- **Content:** JPEG, PNG or WebP only, detected from the file's actual bytes (not its name or declared type), 512 bytes to 4 MB, exactly one per request. The width and height are read from the file header. Files whose size can't be read, or that are over 8000 px, are refused.
+- **Nothing invalid reaches Claude:** every check happens before the API call, and a rejected upload uses neither budget nor a scan.
+- **No retention:** the image is held in memory for the request only, never written to storage, logs or analytics.
 
 **Other.** Only the preview site served by the Worker itself and origins listed in `ALLOWED_ORIGINS` can call the API from a browser. Admin endpoints require the `ADMIN_TOKEN` secret, refuse browser requests and don't exist when the token isn't set. Logs record event type, code id, model, status, token counts, cost and timing — never the image, the invite code or the AI's text. The AI answer is validated twice (Worker and app) before anything reaches the form.
 
@@ -116,12 +156,14 @@ A typical scan sends a ~1600×1200 photo (~2,500 image tokens) plus ~800 tokens 
 | Model | Typical cost per scan | Worst case per scan | Scans per $10 (typical) | Cost at the 200/day limit for a month (6,000 scans) |
 | --- | --- | --- | --- | --- |
 | Haiku 5.5 | ~$0.0005–0.0007 | $0.0017 | ~14,000+ | ~$3–4 (the daily limit binds before the budget) |
-| Sonnet 5.5 | ~$0.009–0.015 | $0.0335 | ~650–1,100 | ~$55–90 → the $10 budget stops scanning first |
-| Opus 5.5 | ~$0.018–0.03 | $0.067 | ~330–550 | ~$110–175 → the $10 budget stops scanning first |
+| Sonnet 5.5 | ~$0.009–0.015 | $0.0348 | ~650–1,100 | ~$55–90 → the $10 budget stops scanning first |
+| Opus 5.5 | ~$0.018–0.03 | $0.0695 | ~330–550 | ~$110–175 → the $10 budget stops scanning first |
+
+The worst case is what the Worker reserves before each scan (see "The monthly budget"). Near the end of the budget, a scan is refused once less than one worst-case reservation is left, so up to ~$0.035 (Sonnet) of the $10 may go unused in a month.
 
 So with Sonnet, **$10/month covers roughly 650–1,100 scans** (about 20–35 a day). That suits a beta of a handful of testers; with 10 active testers doing 5 scans a day (~1,500 a month) the budget would run out around day 15–20, after which scanning pauses until the next month (manual entry keeps working). Raise `MONTHLY_BUDGET_USD` or lower limits as needed.
 
-Running the model comparison on 30 photos with all three models costs about **$1 typically, $3.06 at most**.
+Running the model comparison on 30 photos with all three models costs about **$1 typically, $3.18 at most**.
 
 ### Hosting (Cloudflare)
 
@@ -136,88 +178,25 @@ Running the model comparison on 30 photos with all three models costs about **$1
 
 The private testing version is a **separate copy of the app** served by the Worker at `https://stockpilot-scanner.<your-subdomain>.workers.dev`, with the scanner switched on. The production site on GitHub Pages is not touched. Because it's a different web address, the browser keeps its data **separately** from the production app: testers start empty (or restore a backup made in the production app).
 
-You need: a computer with Node.js 20+ (22 recommended), git and a terminal; an Anthropic account; a Cloudflare account. About 30 minutes.
+**Step-by-step instructions for Windows: [SCANNER_SETUP_WINDOWS.md](SCANNER_SETUP_WINDOWS.md)** (Cloudflare and Anthropic accounts, the prepaid budget, secrets, deploying, the first invite code, the first real scan, and checking costs).
 
-### Step 1 — Anthropic (API key and spending backstops)
+In short, from the `worker` folder of a checkout of `feature/ai-scanner`, after `npm ci` in the root and in `worker/`:
 
-1. Sign in to the Claude Console (<https://platform.claude.com>) and set up billing.
-2. **Billing:** buy a small prepaid credit (e.g. $10–15) and make sure **auto-reload is OFF**.
-3. **Workspaces:** create a workspace named e.g. “StockPilot scanner beta”. If the Console offers a spend limit for it, set it to $10/month.
-4. **API keys:** create a key **in that workspace**, named e.g. “scanner-worker”. Copy it once into your password manager. Never paste it into chat, code, the app or a commit.
+1. `npx wrangler login`
+2. `npm run deploy:preview`. This builds the preview app with the scanner on and deploys it with the Worker. Scanning stays off until the secrets are set.
+3. `npx wrangler secret put ANTHROPIC_API_KEY`, then `CODE_PEPPER` and `ADMIN_TOKEN` (two 64-character random values; keep them in a password manager). Keep `CODE_PEPPER` stable: changing it invalidates every invite code.
+4. Set `SCANNER_URL` and `SCANNER_ADMIN_TOKEN` in your terminal, run `node scripts/admin.mjs usage`, and check it says "Scanner: ready".
+5. `node scripts/admin.mjs create "Name" --days 30 --daily 20`. The code is shown once.
 
-### Step 2 — Get the code and tools
-
-```bash
-git clone https://github.com/Luis3377/StockPilot.git
-cd StockPilot
-git checkout feature/ai-scanner      # until the scanner PR is merged
-npm ci
-cd worker
-npm ci
-npx wrangler login                   # opens Cloudflare in the browser
-```
-
-### Step 3 — Deploy the Worker and preview app
-
-```bash
-npm run deploy:preview               # builds the preview app with the scanner on, then deploys
-```
-
-If Wrangler asks you to pick a workers.dev subdomain, choose one (e.g. your name). The output prints the address, e.g. `https://stockpilot-scanner.<your-subdomain>.workers.dev`. At this point scanning is **off**, because the secrets aren't set (`/health` says `"scanner":"unavailable"`).
-
-### Step 4 — Add the secrets
-
-Generate two long random values (keep them in your password manager):
-
-```bash
-openssl rand -hex 32                 # → use as CODE_PEPPER
-openssl rand -hex 32                 # → use as ADMIN_TOKEN
-```
-
-Then, still in `worker/`, enter each one when prompted:
-
-```bash
-npx wrangler secret put ANTHROPIC_API_KEY   # paste the key from Step 1
-npx wrangler secret put CODE_PEPPER
-npx wrangler secret put ADMIN_TOKEN
-```
-
-Keep `CODE_PEPPER` stable: changing it invalidates every existing invite code.
-
-### Step 5 — Check it's ready
-
-```bash
-curl https://stockpilot-scanner.<your-subdomain>.workers.dev/health
-# {"ok":true,"scanner":"ready","model":"claude-sonnet-5-5"}
-
-export SCANNER_URL=https://stockpilot-scanner.<your-subdomain>.workers.dev
-read -s SCANNER_ADMIN_TOKEN && export SCANNER_ADMIN_TOKEN    # paste the ADMIN_TOKEN, press Enter
-npm run admin -- usage
-# Scanner: ready · claude-sonnet-5-5 · effort low
-# Today (…): 0/200 scans
-# This month (…): $0.0000 spent, $0.0000 in flight, budget $10.00
-```
-
-### Step 6 — Create invite codes
-
-```bash
-npm run admin -- create "Luis" --days 30 --daily 20
-npm run admin -- create "Tester: Maria" --days 14
-```
-
-Each code is printed **once**. Send it privately (not in a group chat). One code per tester, so you can see and revoke individually.
-
-### Step 7 — Try it yourself first
-
-On your phone, open the workers.dev address → choose a mode → **Inventory → Scan with AI** → take a photo → enter your invite code → **Analyze photo**. Check the suggestions, add a cost, save. Then `npm run admin -- usage` to see the scan and its cost.
+On macOS or Linux the commands are the same; set variables with `export NAME=value` instead of PowerShell's `$env:NAME = "value"`.
 
 ### Everyday operations
 
 | Task | Command / action |
 | --- | --- |
-| List codes and today's use | `npm run admin -- list` |
-| Turn a code off | `npm run admin -- revoke <id>` |
-| Today's scans, month's spend, config status | `npm run admin -- usage` |
+| List codes and today's use | `node scripts/admin.mjs list` |
+| Turn a code off | `node scripts/admin.mjs revoke <id>` |
+| Today's scans, month's spend, config status | `node scripts/admin.mjs usage` |
 | Live logs (no photos or codes) | `npx wrangler tail` |
 | Switch model | Edit `SCAN_MODEL` in `worker/wrangler.toml` (`claude-haiku-5-5`, `claude-sonnet-5-5` or `claude-opus-5-5`), then `npm run deploy:preview` |
 | Change limits or budget | Edit the values in `[vars]` in `wrangler.toml`, then `npm run deploy:preview` |
@@ -239,20 +218,23 @@ Not done, and not needed for the beta. It would mean building the GitHub Pages s
 
 `worker/scripts/compare-models.ts` runs your photos through each model with **exactly** the production prompt, schema, effort and validation, and records the answers, speed, tokens and cost.
 
-1. **Collect 25–30 real photos** across shoes, electronics, clothing, collectibles and tools, including a few hard ones (blurry, unbranded, partly hidden, several items). Put them in one folder as JPEG/PNG/WebP. For a fair cost comparison, resize to 1600px on the long side like the app does — on a Mac: `mkdir resized && sips -s format jpeg -Z 1600 *.HEIC --out resized/` (iPhone HEIC photos must be converted to JPEG anyway; the script reads the file contents, so the kept `.HEIC` name is fine).
+1. **Collect 25–30 real photos** across shoes, electronics, clothing, collectibles and tools, including a few hard ones (blurry, unbranded, partly hidden, several items). Put them in one folder as JPEG/PNG/WebP. For a fair cost comparison, resize to 1600px on the long side like the app does. On Windows, use Microsoft PowerToys → Image Resizer (custom size 1600 × 1600, "fit"). On a Mac: `mkdir resized && sips -s format jpeg -Z 1600 *.HEIC --out resized/`. iPhone HEIC photos must be JPEG: set iPhone Settings → Camera → Formats → **Most Compatible** before taking them. The script reads file contents, so a converted file that kept its `.HEIC` name is fine.
 2. *(Optional)* a `labels.csv` with lines like `IMG_0412.jpg,Nike Air Jordan 1 Chicago size 10` — shown next to each photo while you judge.
 3. **Dry run** (free — prints the plan and worst-case cost):
    ```bash
    cd worker
-   npm run compare-models -- --photos ~/scanner-photos --labels ~/scanner-photos/labels.csv
+   npx tsx scripts/compare-models.ts --photos ~/scanner-photos --labels ~/scanner-photos/labels.csv
    ```
 4. **Real run** (billed; stops if the worst case is above `--max-usd`, default $5):
    ```bash
    read -s ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY
-   npm run compare-models -- --photos ~/scanner-photos --labels ~/scanner-photos/labels.csv --confirm-cost
+   npx tsx scripts/compare-models.ts --photos ~/scanner-photos --labels ~/scanner-photos/labels.csv --confirm-cost
    unset ANTHROPIC_API_KEY
    ```
 5. Open `compare-results-…/review.html`, mark each answer **right / partly / wrong**; the accuracy tally per model updates as you go. `summary.md` has median and 90th-percentile time, tokens and cost per scan; `results.csv` has every answer.
+6. **Check the budget reservation against reality.** The summary ends with "Largest scan: N input tokens (reserved for: 7135)". If it warns that input is close to the reservation, raise `REQUEST_OVERHEAD_TOKENS` in `worker/src/config.ts` before inviting testers. This is the first measurement with real API calls of the 1,000-token allowance for what the API adds.
+
+On Windows PowerShell, read the key with `$k = Read-Host -AsSecureString "API key"; $env:ANTHROPIC_API_KEY = [System.Net.NetworkCredential]::new("", $k).Password` and clear it afterwards with `Remove-Item Env:ANTHROPIC_API_KEY` (see the Windows guide).
 
 **How to decide:** pick the cheapest model whose accuracy is within a few points of the best, with a median time you're happy to wait on a phone (under ~5–6 seconds feels fine). Also look at *how* models fail: a model that says “couldn’t identify” is better than one that confidently names the wrong product. Watch for errors in the results — a `max_tokens` error means the 2,048-token output cap was too low for that model. Then set `SCAN_MODEL` and redeploy.
 
@@ -262,7 +244,7 @@ Not done, and not needed for the beta. It would mean building the GitHub Pages s
 
 1. **You first.** A day of scanning your own items; check `usage` and the Console's usage page agree on spend.
 2. **2–3 trusted testers** with 14-day codes. Tell them: the beta sends photos you analyze to Anthropic's Claude; don't photograph people, documents or anything private; AI suggestions can be wrong — always check before saving; the preview app keeps its data separately from the main app.
-3. **Check daily for the first week:** `npm run admin -- usage` and `list`, and the Anthropic Console's usage and cost pages. Revoke codes of testers who stop testing.
+3. **Check daily for the first week:** `node scripts/admin.mjs usage` and `list`, and the Anthropic Console's usage and cost pages. Revoke codes of testers who stop testing.
 4. **Widen gradually**, adjusting limits to the budget (see the cost table).
 5. **When the beta ends:** revoke all codes, set `SCANNER_ENABLED = "false"`, delete or rotate the API key.
 
@@ -273,7 +255,8 @@ Not done, and not needed for the beta. It would mean building the GitHub Pages s
 - AI suggestions can be wrong or incomplete; the user must review them. Confidence labels come from the model and aren't calibrated.
 - Invite codes are a beta gate, not authentication: anyone holding a code can use its daily allowance until it's revoked or expires. Real accounts are required before a public launch.
 - The model choice is still open until the comparison is run with real photos and a real key; Sonnet 5.5 is the provisional default.
-- Budget tracking relies on token counts reported by the API and on the prices in `worker/src/config.ts`; if prices change, update that file.
+- **The internal budget is a software safeguard, not an absolute guarantee against external billing.** It relies on token counts reported by the API and on the prices in `worker/src/config.ts`; if Anthropic's prices change, update that file and its test. The 1,000-token allowance for what the API adds to each request is an estimate until the comparison run measures it; an underestimate is caught as an overrun and corrected automatically.
+- Failures that might have been billed (timeouts, dropped connections, server errors) are charged the full reservation even when Anthropic didn't actually bill them, so the Worker's spend can read slightly higher than the Console's. That's intentional.
 - Not yet tested on real phones and cameras (all tests use desktop and iPhone-sized Chromium). Check camera capture on iPhone Safari and Android Chrome before inviting testers.
 - The Workers free plan's 10 ms CPU limit hasn't been measured on Cloudflare itself (only locally); see Costs for the $5 fallback.
 - All limits reset on UTC days and months.
@@ -286,13 +269,18 @@ Not done, and not needed for the beta. It would mean building the GitHub Pages s
 
 | Symptom | Likely cause and fix |
 | --- | --- |
-| `/health` says `"unavailable"` | Run `npm run admin -- usage` to see why (missing `ANTHROPIC_API_KEY`, `SCANNER_ENABLED` false, unknown `SCAN_MODEL`). If `admin` returns “Not found”, `ADMIN_TOKEN` or a `CODE_PEPPER` of 32+ characters is missing. |
+| `/health` says `"unavailable"` | Run `node scripts/admin.mjs usage` to see why (missing `ANTHROPIC_API_KEY`, `SCANNER_ENABLED` false, unknown `SCAN_MODEL`). If `admin` returns “Not found”, `ADMIN_TOKEN` or a `CODE_PEPPER` of 32+ characters is missing. |
 | “That invite code isn’t valid” | Typo, or the code was created before `CODE_PEPPER` changed. Create a new one. |
 | “Too many incorrect codes” | Lockout after 10 wrong codes in 15 minutes from one network. Wait 15 minutes. |
 | “AI scanning is paused for the rest of this month” | The monthly budget is used up. Wait for the 1st (UTC), or raise `MONTHLY_BUDGET_USD` and run `npm run deploy:preview`. |
 | “The AI service had a problem” every time | Check `npx wrangler tail`. An `auth` detail means the API key is wrong or revoked; a `bad request` detail names the problem. |
 | Browser console shows a CORS error | The app is running on an origin not in `ALLOWED_ORIGINS`. Add it and run `npm run deploy:preview`. |
 | “exceeded CPU time” in `wrangler tail` | Move the Worker to Workers Paid ($5/month). |
+| “That photo is too large” | The upload was over 4 MB (about 5.6 MB as sent) or the photo is over 8000 px across. The app resizes photos to 1600 px, so this means something other than the app sent it. |
+| “The upload was incomplete or its size didn’t match” | The connection dropped mid-upload, or the request's `Content-Length` was invalid or didn't match the data sent. Try again. |
+| `usage` shows “Scanner: OFF · MONTHLY_BUDGET_USD must be…” | The budget setting isn't a plain amount from 0 to 100 (e.g. `$10` or `10O`). Fix it in `wrangler.toml` and run `npm run deploy:preview`. |
+| `usage` shows a WARNING about scans costing more than reserved | A scan cost more than the worst case the Worker reserved. It was charged in full and later reservations were raised. Check the prices in `worker/src/config.ts` against Anthropic's pricing page, and compare with the Console's cost page. |
+| Windows: “running scripts is disabled on this system” | PowerShell's script policy blocks `npm`. Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once (see the Windows guide). |
 
 ---
 
@@ -302,5 +290,12 @@ All automated tests mock the AI; none reach Anthropic.
 
 - `npm test` (root): schema validation, unknown/partial/malformed answers, prices and quantities dropped, field mapping and re-scan rules.
 - `npm run test:e2e`: `e2e/scanner.spec.ts` runs against a second build with the scanner on (port 4175) and a mocked API — shoes, electronics, clothing, collectibles and tools; unrecognized and partial results; ignored price/quantity fields; malformed answers; non-image and corrupt uploads (nothing sent); no request before Analyze; invite code entry, rejection and replacement; daily limit, budget, AI outage with retry, no connection, timeout, cancel; user corrections kept across re-scans; saving with photo; Settings; edit-item has no scanner; invite code never in backups; phone layout; and the standard build shows no scanner at all.
-- `cd worker && npm test`: invite codes, image checks, Claude request/answer handling, limits and budget (including 400 concurrent requests), every HTTP route.
-- `cd worker && npm run test:integration`: runs the real Worker locally (Cloudflare's `workerd` runtime) against a mock Anthropic server — end-to-end scans, the API key never reaching the browser, limits under concurrent load, the admin CLI, revocation, lockout and origin checks.
+- `cd worker && npm test` (76 tests):
+  - invite codes, image checks (formats, dimensions, EXIF-heavy JPEGs, over 8000 px), Claude request/answer handling, every HTTP route;
+  - upload limits (`test/body.test.ts`): no `Content-Length`, invalid, oversized, understated and overstated `Content-Length`, an endless upload stopped after the limit, broken and non-text bodies;
+  - the budget (`test/budget.test.ts`): pinned prices, invalid prices and budget settings switching the scanner off, the reservation formula against the largest possible image, cache tokens, overruns charged and self-correcting, 10 simultaneous scans with budget for 2 (exactly 2 reach the AI), stopping before the budget is exceeded, timeouts charged in full, and 400 concurrent reservations.
+- `cd worker && npm run test:integration` (24 checks): runs the real Worker locally (Cloudflare's `workerd` runtime) against a mock Anthropic server:
+  - end-to-end scans; the API key never reaching the browser;
+  - oversized, chunked and mislabelled uploads, and 9000 px images, refused without reaching the AI;
+  - possibly-billed failures charged in full and counted;
+  - limits under concurrent load; the admin CLI; revocation, lockout and origin checks.

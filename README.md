@@ -86,5 +86,6 @@ The domain layer is pure TypeScript with no browser dependencies, so the same in
 
 - [docs/TESTING.md](docs/TESTING.md) — how each functional requirement is tested
 - [docs/AI_SCANNER.md](docs/AI_SCANNER.md) — the AI Inventory Scanner: how it works, costs, safeguards and how to switch on the private beta
+- [docs/SCANNER_SETUP_WINDOWS.md](docs/SCANNER_SETUP_WINDOWS.md) — step-by-step setup of the private scanner test version on Windows
 - [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) — how to add genuine AI insights securely
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) — what must be done before launching with real users

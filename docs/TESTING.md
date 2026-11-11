@@ -36,13 +36,13 @@ The AI scanner's backend has its own tests: `cd worker && npm ci && npm test && 
 | Unknown or ambiguous items | `e2e/scanner.spec.ts` — “an unrecognized item fills nothing…”, “a partly identified item…”; `src/ai/scan.test.ts` (unknown-style answers become blanks, status kept consistent) |
 | Incorrect, incomplete or malformed AI answers | `e2e/scanner.spec.ts` — “malformed or unusable answers…”; `src/ai/scan.test.ts`; `worker/test/claude.test.ts` (bad JSON, missing text, `max_tokens`, refusals) |
 | Prices, quantities and invented details are never filled | `e2e/scanner.spec.ts` — “prices, quantities and other invented fields… are ignored”, plus a check in every scan test; `src/ai/scan.test.ts` |
-| Invalid uploads | `e2e/scanner.spec.ts` — non-image and corrupt files are rejected on the device and nothing is sent; `worker/test/image.test.ts` (size, base64, real file type) |
+| Invalid uploads | `e2e/scanner.spec.ts` — non-image and corrupt files are rejected on the device and nothing is sent; `worker/test/image.test.ts` (size, base64, real file type, pixel dimensions); `worker/test/body.test.ts` and `handler.test.ts` (upload size enforced while streaming: missing, invalid, oversized and misleading `Content-Length`); integration test (oversized and chunked uploads in the real runtime) |
 | API failures and timeouts | `e2e/scanner.spec.ts` — AI outage with retry, no connection, timeout, cancel, daily limit, budget; `worker/test/handler.test.ts` (every error code, refunds) |
 | Manual corrections before saving | `e2e/scanner.spec.ts` — “the user’s corrections are kept when they scan again”; `src/ai/scan.test.ts` (typed values never overwritten) |
 | Record creation through the existing Add Item | every e2e scan test saves the item and opens it |
 | Images sent only on request | `e2e/scanner.spec.ts` — no request before Analyze; hidden scanner sends nothing |
 | Invite codes: entry, rejection, revocation, lockout, never in backups | `e2e/scanner.spec.ts`; `worker/test/codes.test.ts`, `ledger.test.ts`, `handler.test.ts`; `worker/scripts/integration-test.mjs` |
-| Limits and budget hold under concurrent use | `worker/test/ledger.test.ts` (400 simultaneous requests); integration test (10 concurrent scans in the real Workers runtime) |
+| Limits and budget hold under concurrent use | `worker/test/ledger.test.ts` (400 simultaneous requests); `worker/test/budget.test.ts` (10 simultaneous scans with budget for 2; stopping before the budget; timeouts charged in full; overruns recorded and self-correcting; pinned prices; invalid price or budget settings switch the scanner off; reservation covers the largest possible image); integration test (10 concurrent scans in the real Workers runtime; possibly-billed failures charged in full) |
 | API key never reaches the browser | `worker/scripts/integration-test.mjs`; the app only ever sends the invite code |
 | Existing features unchanged; scanner absent from the standard build | the full existing suite; `e2e/scanner.spec.ts` — “standard build… shows no scanner anywhere”; edit-item shows no scanner |
 | Phone layout | `e2e/scanner.spec.ts` — “scanner panel and result fit a phone screen” |
