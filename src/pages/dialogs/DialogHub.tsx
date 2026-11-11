@@ -5,7 +5,7 @@ import { PayoutImportDialog } from './PayoutImportDialog';
 import { StockDialog, type StockMode } from './StockDialog';
 import { ImportDialog } from './ImportDialog';
 import { RestoreDialog } from './RestoreDialog';
-import { LotFormDialog } from './LotFormDialog';
+import { LotFormDialog, type BidLotPrefill } from './LotFormDialog';
 import { LotEditDialog } from './LotEditDialog';
 
 interface DialogApi {
@@ -22,6 +22,8 @@ interface DialogApi {
   restoreBackup(): void;
   /** Add a bulk lot: several items bought for one price. */
   addLot(): void;
+  /** Record a Max Bid plan's purchase as a bulk lot (the lot form, filled from the plan). */
+  addLotFromBid(prefill: BidLotPrefill): void;
   editLot(lotId: string): void;
 }
 
@@ -34,7 +36,7 @@ type Open =
   | { kind: 'stock'; itemId: string; mode: StockMode }
   | { kind: 'import' }
   | { kind: 'restore' }
-  | { kind: 'lot' }
+  | { kind: 'lot'; fromBid?: BidLotPrefill }
   | { kind: 'editLot'; lotId: string }
   | null;
 
@@ -55,6 +57,7 @@ export function DialogHub({ children }: { children: ReactNode }) {
       importCsv: () => setOpen({ kind: 'import' }),
       restoreBackup: () => setOpen({ kind: 'restore' }),
       addLot: () => setOpen({ kind: 'lot' }),
+      addLotFromBid: (prefill) => setOpen({ kind: 'lot', fromBid: prefill }),
       editLot: (lotId) => setOpen({ kind: 'editLot', lotId }),
     }),
     [],
@@ -81,7 +84,7 @@ export function DialogHub({ children }: { children: ReactNode }) {
       <ImportDialog open={open?.kind === 'import'} onClose={close} />
       <RestoreDialog open={open?.kind === 'restore'} onClose={close} />
       <PayoutImportDialog open={open?.kind === 'payouts'} onClose={close} />
-      <LotFormDialog open={open?.kind === 'lot'} onClose={close} />
+      <LotFormDialog open={open?.kind === 'lot'} fromBid={open?.kind === 'lot' ? (open.fromBid ?? null) : null} onClose={close} />
       <LotEditDialog open={open?.kind === 'editLot'} lotId={open?.kind === 'editLot' ? open.lotId : null} onClose={close} />
     </Ctx.Provider>
   );

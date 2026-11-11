@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, ChevronDown, Info, Plus, Sparkles, Trash2, X } from 'lucide-react';
 import { createLot, lotInputErrors, METHOD_LABELS, previewLot, type Allocation, type LotInput } from '../../domain/lots';
+import { recordBidPurchase } from '../../domain/bids';
 import { knownCategories } from '../../domain/calc';
 import { todayISO } from '../../domain/dates';
 import { formatPercent, fromCents, toCents } from '../../domain/money';
@@ -26,7 +27,7 @@ import { useRadioGroup } from '../../ui/useRadioGroup';
 import { useToast } from '../../ui/Toast';
 import { cn } from '../../ui/cn';
 import { ScanPanel } from './ScanPanel';
-import { EXTRA_COST_SUGGESTIONS, readMoney, readWhole, Row, SplitCheck, UnitCost } from '../lots/LotParts';
+import { EXTRA_COST_SUGGESTIONS, moneyInputText, readMoney, readWhole, Row, SplitCheck, UnitCost } from '../lots/LotParts';
 
 interface LineDraft {
   key: string;
@@ -40,6 +41,8 @@ interface LineDraft {
   aiFilled: ScanFillableField[];
   showMore: boolean;
   scanOpen: boolean;
+  /** The Max Bid plan item this line came from, if any. */
+  bidItemId: string | null;
 }
 
 interface Draft {
@@ -65,7 +68,42 @@ const newLine = (): LineDraft => ({
   aiFilled: [],
   showMore: false,
   scanOpen: false,
+  bidItemId: null,
 });
+
+/** Starting a lot from a Max Bid plan: what was paid, the plan's items and estimates. */
+export interface BidLotPrefill {
+  planId: string;
+  planName: string;
+  input: LotInput;
+  lineBidItemIds: (string | null)[];
+}
+
+function draftFromPrefill(p: BidLotPrefill): Draft {
+  const { input } = p;
+  return {
+    name: input.name,
+    purchasePrice: moneyInputText(input.purchasePrice),
+    extraCosts: input.extraCosts.map((c) => ({ key: newId(), label: c.label, amount: moneyInputText(c.amount) })),
+    purchaseDate: input.purchaseDate ?? todayISO(),
+    source: input.source,
+    notes: input.notes,
+    method: input.method,
+    lines: input.lines.length
+      ? input.lines.map((l, i) => ({
+          ...newLine(),
+          name: l.name,
+          quantity: l.quantity === null ? '' : String(l.quantity),
+          estimate: moneyInputText(l.estimatedUnitValue),
+          category: l.category ?? '',
+          condition: l.condition ?? '',
+          notes: l.notes ?? '',
+          showMore: Boolean(l.category || l.condition || l.notes),
+          bidItemId: p.lineBidItemIds[i] ?? null,
+        }))
+      : [newLine()],
+  };
+}
 
 const emptyDraft = (): Draft => ({
   name: '',
@@ -117,7 +155,7 @@ function toInput(d: Draft): { input: LotInput; typing: Record<string, string> } 
   };
 }
 
-export function LotFormDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function LotFormDialog({ open, onClose, fromBid = null }: { open: boolean; onClose: () => void; fromBid?: BidLotPrefill | null }) {
   const data = useAppState((s) => s.data);
   const { money, currency } = useMoney();
   const toast = useToast();
@@ -134,12 +172,12 @@ export function LotFormDialog({ open, onClose }: { open: boolean; onClose: () =>
   // Start fresh whenever the dialog opens or closes, so reopening never shows the last lot.
   // (Unsaved scan photos were already discarded by close().)
   useEffect(() => {
-    setDraft(emptyDraft());
+    setDraft(fromBid ? draftFromPrefill(fromBid) : emptyDraft());
     setStep(0);
     setErrors({});
     createdPhotos.current = [];
     saved.current = false;
-  }, [open]);
+  }, [open, fromBid]);
 
   const categories = useMemo(() => knownCategories(data), [data]);
   const sources = useMemo(() => [...new Set(data.lots.map((l) => l.source).filter(Boolean))].sort(), [data.lots]);
@@ -267,9 +305,13 @@ export function LotFormDialog({ open, onClose }: { open: boolean; onClose: () =>
       return;
     }
     try {
-      const r = store.commit((d) => createLot(d, input));
+      // From a Max Bid plan, the lot and the plan's "purchased" record are saved together, and
+      // a plan that was already recorded is refused, so the purchase can't be added twice.
+      const r = fromBid
+        ? store.commit((d) => recordBidPurchase(d, fromBid.planId, input, draft.lines.map((l) => l.bidItemId)))
+        : store.commit((d) => createLot(d, input));
       saved.current = true;
-      toast.success(`Saved “${r.lot.name}” and added ${plural(r.items.length, 'item')} to inventory.`);
+      toast.success(`Saved “${r.lot.name}” and added ${plural(r.items.length, 'item')} to inventory.${fromBid ? ' The plan’s original estimate is kept for comparison.' : ''}`);
       onClose();
       navigate(`/inventory/lots/${r.lot.id}`);
     } catch (e) {
@@ -302,8 +344,26 @@ export function LotFormDialog({ open, onClose }: { open: boolean; onClose: () =>
   );
 
   return (
-    <Dialog open={open} onClose={close} title="Add bulk lot" description="Bought several items for one price? Split what you paid across them." size="lg" footer={footer} dismissOnBackdrop={false} testId="lot-dialog">
+    <Dialog
+      open={open}
+      onClose={close}
+      title={fromBid ? 'Record the purchase' : 'Add bulk lot'}
+      description={fromBid ? 'Add the lot you bought to your inventory, with its cost split across the items.' : 'Bought several items for one price? Split what you paid across them.'}
+      size="lg"
+      footer={footer}
+      dismissOnBackdrop={false}
+      testId="lot-dialog"
+    >
       <div ref={bodyTop} />
+      {fromBid && (
+        <p className="mb-3 flex items-start gap-1.5 rounded-xl bg-accent-soft/60 p-3 text-sm text-ink" data-testid="lot-from-bid">
+          <Info className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
+          <span>
+            Started from your Max Bid plan “{fromBid.planName}”. Check what you actually paid, the costs and the items. Nothing is added to your inventory until you save, and the plan’s original
+            estimate stays as it was.
+          </span>
+        </p>
+      )}
       <ol className="mb-4 flex gap-1.5 text-xs" aria-label="Steps">
         {STEPS.map((s, i) => (
           <li

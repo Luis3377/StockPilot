@@ -143,6 +143,40 @@ export function MoneyField({ label, hint, hintTone, error, required, currency, c
   );
 }
 
+interface PercentFieldProps extends BaseInput {
+  label: ReactNode;
+  hint?: ReactNode;
+  error?: string | null;
+  className?: string;
+}
+
+/** A percentage, typed as a plain number with a visible "%" (e.g. 15 for 15%). */
+export function PercentField({ label, hint, error, required, className, value, onChange, ...rest }: PercentFieldProps) {
+  return (
+    <Field label={label} hint={hint} error={error} required={required} className={className}>
+      {(id, describedBy) => (
+        <div className="relative flex">
+          <input
+            id={id}
+            inputMode="decimal"
+            autoComplete="off"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={Boolean(error)}
+            aria-describedby={describedBy}
+            className={cn(inputBase, borderFor(error), 'tabular rounded-xl pr-8')}
+            placeholder="0"
+            {...rest}
+          />
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted" aria-hidden>
+            %
+          </span>
+        </div>
+      )}
+    </Field>
+  );
+}
+
 interface QuantityFieldProps extends Omit<BaseInput, 'min' | 'max'> {
   label: ReactNode;
   hint?: ReactNode;
