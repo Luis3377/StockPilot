@@ -1,9 +1,12 @@
 import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { cn } from './cn';
+import { useRadioGroup } from './useRadioGroup';
 
+// Text is 16px on phones: iOS Safari zooms the whole page when a smaller field is tapped, and
+// stays zoomed (which looks like sideways scrolling). 15px from the sm breakpoint up.
 const inputBase =
-  'h-11 w-full border bg-surface px-3 text-[15px] text-ink placeholder:text-muted outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-surface-2 disabled:text-muted';
+  'h-11 w-full min-w-0 border bg-surface px-3 text-base text-ink sm:text-[15px] placeholder:text-muted outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-surface-2 disabled:text-muted';
 
 export const inputClass = `${inputBase} rounded-xl`;
 
@@ -302,6 +305,7 @@ interface SegmentedProps<T extends string> {
 }
 
 export function Segmented<T extends string>({ value, onChange, options, label, size = 'md', className }: SegmentedProps<T>) {
+  const radio = useRadioGroup(options.map((o) => o.value), value, onChange);
   return (
     <div role="radiogroup" aria-label={label} className={cn('inline-flex rounded-xl bg-surface-2 p-1', className)}>
       {options.map((o) => (
@@ -310,6 +314,7 @@ export function Segmented<T extends string>({ value, onChange, options, label, s
           type="button"
           role="radio"
           aria-checked={value === o.value}
+          {...radio(o.value)}
           onClick={() => onChange(o.value)}
           className={cn(
             'flex-1 rounded-lg font-medium whitespace-nowrap transition-colors',

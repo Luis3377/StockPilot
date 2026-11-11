@@ -1,0 +1,39 @@
+# StockPilot AI Inventory Scanner — Cloudflare Worker.
+# Setup and activation steps: ../docs/AI_SCANNER.md. Nothing here is secret: the API key,
+# code pepper and admin token are Worker secrets (`wrangler secret put …`).
+
+name = "stockpilot-scanner"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# Serves the private preview build of the app (built with the scanner switched on) from the
+# same address as the API. Build it first with `npm run deploy:preview`.
+[assets]
+directory = "../dist-scan-preview"
+binding = "ASSETS"
+run_worker_first = ["/v1/*", "/admin/*", "/health"]
+
+[[durable_objects.bindings]]
+name = "LEDGER"
+class_name = "UsageLedger"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UsageLedger"]
+
+[vars]
+# claude-haiku-5-5 | claude-sonnet-5-5 | claude-opus-5-5 (switch with a redeploy or in the dashboard)
+SCAN_MODEL = "claude-sonnet-5-5"
+SCAN_EFFORT = "low"
+# Kill switch: set to "false" to stop all AI calls immediately.
+SCANNER_ENABLED = "true"
+# Other sites allowed to call the API (comma-separated). The preview site on this Worker is always allowed.
+ALLOWED_ORIGINS = "http://localhost:5173"
+DAILY_SCANS_PER_CODE = "20"
+DAILY_SCANS_GLOBAL = "200"
+SCANS_PER_MINUTE_PER_CODE = "6"
+MONTHLY_BUDGET_USD = "10"
+
+[observability]
+enabled = true

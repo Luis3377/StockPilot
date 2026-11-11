@@ -7,6 +7,8 @@ import { RestoreDialog } from './RestoreDialog';
 
 interface DialogApi {
   addItem(): void;
+  /** Add Item with the AI scanner highlighted (only offered when the scanner is enabled). */
+  scanItem(): void;
   editItem(itemId: string): void;
   recordSale(itemId?: string): void;
   editSale(saleId: string): void;
@@ -18,7 +20,7 @@ interface DialogApi {
 const Ctx = createContext<DialogApi | null>(null);
 
 type Open =
-  | { kind: 'item'; itemId: string | null }
+  | { kind: 'item'; itemId: string | null; scan?: boolean }
   | { kind: 'sale'; itemId: string | null; saleId: string | null }
   | { kind: 'stock'; itemId: string; mode: StockMode }
   | { kind: 'import' }
@@ -33,6 +35,7 @@ export function DialogHub({ children }: { children: ReactNode }) {
   const api = useMemo<DialogApi>(
     () => ({
       addItem: () => setOpen({ kind: 'item', itemId: null }),
+      scanItem: () => setOpen({ kind: 'item', itemId: null, scan: true }),
       editItem: (itemId) => setOpen({ kind: 'item', itemId }),
       recordSale: (itemId) => setOpen({ kind: 'sale', itemId: itemId ?? null, saleId: null }),
       editSale: (saleId) => setOpen({ kind: 'sale', itemId: null, saleId }),
@@ -49,6 +52,7 @@ export function DialogHub({ children }: { children: ReactNode }) {
       <ItemFormDialog
         open={open?.kind === 'item'}
         itemId={open?.kind === 'item' ? open.itemId : null}
+        scan={open?.kind === 'item' && Boolean(open.scan)}
         onClose={close}
       />
       <SaleFormDialog

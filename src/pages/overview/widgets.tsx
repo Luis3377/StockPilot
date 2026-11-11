@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Boxes, Clock, FileUp, FlaskConical, PackagePlus, Receipt, TrendingDown } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BookOpen, Boxes, ChevronDown, Clock, FileUp, FlaskConical, PackagePlus, Receipt, Sparkles, TrendingDown } from 'lucide-react';
 import { computeSale, daysWithoutSale, itemCostValue, salesByCategory, salesByMonth } from '../../domain/calc';
-import { formatDate, formatMonth, todayISO } from '../../domain/dates';
+import { formatDate, formatMonth, periodRange, todayISO, type PeriodKey } from '../../domain/dates';
+import { TERMS, type TermKey } from '../../domain/terms';
 import { formatPercent } from '../../domain/money';
 import type { AppData, Sale } from '../../domain/types';
-import { store } from '../../data/store';
+import { store, useAppState } from '../../data/store';
 import { useInsights, useMoney } from '../../lib/hooks';
 import { BarList, ChartCard, ColumnChart } from '../../ui/charts';
 import { Card, SectionHeader } from '../../ui/Card';
@@ -12,6 +13,7 @@ import { Button } from '../../ui/Button';
 import { ItemThumb } from '../../ui/Photo';
 import { useDialogs } from '../dialogs/DialogHub';
 import { useToast } from '../../ui/Toast';
+import { scannerEnabled } from '../../ai/config';
 import { plural, pluralWord } from '../../domain/format';
 
 export function MonthlyTrend({ sales, months = 6 }: { sales: Sale[]; months?: number }) {
@@ -20,17 +22,17 @@ export function MonthlyTrend({ sales, months = 6 }: { sales: Sale[]; months?: nu
   const labels = rows.map((r) => formatMonth(r.key));
   return (
     <ChartCard
-      title="Revenue & net profit"
-      description={`Monthly, last ${months} months · realized from recorded sales`}
+      title="Revenue & realized profit"
+      description={`Monthly, last ${months} months · from completed sales`}
       empty={sales.length === 0 ? 'Record a sale to see your monthly trend.' : undefined}
-      table={{ columns: ['Month', 'Revenue', 'Net profit', 'Sales'], rows: rows.map((r, i) => [labels[i], money(r.revenue), money(r.netProfit), r.salesCount]) }}
+      table={{ columns: ['Month', 'Revenue', 'Realized profit', 'Sales'], rows: rows.map((r, i) => [labels[i], money(r.revenue), money(r.netProfit), r.salesCount]) }}
     >
       <ColumnChart
         ariaLabel="Monthly revenue and net profit"
         labels={labels}
         series={[
           { id: 'rev', name: 'Revenue', color: 'var(--series-1)', values: rows.map((r) => r.revenue) },
-          { id: 'profit', name: 'Net profit', color: 'var(--series-2)', values: rows.map((r) => r.netProfit) },
+          { id: 'profit', name: 'Realized profit', color: 'var(--series-2)', values: rows.map((r) => r.netProfit) },
         ]}
         format={money}
         formatAxis={compact}
@@ -46,9 +48,9 @@ export function CategoryProfit({ sales, periodLabel }: { sales: Sale[]; periodLa
   return (
     <ChartCard
       title="Profit by category"
-      description={`Net profit ${periodLabel}`}
+      description={`Realized profit ${periodLabel}`}
       empty={groups.length === 0 ? `No sales ${periodLabel}.` : undefined}
-      table={{ columns: ['Category', 'Revenue', 'Net profit', 'Margin'], rows: groups.map((g) => [g.label, money(g.revenue), money(g.netProfit), formatPercent(g.margin)]) }}
+      table={{ columns: ['Category', 'Revenue', 'Realized profit', 'Margin'], rows: groups.map((g) => [g.label, money(g.revenue), money(g.netProfit), formatPercent(g.margin)]) }}
     >
       <BarList rows={shown.map((g) => ({ key: g.key, label: g.label, value: g.netProfit, sub: `${money(g.revenue)} revenue · ${formatPercent(g.margin)} margin` }))} format={money} />
       {groups.length > shown.length && <p className="mt-3 text-xs text-muted">+ {groups.length - shown.length} more in the table view</p>}
@@ -79,7 +81,9 @@ export function RecentSales({ sales, limit = 5 }: { sales: Sale[]; limit?: numbe
             return (
               <li key={s.id} className="flex items-center justify-between gap-3 py-2.5">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">{s.itemName}</p>
+                  <p className="line-clamp-2 text-sm font-medium break-words text-ink" title={s.itemName}>
+                    {s.itemName}
+                  </p>
                   <p className="text-xs text-ink-2">
                     {formatDate(s.saleDate)} · {s.platform || 'No platform'} · {s.quantity} sold
                   </p>
@@ -102,11 +106,12 @@ export function SlowMovers({ data, limit = 5 }: { data: AppData; limit?: number 
   const report = useInsights();
   const section = report.slowMoving;
   const today = todayISO();
+  const days = useAppState((s) => s.settings.slowMovingDays);
   return (
-    <Card className="p-4 sm:p-5">
+    <Card className="p-4 sm:p-5" data-testid="slow-movers">
       <SectionHeader
         title="Slow-moving inventory"
-        description={section.rule.split(' (')[0]}
+        description={`In stock today, unsold for ${days}+ days · amounts are inventory cost (what you paid)`}
         as="h3"
         action={
           <Link to="/insights" className="inline-flex items-center gap-1 text-sm font-medium text-accent-text hover:underline">
@@ -123,12 +128,16 @@ export function SlowMovers({ data, limit = 5 }: { data: AppData; limit?: number 
               <Link to={`/inventory/${item.id}`} className="flex items-center gap-3 py-2.5 hover:opacity-80">
                 <ItemThumb photoId={item.photoIds[0]} name={item.name} className="size-10 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-ink">{item.name}</p>
-                  <p className="flex items-center gap-1 text-xs text-ink-2">
+                  <p className="line-clamp-2 text-sm font-medium break-words text-ink">{item.name}</p>
+                  <p className="flex flex-wrap items-center gap-x-1 text-xs text-ink-2">
                     <Clock className="size-3" /> {plural(daysWithoutSale(item, data.sales, today), 'day')} without a sale
+                    {item.askingPrice !== null && <span>· asking {money(item.askingPrice)} each</span>}
                   </p>
                 </div>
-                <span className="tabular shrink-0 text-sm text-ink">{money(itemCostValue(item))}</span>
+                <span className="tabular shrink-0 text-right">
+                  <span className="block text-sm text-ink">{money(itemCostValue(item))}</span>
+                  <span className="block text-[11px] text-muted">inventory cost</span>
+                </span>
               </Link>
             </li>
           ))}
@@ -139,15 +148,16 @@ export function SlowMovers({ data, limit = 5 }: { data: AppData; limit?: number 
   );
 }
 
-export function AlertStrip() {
-  const report = useInsights();
+/** Alerts for the dashboard. Sales-based alerts cover the dashboard's selected period. */
+export function AlertStrip({ period }: { period: PeriodKey }) {
+  const report = useInsights(period);
   const low = report.lowStock.findings.length;
   const pricing = report.pricingRisks.findings.length;
   const losses = report.lowMarginSales.findings.filter((f) => f.group.netProfit < 0).length;
   const alerts = [
     low > 0 && { icon: <AlertTriangle className="size-4" />, text: `${plural(low, 'item')} ${pluralWord(low, 'is', 'are')} low on stock`, tone: 'warn' },
     pricing > 0 && { icon: <TrendingDown className="size-4" />, text: `${plural(pricing, 'asking price')} may not be profitable`, tone: 'warn' },
-    losses > 0 && { icon: <TrendingDown className="size-4" />, text: `${plural(losses, 'item')} sold at a loss`, tone: 'bad' },
+    losses > 0 && { icon: <TrendingDown className="size-4" />, text: `${plural(losses, 'item')} sold at a loss ${periodRange(period).label}`, tone: 'bad' },
   ].filter(Boolean) as { icon: React.ReactNode; text: string; tone: string }[];
   if (!alerts.length) return null;
   return (
@@ -181,6 +191,11 @@ export function GetStarted() {
             <Button variant="primary" size="lg" icon={<PackagePlus className="size-5" />} onClick={dialogs.addItem}>
               Add your first item
             </Button>
+            {scannerEnabled && (
+              <Button size="lg" icon={<Sparkles className="size-5" />} onClick={dialogs.scanItem}>
+                Scan with AI
+              </Button>
+            )}
             <Button size="lg" icon={<FileUp className="size-5" />} onClick={dialogs.importCsv}>
               Import a spreadsheet
             </Button>
@@ -213,5 +228,25 @@ export function GetStarted() {
         </ol>
       </div>
     </Card>
+  );
+}
+
+/** "What these numbers mean": the definitions behind the dashboard's figures. */
+export function Definitions({ keys }: { keys: readonly TermKey[] }) {
+  return (
+    <details className="group rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5" data-testid="definitions">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-ink [&::-webkit-details-marker]:hidden">
+        <BookOpen className="size-4 text-muted" /> What these numbers mean
+        <ChevronDown className="ml-auto size-4 text-muted transition-transform group-open:rotate-180" />
+      </summary>
+      <dl className="mt-3 space-y-2.5 text-sm">
+        {keys.map((k) => (
+          <div key={k}>
+            <dt className="font-medium text-ink">{TERMS[k].label}</dt>
+            <dd className="text-ink-2">{TERMS[k].definition}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }

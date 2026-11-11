@@ -10,7 +10,8 @@ test('onboarding asks how StockPilot will be used and requires a choice', async 
   }
   await page.getByRole('radio', { name: /Collector Mode/ }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByText('Your inventory is stored only on this device')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Where your inventory is saved' })).toBeVisible();
+  await expect(page.getByTestId('storage-explainer')).toContainText('Only on this device, in this browser');
   await page.getByRole('button', { name: /Start with my own inventory/ }).click();
   await expect(page.getByText('Collector mode')).toBeVisible();
   await expect(page.getByTestId('get-started')).toBeVisible();

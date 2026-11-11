@@ -174,7 +174,9 @@ export function SalesPage() {
                 return (
                   <li key={s.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-5" data-testid="sale-row">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-ink">{s.itemName}</p>
+                      <p className="line-clamp-2 text-sm font-medium break-words text-ink" title={s.itemName}>
+                        {s.itemName}
+                      </p>
                       <p className="text-xs text-ink-2">
                         {formatDate(s.saleDate)} · {s.platform || 'No platform'} · {s.quantity} × {money(s.priceMode === 'per_unit' ? s.salePrice : f.revenue / s.quantity)}
                       </p>

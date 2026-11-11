@@ -10,12 +10,13 @@ import {
   projectedUnitProfit,
   salesByCategory,
   salesByItem,
+  salesInRange,
   sellingCostRate,
   totalSales,
   type GroupTotals,
   type SellingCostRate,
 } from '../domain/calc';
-import { addDays, todayISO } from '../domain/dates';
+import { addDays, periodRange, todayISO, type DateRange } from '../domain/dates';
 import { formatMoney, formatPercent } from '../domain/money';
 import type { Adjustment, AppData, CountRecord, Item, Settings } from '../domain/types';
 import { plural, pluralWord } from '../domain/format';
@@ -39,6 +40,8 @@ export interface InsightSection<T = ItemFinding> {
   insufficient: string | null;
   /** Summary sentence when there are findings. */
   summary: string;
+  /** The time the section covers, e.g. "today" (current stock) or "this month" (sales). */
+  period: string;
 }
 
 export interface InsightsReport {
@@ -76,6 +79,7 @@ export function lowStockSection(items: Item[]): InsightSection {
     severity: out > 0 ? 'critical' : 'warning',
     rule: 'Items whose quantity is at or below the low-stock alert level you set on them.',
     findings,
+    period: 'today',
     insufficient: tracked.length === 0 ? 'No items have a low-stock alert level yet. Set one on an item (or a default in Settings) to get restock alerts.' : null,
     summary: findings.length
       ? `${plural(findings.length, 'item')} ${pluralWord(findings.length, 'needs', 'need')} restocking${out ? `, ${out} already out of stock` : ''}.`
@@ -91,15 +95,16 @@ export function slowMovingSection(data: AppData, settings: RuleSettings, today: 
     .sort((a, b) => b.days - a.days)
     .map(({ item, days }) => ({
       item,
-      detail: `${plural(days, 'day')} without a sale · ${formatMoney(itemCostValue(item), settings.currency)} tied up.`,
+      detail: `${plural(days, 'day')} without a sale · ${formatMoney(itemCostValue(item), settings.currency)} inventory cost${item.askingPrice !== null ? ` · asking ${formatMoney(item.askingPrice, settings.currency)} each` : ''}.`,
     }));
   const tiedUp = findings.reduce((sum, f) => sum + itemCostValue(f.item), 0);
   return {
     id: 'slow-moving',
     title: 'Sitting the longest',
     severity: 'warning',
-    rule: `In-stock items that haven't sold in ${settings.slowMovingDays}+ days (counted from the purchase date or last sale, whichever is later).`,
+    rule: `In-stock items that haven't sold in ${settings.slowMovingDays}+ days (counted from the purchase date or last sale, whichever is later). The amount shown is inventory cost: what you paid for the units still on hand.`,
     findings,
+    period: 'today',
     insufficient: inStock.length === 0 ? 'Nothing is in stock right now.' : null,
     summary: findings.length
       ? `${plural(findings.length, 'item')} ${pluralWord(findings.length, 'hasn’t', 'haven’t')} sold in ${settings.slowMovingDays}+ days, holding ${formatMoney(tiedUp, settings.currency)} at cost.`
@@ -107,8 +112,9 @@ export function slowMovingSection(data: AppData, settings: RuleSettings, today: 
   };
 }
 
-export function lowMarginSection(data: AppData, settings: RuleSettings): InsightsReport['lowMarginSales'] {
-  const groups = salesByItem(data.sales)
+export function lowMarginSection(data: AppData, settings: RuleSettings, range: DateRange = periodRange('all')): InsightsReport['lowMarginSales'] {
+  const sales = salesInRange(data.sales, range);
+  const groups = salesByItem(sales)
     .filter((g) => g.margin !== null && g.margin < settings.lowMarginPercent)
     .sort((a, b) => (a.margin ?? 0) - (b.margin ?? 0));
   const findings = groups.map((group) => ({
@@ -124,12 +130,13 @@ export function lowMarginSection(data: AppData, settings: RuleSettings): Insight
     id: 'low-margin',
     title: 'Low or negative profit',
     severity: losses ? 'critical' : 'warning',
-    rule: `Items whose recorded sales earned less than a ${settings.lowMarginPercent}% profit margin after cost, fees, shipping and other expenses.`,
+    rule: `Items whose sales ${range.label} earned less than a ${settings.lowMarginPercent}% profit margin (realized profit ÷ revenue) after cost, fees, shipping and other expenses.`,
     findings,
-    insufficient: data.sales.length === 0 ? 'No sales recorded yet. Record a sale to see which items earn the least.' : null,
+    period: range.label,
+    insufficient: data.sales.length === 0 ? 'No sales recorded yet. Record a sale to see which items earn the least.' : sales.length === 0 ? `No sales ${range.label}.` : null,
     summary: findings.length
-      ? `${plural(findings.length, 'item')} earned under ${settings.lowMarginPercent}% margin${losses ? `; ${losses} sold at a loss` : ''}.`
-      : `Every item you've sold earned at least a ${settings.lowMarginPercent}% margin.`,
+      ? `${plural(findings.length, 'item')} earned under ${settings.lowMarginPercent}% margin ${range.label}${losses ? `; ${losses} sold at a loss` : ''}.`
+      : `Every item you sold ${range.label} earned at least a ${settings.lowMarginPercent}% margin.`,
   };
 }
 
@@ -161,6 +168,7 @@ export function pricingRiskSection(data: AppData, settings: RuleSettings, rate: 
     severity: 'warning',
     rule: `Unsold items whose asking price, minus ${rateText}, leaves less than a ${settings.lowMarginPercent}% margin over cost.`,
     findings,
+    period: 'today',
     insufficient: priced.length === 0 ? 'No in-stock items have an asking price yet.' : null,
     summary: findings.length
       ? `${plural(findings.length, 'asking price')} may leave little or no profit.`
@@ -168,21 +176,23 @@ export function pricingRiskSection(data: AppData, settings: RuleSettings, rate: 
   };
 }
 
-export function topRevenueSection(data: AppData, settings: RuleSettings): InsightsReport['topRevenue'] {
-  const groups = salesByItem(data.sales)
+export function topRevenueSection(data: AppData, settings: RuleSettings, range: DateRange = periodRange('all')): InsightsReport['topRevenue'] {
+  const sales = salesInRange(data.sales, range);
+  const groups = salesByItem(sales)
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 5);
   return {
     id: 'top-revenue',
     title: 'Top earners',
     severity: 'good',
-    rule: 'Items ranked by total revenue from recorded sales, with their net profit.',
+    rule: `Items ranked by revenue from sales ${range.label}, with their realized profit.`,
+    period: range.label,
     findings: groups.map((group) => ({
       group,
       item: data.items.find((i) => i.id === group.key) ?? null,
-      detail: `${formatMoney(group.revenue, settings.currency)} revenue · ${formatMoney(group.netProfit, settings.currency)} net profit · ${plural(group.unitsSold, 'unit')} sold.`,
+      detail: `${formatMoney(group.revenue, settings.currency)} revenue · ${formatMoney(group.netProfit, settings.currency)} realized profit · ${plural(group.unitsSold, 'unit')} sold.`,
     })),
-    insufficient: data.sales.length === 0 ? 'No sales recorded yet.' : null,
+    insufficient: data.sales.length === 0 ? 'No sales recorded yet.' : sales.length === 0 ? `No sales ${range.label}.` : null,
     summary: groups.length ? `${groups[0].label} leads with ${formatMoney(groups[0].revenue, settings.currency)} in revenue.` : '',
   };
 }
@@ -199,7 +209,8 @@ export function discrepancySection(data: AppData, settings: RuleSettings, today:
     id: 'discrepancies',
     title: 'Inventory discrepancies',
     severity: lost < 0 ? 'warning' : 'info',
-    rule: 'Quantity corrections from Count Check and manual adjustments in the last 90 days.',
+    rule: 'Quantity corrections from Count Check and manual adjustments in the last 90 days, valued at cost.',
+    period: 'last 90 days',
     findings: recent.map((adjustment) => ({
       adjustment,
       detail: `${adjustment.difference > 0 ? '+' : ''}${adjustment.difference} (${formatMoney(adjustment.valueDifference, settings.currency)}) — ${adjustment.reason || 'no reason given'}.`,
@@ -214,18 +225,20 @@ export function discrepancySection(data: AppData, settings: RuleSettings, today:
   };
 }
 
-export function categorySection(data: AppData, settings: RuleSettings): InsightsReport['categories'] {
-  const groups = salesByCategory(data.sales).sort((a, b) => b.netProfit - a.netProfit);
+export function categorySection(data: AppData, settings: RuleSettings, range: DateRange = periodRange('all')): InsightsReport['categories'] {
+  const sales = salesInRange(data.sales, range);
+  const groups = salesByCategory(sales).sort((a, b) => b.netProfit - a.netProfit);
   return {
     id: 'categories',
     title: 'Category performance',
     severity: 'info',
-    rule: 'Realized net profit by category from recorded sales.',
+    rule: `Realized profit by category from sales ${range.label}. Margin = realized profit ÷ revenue for the same sales.`,
+    period: range.label,
     findings: groups.map((group) => ({
       group,
-      detail: `${formatMoney(group.netProfit, settings.currency)} profit on ${formatMoney(group.revenue, settings.currency)} (${formatPercent(group.margin)} margin).`,
+      detail: `${formatMoney(group.netProfit, settings.currency)} realized profit on ${formatMoney(group.revenue, settings.currency)} revenue (${formatPercent(group.margin)} margin).`,
     })),
-    insufficient: data.sales.length === 0 ? 'No sales recorded yet.' : null,
+    insufficient: data.sales.length === 0 ? 'No sales recorded yet.' : sales.length === 0 ? `No sales ${range.label}.` : null,
     summary: groups.length ? `${groups[0].label} is your most profitable category.` : '',
   };
 }
@@ -241,17 +254,22 @@ export function dataGaps(data: AppData): string[] {
   return gaps;
 }
 
-export function buildInsights(data: AppData, settings: RuleSettings, today: string = todayISO()): InsightsReport {
+/**
+ * Builds every insight. Sales-based sections (low margins, top earners, categories) cover
+ * `salesRange` (all time by default) so they can match the period chosen on the dashboard;
+ * stock-based sections always describe what's in stock today.
+ */
+export function buildInsights(data: AppData, settings: RuleSettings, today: string = todayISO(), salesRange: DateRange = periodRange('all', today)): InsightsReport {
   const rate = sellingCostRate(data.sales, settings);
   return {
     generatedFor: today,
     lowStock: lowStockSection(data.items),
     slowMoving: slowMovingSection(data, settings, today),
-    lowMarginSales: lowMarginSection(data, settings),
+    lowMarginSales: lowMarginSection(data, settings, salesRange),
     pricingRisks: pricingRiskSection(data, settings, rate),
-    topRevenue: topRevenueSection(data, settings),
+    topRevenue: topRevenueSection(data, settings, salesRange),
     discrepancies: discrepancySection(data, settings, today),
-    categories: categorySection(data, settings),
+    categories: categorySection(data, settings, salesRange),
     dataGaps: dataGaps(data),
     rate,
   };

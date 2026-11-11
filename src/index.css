@@ -13,7 +13,8 @@
   --line-strong: #d3d2cc;
   --ink: #111110;
   --ink-2: #52514e;
-  --muted: #7a7974;
+  /* Darkest of the greys that still reads as secondary; ≥ 4.5:1 on every light background (WCAG AA). */
+  --muted: #6b6a65;
   --accent: #256abf;
   --accent-hover: #1c5cab;
   --accent-ink: #ffffff;

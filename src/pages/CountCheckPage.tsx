@@ -160,7 +160,9 @@ function StartCount() {
               {[...corrections].reverse().map((a) => (
                 <li key={a.id} className="flex items-center justify-between gap-3 py-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm text-ink">{a.itemName}</p>
+                    <p className="line-clamp-2 text-sm break-words text-ink" title={a.itemName}>
+                      {a.itemName}
+                    </p>
                     <p className="truncate text-xs text-ink-2">
                       {formatDateTime(a.date)} · {a.source === 'count_check' ? 'Count Check' : 'Manual'} · {a.reason || 'No reason'}
                     </p>
@@ -393,7 +395,9 @@ function CountRow({ item, counted, changedFrom, line, onChange, onKeep, money }:
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <ItemThumb photoId={item.photoIds[0]} name={item.name} className="size-11 shrink-0 rounded-lg" />
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-ink">{item.name}</p>
+          <p className="line-clamp-2 text-sm font-medium break-words text-ink" title={item.name}>
+            {item.name}
+          </p>
           <p className="truncate text-xs text-ink-2">
             {[item.sku, item.location].filter(Boolean).join(' · ')} · Recorded: <strong className="text-ink">{item.quantity}</strong>
           </p>
@@ -543,12 +547,12 @@ function ReviewDialog({ open, onClose, lines, changed, uncounted }: { open: bool
                       )}
                       {d.apply && (
                         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          <select value={d.reason} onChange={(e) => setD(l, { reason: e.target.value })} aria-label={`Reason for ${l.itemName}`} className={cn(inputClass, 'h-10 border-line-strong text-sm')}>
+                          <select value={d.reason} onChange={(e) => setD(l, { reason: e.target.value })} aria-label={`Reason for ${l.itemName}`} className={cn(inputClass, 'h-10 border-line-strong sm:text-sm')}>
                             {REASONS.map((r) => (
                               <option key={r}>{r}</option>
                             ))}
                           </select>
-                          <input value={d.note} onChange={(e) => setD(l, { note: e.target.value })} placeholder="Note (optional)" aria-label={`Note for ${l.itemName}`} className={cn(inputClass, 'h-10 border-line-strong text-sm')} />
+                          <input value={d.note} onChange={(e) => setD(l, { note: e.target.value })} placeholder="Note (optional)" aria-label={`Note for ${l.itemName}`} className={cn(inputClass, 'h-10 border-line-strong sm:text-sm')} />
                         </div>
                       )}
                     </div>

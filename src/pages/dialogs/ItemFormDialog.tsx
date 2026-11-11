@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Sparkles } from 'lucide-react';
 import { addItem, itemInputErrors, updateItem, type ItemInput } from '../../domain/actions';
 import { isDomainError } from '../../domain/errors';
 import { checkPrice, knownCategories, knownLocations } from '../../domain/calc';
@@ -15,10 +15,16 @@ import { Checkbox, MoneyField, QuantityField, TextAreaField, TextField } from '.
 import { PhotoPicker, forgetPhotos } from '../../ui/Photo';
 import { useToast } from '../../ui/Toast';
 import { plural } from '../../domain/format';
+import { scannerEnabled } from '../../ai/config';
+import { suggestionToFields, type ScanFillableField } from '../../ai/applySuggestion';
+import type { ScanResult } from '../../ai/scanSchema';
+import { ScanPanel } from './ScanPanel';
 
 interface Props {
   open: boolean;
   itemId: string | null;
+  /** Opened from "Scan with AI": highlight the scanner. */
+  scan?: boolean;
   onClose: () => void;
 }
 
@@ -77,7 +83,22 @@ function initialState(item: Item | undefined, defaultThreshold: number | null): 
   };
 }
 
-export function ItemFormDialog({ open, itemId, onClose }: Props) {
+/** Small marker on fields the AI scanner filled; it goes away once the user edits the field. */
+function AiLabel({ text, on }: { text: string; on: boolean }) {
+  return (
+    <>
+      {text}
+      {on && (
+        <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-md bg-demo-soft px-1.5 py-px align-middle text-[10px] font-semibold text-demo" data-testid="ai-filled">
+          <Sparkles className="size-2.5" aria-hidden />
+          AI<span className="sr-only"> suggested, check before saving</span>
+        </span>
+      )}
+    </>
+  );
+}
+
+export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
   const data = useAppState((s) => s.data);
   const settings = useAppState((s) => s.settings);
   const toast = useToast();
@@ -87,8 +108,11 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [showMore, setShowMore] = useState(Boolean(item));
   const [applyCostToSales, setApplyCostToSales] = useState(true);
+  const [aiFilled, setAiFilled] = useState<ReadonlySet<ScanFillableField>>(new Set());
   const createdPhotos = useRef<string[]>([]);
   const saved = useRef(false);
+  const formRef = useRef(form);
+  formRef.current = form;
 
   useEffect(() => {
     if (open) {
@@ -96,6 +120,7 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
       setErrors({});
       setShowMore(Boolean(item));
       setApplyCostToSales(true);
+      setAiFilled(new Set());
       createdPhotos.current = [];
       saved.current = false;
     }
@@ -105,6 +130,47 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
+    // Once the user edits an AI-filled field it's theirs: drop the marker, never overwrite it.
+    if (aiFilled.has(key as ScanFillableField)) {
+      setAiFilled((prev) => {
+        const next = new Set(prev);
+        next.delete(key as ScanFillableField);
+        return next;
+      });
+    }
+  };
+
+  /** A scan photo becomes the item's cover photo, replacing an earlier scan photo. */
+  const handleScanPhoto = (photoId: string, replacedId: string | null) => {
+    createdPhotos.current = [...createdPhotos.current, photoId];
+    setForm((f) => ({ ...f, photoIds: [photoId, ...f.photoIds.filter((p) => p !== photoId && p !== replacedId)] }));
+    if (replacedId && createdPhotos.current.includes(replacedId)) {
+      void store.deletePhotos([replacedId]);
+      forgetPhotos([replacedId]);
+      createdPhotos.current = createdPhotos.current.filter((p) => p !== replacedId);
+    }
+  };
+
+  /** Fills name/category/condition/notes from a scan (replacing an earlier scan's). Never touches cost, quantity or prices. */
+  const handleScanResult = (result: ScanResult): ScanFillableField[] => {
+    const current = formRef.current;
+    const fill = suggestionToFields(
+      result,
+      { name: current.name, category: current.category, condition: current.condition, notes: current.notes },
+      aiFilled,
+      knownCategories(data),
+    );
+    if (!fill.filled.length && !fill.cleared.length) return [];
+    setForm((f) => ({ ...f, ...fill.values }));
+    setErrors((e) => ({ ...e, ...Object.fromEntries(fill.filled.map((k) => [k, undefined])) }));
+    setAiFilled((prev) => {
+      const next = new Set(prev);
+      for (const k of fill.cleared) next.delete(k);
+      for (const k of fill.filled) next.add(k);
+      return next;
+    });
+    if (fill.filled.includes('condition') || fill.filled.includes('notes')) setShowMore(true);
+    return fill.filled;
   };
 
   const categories = useMemo(() => knownCategories(data), [data]);
@@ -219,8 +285,8 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
   const valueField = (
     <MoneyField
       key="value"
-      label="Estimated value (per item)"
-      hint="What one is worth today, if you know"
+      label="Est. market value (per item)"
+      hint="Optional. Your own estimate of what one is worth today. Kept separate from your asking price."
       currency={currency}
       value={form.estimatedValue}
       onChange={(v) => set('estimatedValue', v)}
@@ -260,6 +326,7 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
       }
     >
       <form id="item-form-el" onSubmit={submit} noValidate className="space-y-4">
+        {!item && scannerEnabled && <ScanPanel highlight={scan} onPhoto={handleScanPhoto} onResult={handleScanResult} />}
         <div>
           <div className="mb-1.5 text-sm font-medium text-ink">Photos</div>
           <PhotoPicker
@@ -270,7 +337,7 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
           />
         </div>
         <TextField
-          label="Item name"
+          label={<AiLabel text="Item name" on={aiFilled.has('name')} />}
           required
           placeholder={mode === 'business' ? 'e.g. Soy candle — Lavender 8oz' : mode === 'collector' ? 'e.g. 1999 Pokémon Charizard Holo' : 'e.g. Nike Dunk Low Panda, size 10'}
           value={form.name}
@@ -295,7 +362,7 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
             error={errors.unitCost}
           />
           {primaryExtras}
-          <TextField label="Category" placeholder="e.g. Sneakers" value={form.category} onChange={(v) => set('category', v)} suggestions={categories} error={errors.category} />
+          <TextField label={<AiLabel text="Category" on={aiFilled.has('category')} />} placeholder="e.g. Sneakers" value={form.category} onChange={(v) => set('category', v)} suggestions={categories} error={errors.category} />
         </div>
         {costChanged && salesCount > 0 && (
           <div className="rounded-xl bg-warn-soft p-3">
@@ -322,12 +389,12 @@ export function ItemFormDialog({ open, itemId, onClose }: Props) {
         </button>
         {showMore && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <TextField label="Condition" placeholder="e.g. New with box" value={form.condition} onChange={(v) => set('condition', v)} suggestions={CONDITION_SUGGESTIONS} error={errors.condition} />
+            <TextField label={<AiLabel text="Condition" on={aiFilled.has('condition')} />} placeholder="e.g. New with box" value={form.condition} onChange={(v) => set('condition', v)} suggestions={CONDITION_SUGGESTIONS} error={errors.condition} />
             <TextField label="Storage location" placeholder="e.g. Closet shelf A" value={form.location} onChange={(v) => set('location', v)} suggestions={locations} error={errors.location} />
             <TextField label="SKU / ID" placeholder="Leave blank to create one" value={form.sku} onChange={(v) => set('sku', v)} error={errors.sku} autoComplete="off" />
             <TextField label="Purchase date" type="date" value={form.purchaseDate} onChange={(v) => set('purchaseDate', v)} error={errors.purchaseDate} max={todayISO()} />
             {moreExtras}
-            <TextAreaField className="sm:col-span-2" label="Notes" value={form.notes} onChange={(v) => set('notes', v)} placeholder="Anything worth remembering" />
+            <TextAreaField className="sm:col-span-2" label={<AiLabel text="Notes" on={aiFilled.has('notes')} />} value={form.notes} onChange={(v) => set('notes', v)} placeholder="Anything worth remembering" />
           </div>
         )}
       </form>

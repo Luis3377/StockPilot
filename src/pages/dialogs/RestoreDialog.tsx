@@ -12,7 +12,7 @@ import { Checkbox } from '../../ui/Fields';
 import { useToast } from '../../ui/Toast';
 import { plural } from '../../domain/format';
 
-export function RestoreDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function RestoreDialog({ open, onClose, onRestored }: { open: boolean; onClose: () => void; onRestored?: (restoredSettings: boolean) => void }) {
   const current = useAppState((s) => s.data);
   const dataset = useAppState((s) => s.dataset);
   const toast = useToast();
@@ -48,8 +48,11 @@ export function RestoreDialog({ open, onClose }: { open: boolean; onClose: () =>
     try {
       forgetPhotos(current.items.flatMap((i) => i.photoIds));
       await store.restore(backup, withSettings);
+      // The data now matches that backup file, so it counts as this data's latest backup.
+      if (dataset === 'real' && backup.exportedAt && !Number.isNaN(Date.parse(backup.exportedAt))) store.updateSettings({ lastBackupAt: backup.exportedAt });
       toast.success(`Restored ${plural(backup.data.items.length, 'item')} and ${plural(backup.data.sales.length, 'sale')}.`);
       onClose();
+      onRestored?.(withSettings);
     } catch {
       toast.error('Restore failed. Your existing data was not changed.');
     } finally {
@@ -62,7 +65,7 @@ export function RestoreDialog({ open, onClose }: { open: boolean; onClose: () =>
       open={open}
       onClose={onClose}
       title="Restore from backup"
-      description={dataset === 'demo' ? 'This replaces the demo data.' : 'This replaces all the data on this device.'}
+      description={dataset === 'demo' ? 'This replaces the demo data.' : 'This replaces all the data saved here (in this browser or app). The backup file itself isn’t changed.'}
       testId="restore-dialog"
       footer={
         <>

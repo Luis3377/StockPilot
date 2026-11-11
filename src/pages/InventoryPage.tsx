@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Download, FileUp, LayoutGrid, List, PackagePlus, Search, SearchX, X, Boxes } from 'lucide-react';
+import { Boxes, Download, FileUp, LayoutGrid, List, PackagePlus, Search, SearchX, Sparkles, X } from 'lucide-react';
 import { acquiredDate, itemCostValue, knownCategories, knownLocations, stockStatus, uniqueSorted, daysWithoutSale } from '../domain/calc';
 import { todayISO } from '../domain/dates';
 import type { Item } from '../domain/types';
@@ -18,7 +18,10 @@ import { cn } from '../ui/cn';
 import { useDialogs } from './dialogs/DialogHub';
 import { useToast } from '../ui/Toast';
 import { DeviceNotice } from './DeviceNotice';
+import { scannerEnabled } from '../ai/config';
 import { plural, pluralWord } from '../domain/format';
+import { TERMS } from '../domain/terms';
+import { useRadioGroup } from '../ui/useRadioGroup';
 
 const SORTS = {
   newest: 'Newest first',
@@ -33,7 +36,7 @@ const SORTS = {
 } as const;
 type SortKey = keyof typeof SORTS;
 
-const STATUSES = { all: 'All items', in_stock: 'In stock', low: 'Low stock', out: 'Sold out / zero' } as const;
+const STATUSES = { all: 'All items', in_stock: 'In stock', low: 'Low stock', out: 'Out of stock' } as const;
 type StatusKey = keyof typeof STATUSES;
 
 export function filterItems(
@@ -69,6 +72,7 @@ export function InventoryPage() {
   const status = (params.get('status') as StatusKey) in STATUSES ? (params.get('status') as StatusKey) : 'all';
   const sort = (params.get('sort') as SortKey) in SORTS ? (params.get('sort') as SortKey) : 'newest';
   const view = settings.inventoryView;
+  const viewRadio = useRadioGroup(['grid', 'list'] as const, view, (v) => store.updateSettings({ inventoryView: v }));
 
   const setParam = (key: string, value: string) => {
     // Read the live URL rather than this render's params: two quick changes (clear search,
@@ -124,6 +128,11 @@ export function InventoryPage() {
                 <Button variant="primary" icon={<PackagePlus className="size-4" />} onClick={dialogs.addItem}>
                   Add your first item
                 </Button>
+                {scannerEnabled && (
+                  <Button icon={<Sparkles className="size-4" />} onClick={dialogs.scanItem}>
+                    Scan with AI
+                  </Button>
+                )}
                 <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv}>
                   Import CSV
                 </Button>
@@ -150,12 +159,18 @@ export function InventoryPage() {
             <Button icon={<Download className="size-4" />} onClick={exportCsv}>
               Export
             </Button>
+            {scannerEnabled && (
+              <Button icon={<Sparkles className="size-4" />} onClick={dialogs.scanItem}>
+                Scan with AI
+              </Button>
+            )}
             <Button variant="primary" icon={<PackagePlus className="size-4" />} onClick={dialogs.addItem}>
               Add item
             </Button>
           </>
         }
       />
+      <DeviceNotice />
 
       <div className="mb-4 space-y-3">
         <div className="flex gap-2">
@@ -177,6 +192,7 @@ export function InventoryPage() {
                 type="button"
                 role="radio"
                 aria-checked={view === v}
+                {...viewRadio(v)}
                 aria-label={v === 'grid' ? 'Grid view' : 'List view'}
                 onClick={() => store.updateSettings({ inventoryView: v })}
                 className={cn('flex w-10 items-center justify-center rounded-lg', view === v ? 'bg-surface text-ink shadow-card' : 'text-ink-2')}
@@ -238,7 +254,10 @@ export function InventoryPage() {
                   </div>
                 </div>
                 <div className="p-3">
-                  <p className="line-clamp-2 min-h-[2.5em] text-sm leading-tight font-medium text-ink">{item.name}</p>
+                  {/* Long names show three lines here; the full name is on the item page (and in the tooltip). */}
+                  <p className="line-clamp-3 min-h-[2.5em] text-sm leading-tight font-medium break-words text-ink" title={item.name} data-testid="inventory-item-name">
+                    {item.name}
+                  </p>
                   <p className="mt-1 truncate text-xs text-muted">{[item.sku, item.category].filter(Boolean).join(' · ')}</p>
                   <div className="mt-2 flex items-end justify-between gap-2">
                     <span className="tabular text-sm font-semibold text-ink">{priceLabel(item, settings.mode, money)}</span>
@@ -259,7 +278,7 @@ export function InventoryPage() {
                 <th className="px-3 py-2.5 font-medium">Location</th>
                 <th className="px-3 py-2.5 text-right font-medium">Qty</th>
                 <th className="px-3 py-2.5 text-right font-medium">Cost / item</th>
-                <th className="px-3 py-2.5 text-right font-medium">{settings.mode === 'collector' ? 'Est. value' : 'Asking'}</th>
+                <th className="px-3 py-2.5 text-right font-medium">{settings.mode === 'collector' ? TERMS.marketValue.label : settings.mode === 'business' ? 'Selling price' : 'Asking price'}</th>
                 <th className="px-4 py-2.5 text-right font-medium">Status</th>
               </tr>
             </thead>
@@ -270,7 +289,9 @@ export function InventoryPage() {
                     <Link to={`/inventory/${item.id}`} className="flex items-center gap-3 after:absolute after:inset-0">
                       <ItemThumb photoId={item.photoIds[0]} name={item.name} className="size-10 shrink-0 rounded-lg" />
                       <span className="min-w-0">
-                        <span className="block truncate font-medium text-ink">{item.name}</span>
+                        <span className="line-clamp-2 font-medium break-words text-ink" title={item.name}>
+                          {item.name}
+                        </span>
                         <span className="block truncate text-xs text-muted">
                           {item.sku}
                           <span className="md:hidden"> · Qty {item.quantity} · {priceLabel(item, settings.mode, money)}</span>
@@ -303,17 +324,24 @@ export function InventoryPage() {
   );
 }
 
+/** The per-item price shown on cards, always labeled so it can't be mistaken for another figure. */
 function priceLabel(item: Item, mode: string, money: (n: number) => string): string {
-  if (mode === 'collector') return item.estimatedValue !== null ? money(item.estimatedValue) : `Cost ${money(item.unitCost)}`;
-  return item.askingPrice !== null ? money(item.askingPrice) : `Cost ${money(item.unitCost)}`;
+  if (mode === 'collector') return item.estimatedValue !== null ? `Est. ${money(item.estimatedValue)}` : `Cost ${money(item.unitCost)}`;
+  if (item.askingPrice !== null) return `${mode === 'business' ? 'Price' : 'Asking'} ${money(item.askingPrice)}`;
+  return `Cost ${money(item.unitCost)}`;
 }
 
+/**
+ * One label per stock status, used everywhere. Quantity 0 is always "Out of stock" (it can
+ * come from sales or from a count correction, so "sold out" would not always be true). Items
+ * with a low-stock alert show it in red, since you plan to restock them; others in grey.
+ */
 export function StatusBadge({ item, onImage }: { item: Item; onImage?: boolean }) {
   const s = stockStatus(item);
   if (s === 'out') {
     return (
       <Badge tone={item.lowStockThreshold !== null ? 'bad' : 'neutral'} onImage={onImage}>
-        {item.lowStockThreshold !== null ? 'Out of stock' : 'Sold out'}
+        Out of stock
       </Badge>
     );
   }
@@ -331,7 +359,7 @@ function FilterSelect({ label, value, onChange, options, className }: { label: s
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
         className={cn(
-          'h-9 w-full appearance-none truncate rounded-xl border pr-8 pl-3 text-sm font-medium outline-none focus:border-accent sm:w-auto',
+          'h-9 w-full appearance-none truncate rounded-xl border pr-8 pl-3 text-base font-medium outline-none focus:border-accent sm:w-auto sm:text-sm',
           active ? 'border-accent bg-accent-soft text-accent-text' : 'border-line-strong bg-surface text-ink',
         )}
       >

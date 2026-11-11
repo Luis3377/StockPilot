@@ -5,7 +5,8 @@ import { ruleBasedProvider, SUGGESTED_QUESTIONS, type AssistantAnswer } from '..
 import type { InsightSection, Severity } from '../insights/rules';
 import { formatDate } from '../domain/dates';
 import { useAppState } from '../data/store';
-import { useInsights } from '../lib/hooks';
+import { useInsights, useReportingPeriod } from '../lib/hooks';
+import { PeriodPicker } from '../ui/PeriodPicker';
 import { salesEnabled } from '../lib/modes';
 import { PageHeader, Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
@@ -19,7 +20,8 @@ interface Turn {
 }
 
 export function InsightsPage() {
-  const report = useInsights();
+  const [period, setPeriod] = useReportingPeriod();
+  const report = useInsights(period);
   const settings = useAppState((s) => s.settings);
   const selling = salesEnabled(settings);
 
@@ -70,6 +72,12 @@ export function InsightsPage() {
           <Assistant />
         </div>
         <div className="space-y-3 xl:order-1">
+          {selling && (
+            <div className="space-y-1.5">
+              <PeriodPicker value={period} onChange={setPeriod} />
+              <p className="text-xs text-ink-2">The period applies to sales-based insights and matches the Overview. Stock-based insights always show today.</p>
+            </div>
+          )}
           {report.dataGaps.length > 0 && (
             <Card className="bg-accent-soft/40 p-4">
               <p className="mb-1 flex items-center gap-2 text-sm font-semibold text-ink">
@@ -118,6 +126,9 @@ function Section<T>({ section, render }: { section: InsightSection<T>; render?: 
             {!section.insufficient && section.findings.length > 0 && section.severity !== 'good' && section.severity !== 'info' && (
               <Badge tone={sev.tone}>{section.findings.length}</Badge>
             )}
+            <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-2" data-testid="insight-period">
+              {section.period === 'today' ? 'Today' : section.period.charAt(0).toUpperCase() + section.period.slice(1)}
+            </span>
           </div>
           <p className="mt-0.5 text-sm text-ink-2">{section.insufficient ?? section.summary}</p>
           <button type="button" onClick={() => setShowRule((v) => !v)} className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-ink" aria-expanded={showRule}>
@@ -143,7 +154,7 @@ function Section<T>({ section, render }: { section: InsightSection<T>; render?: 
 function FindingRow({ title, detail, to }: { title: string; detail: string; to?: string }) {
   const body = (
     <>
-      <p className="truncate text-sm font-medium text-ink">{title}</p>
+      <p className="text-sm font-medium break-words text-ink">{title}</p>
       <p className="text-xs text-ink-2">{detail}</p>
     </>
   );
@@ -255,7 +266,7 @@ function AnswerCard({ answer, onAsk }: { answer: AssistantAnswer; onAsk: (q: str
                 {answer.table.rows.map((r, ri) => (
                   <tr key={ri} className="border-t border-line">
                     {r.map((c, ci) => (
-                      <td key={ci} className={cn('px-2 py-1.5 text-ink', ci > 0 ? 'text-right whitespace-nowrap' : 'max-w-[180px] truncate')}>
+                      <td key={ci} className={cn('px-2 py-1.5 text-ink', ci > 0 ? 'text-right whitespace-nowrap' : 'min-w-[8rem] break-words')}>
                         {ci === 0 && answer.items?.some((i) => i.name === c) ? (
                           <Link to={`/inventory/${answer.items.find((i) => i.name === c)!.id}`} className="text-accent-text hover:underline">
                             {c}

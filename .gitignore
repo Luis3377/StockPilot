@@ -5,3 +5,5 @@ test-results
 playwright-report
 *.local
 .DS_Store
+dist-scan-preview
+dist-scan-test

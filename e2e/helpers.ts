@@ -119,3 +119,14 @@ export async function noHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow, 'page should not scroll sideways').toBeLessThanOrEqual(1);
 }
+
+/** Waits until the app has finished saving to on-device storage (e.g. before a reload). */
+export async function saved(page: Page) {
+  await expect(page.locator('html')).not.toHaveAttribute('data-saving');
+}
+
+/** Reloads only after pending saves have landed, like a person who waits a moment. */
+export async function reloadWhenSaved(page: Page) {
+  await saved(page);
+  await page.reload();
+}

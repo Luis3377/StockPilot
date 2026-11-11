@@ -22,8 +22,9 @@ import {
 import { addDays, formatDate, periodRange, todayISO, type DateRange } from '../domain/dates';
 import { formatMoney, formatPercent, roundMoney } from '../domain/money';
 import type { AppData, Item, Settings } from '../domain/types';
-import { buildInsights } from './rules';
+import { buildInsights, lowMarginSection } from './rules';
 import { plural, pluralWord } from '../domain/format';
+import { TERMS, type TermKey } from '../domain/terms';
 
 export interface AnswerTable {
   columns: string[];
@@ -181,11 +182,36 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
         'Profit, revenue and expenses for a period ("profit last month", "revenue in March", "sales on eBay this year")',
         'Your best and worst items, categories and selling platforms',
         'Slow-moving inventory and what to consider discounting',
-        'Low-stock items, money tied up in inventory and estimated values',
+        'Low-stock items, money invested in inventory (inventory cost), total asking price and est. market value',
         'Inventory discrepancies from Count Check',
         'A summary of any item by name or SKU',
+        'What a number means ("what does projected profit mean?")',
       ],
       followUps: SUGGESTED_QUESTIONS.slice(0, 4),
+    });
+  }
+
+  // --- Definitions (same wording as the dashboard) ---------------------------
+  const DEFINITION_PATTERNS: [TermKey, RegExp][] = [
+    ['inventoryCost', /inventory cost/],
+    ['totalAsking', /(total )?asking price/],
+    ['marketValue', /(market|estimated) value/],
+    ['realizedProfit', /realized profit/],
+    ['projectedProfit', /projected profit/],
+    ['margin', /(profit )?margin/],
+  ];
+  // Only when the question names one of these terms (or asks about "these numbers"), so
+  // "what's the meaning of life?" doesn't get a glossary.
+  const asked = DEFINITION_PATTERNS.filter(([, re]) => re.test(q)).map(([k]) => k);
+  const asksDefinition =
+    /\b(mean|means|meaning|definition|define|difference between)\b/.test(q) ||
+    /^what('?s| is| are) (an? |the )?(inventory cost|total asking|asking price|market value|estimated value|realized profit|projected profit|profit margin|margin)\b/.test(q);
+  const aboutNumbers = /\b(these|the|my|your) (numbers|figures|terms)\b/.test(q);
+  if (asksDefinition && (asked.length > 0 || aboutNumbers)) {
+    const keys: TermKey[] = asked.length ? asked : ['inventoryCost', 'totalAsking', 'marketValue', 'realizedProfit', 'projectedProfit'];
+    return b.answer('definitions', asked.length === 1 ? `${TERMS[keys[0]].label}: ${TERMS[keys[0]].definition}` : 'StockPilot keeps these figures separate, because they answer different questions:', {
+      details: asked.length === 1 ? [] : keys.map((k) => `${TERMS[k].label}: ${TERMS[k].definition}`),
+      followUps: ['How much money do I have invested in unsold inventory?', 'What is my inventory worth?'],
     });
   }
 
@@ -221,18 +247,18 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
       .filter((c) => slowIds.has(c.item.id) || c.aboveMarket)
       .sort((a, b2) => b2.days - a.days);
     if (!candidates.length) {
-      return b.answer('discount', `Nothing stands out for discounting. No priced item has gone ${settings.slowMovingDays}+ days without a sale, and none is priced above its estimated value.`, {
+      return b.answer('discount', `Nothing stands out for discounting. No priced item has gone ${settings.slowMovingDays}+ days without a sale, and none is priced above its est. market value.`, {
         details: ['Items without an asking price are not checked.'],
       });
     }
     const breakEven = (item: Item) => (rate.percent < 100 ? roundMoney(item.unitCost / (1 - rate.percent / 100)) : null);
     return b.answer('discount', `${plural(candidates.length, 'item')} ${pluralWord(candidates.length, 'is a candidate', 'are candidates')} for a discount. These are suggestions based on your data, not market research — check current prices before changing yours.`, {
       details: [
-        `Listed because they haven't sold in ${settings.slowMovingDays}+ days, or their asking price is above your own estimated value.`,
+        `Listed because they haven't sold in ${settings.slowMovingDays}+ days, or their asking price is above your own est. market value.`,
         `"Break-even price" is the lowest price that still covers your cost after ~${formatPercent(rate.percent)} selling costs${rate.source === 'history' ? ' (your historical average)' : rate.source === 'none' ? ' (no fee history yet)' : ' (from Settings)'}.`,
       ],
       table: {
-        columns: ['Item', 'Asking', 'Est. value', 'Break-even price', 'Days unsold'],
+        columns: ['Item', 'Asking price', 'Est. market value', 'Break-even price', 'Days unsold'],
         rows: candidates.slice(0, 10).map((c) => {
           const be = breakEven(c.item);
           return [c.item.name, b.money(c.item.askingPrice!), c.item.estimatedValue === null ? '—' : b.money(c.item.estimatedValue), be === null ? '—' : b.money(be), String(c.days)];
@@ -251,11 +277,11 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     const tied = slow.reduce((s, r) => s + itemCostValue(r.item), 0);
     return b.answer(
       'slow-moving',
-      `${ranked[0].item.name} has been sitting the longest — ${plural(ranked[0].days, 'day')} without a sale. ${slow.length ? `${plural(slow.length, 'item')} ${pluralWord(slow.length, 'has', 'have')} gone ${settings.slowMovingDays}+ days, holding ${b.money(tied)} at cost.` : `Nothing has passed your ${settings.slowMovingDays}-day slow-moving threshold.`}`,
+      `${ranked[0].item.name} has been sitting the longest — ${plural(ranked[0].days, 'day')} without a sale. ${slow.length ? `${plural(slow.length, 'item')} ${pluralWord(slow.length, 'has', 'have')} gone ${settings.slowMovingDays}+ days, holding ${b.money(tied)} in inventory cost (what you paid).` : `Nothing has passed your ${settings.slowMovingDays}-day slow-moving threshold.`}`,
       {
-        details: ['Days are counted from the purchase date or the most recent sale, whichever is later.'],
+        details: ['Days are counted from the purchase date or the most recent sale, whichever is later.', `"Inventory cost" is what you paid for the units still on hand, not their asking price.`],
         table: {
-          columns: ['Item', 'Days without sale', 'On hand', 'Cost tied up'],
+          columns: ['Item', 'Days without sale', 'On hand', 'Inventory cost'],
           rows: ranked.slice(0, 8).map((r) => [r.item.name, String(r.days), String(r.item.quantity), b.money(itemCostValue(r.item))]),
         },
         items: ranked.slice(0, 8).map((r) => ({ id: r.item.id, name: r.item.name })),
@@ -265,24 +291,53 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   }
 
   // --- Money invested / value ----------------------------------------------
-  if (/\b(invested|tied up|unsold|spent on (stock|inventory)|money in|cost of (my )?(inventory|stock))\b/.test(q) || /\b(worth|value|valued)\b/.test(q)) {
+  // "Invested" is always inventory cost (what was paid). "Worth / value" gets all three figures,
+  // each named, because asking prices and the user's own estimates are different things.
+  const asksInvested = /\b(invested|invest|tied up|unsold|spen[dt] on (my )?(stock|inventory)|money in|cost of (my )?(inventory|stock)|paid for)\b/.test(q);
+  const asksWorth = /\b(worth|value|valued)\b/.test(q);
+  if (asksInvested || asksWorth) {
     const t = inventoryTotals(data.items);
     const projection = projectUnsold(data.items, data.sales, settings);
-    const details = [
-      `${plural(t.unitsInStock, 'unit')} across ${plural(t.itemsInStock, 'item')} ${pluralWord(t.unitsInStock, 'is', 'are')} in stock.`,
-    ];
-    if (t.itemsWithEstimate) {
-      const gain = t.estimatedValue - t.estimatedCostBasis;
-      details.push(`Estimated value: ${b.money(t.estimatedValue)} for the ${plural(t.itemsWithEstimate, 'item')} you've valued (${gain >= 0 ? 'up' : 'down'} ${b.money(Math.abs(gain))} vs. what you paid for them).`);
+    const stock = `${plural(t.unitsInStock, 'unit')} across ${plural(t.itemsInStock, 'item')} ${pluralWord(t.unitsInStock, 'is', 'are')} in stock today.`;
+    const askingLine = t.itemsWithAsking
+      ? `${TERMS.totalAsking.label}: ${b.money(t.askingValue)} for the ${plural(t.itemsWithAsking, 'item')} with an asking price${t.itemsMissingAsking ? ` (${plural(t.itemsMissingAsking, 'item')} without one ${pluralWord(t.itemsMissingAsking, 'isn’t', 'aren’t')} included)` : ''}. That's what it's listed for, not money received.`
+      : `${TERMS.totalAsking.label}: none of your in-stock items has an asking price yet.`;
+    const marketLine = t.itemsWithEstimate
+      ? `${TERMS.marketValue.label}: ${b.money(t.estimatedValue)} for the ${plural(t.itemsWithEstimate, 'item')} you've valued (your own estimate; ${t.estimatedValue - t.estimatedCostBasis >= 0 ? 'up' : 'down'} ${b.money(Math.abs(t.estimatedValue - t.estimatedCostBasis))} vs. what you paid for them)${t.itemsMissingEstimate ? `; ${plural(t.itemsMissingEstimate, 'item')} without an estimate ${pluralWord(t.itemsMissingEstimate, 'isn’t', 'aren’t')} included` : ''}.`
+      : `${TERMS.marketValue.label}: you haven't entered an estimated value for any in-stock item.`;
+    const projectedLine = projection.itemsIncluded
+      ? `${TERMS.projectedProfit.label} (not yet earned): about ${b.money(projection.projectedProfit)} if the ${plural(projection.itemsIncluded, 'priced item')} sell at asking, after ~${formatPercent(projection.rate.percent)} selling costs and what you paid.`
+      : null;
+    if (asksInvested && !asksWorth) {
+      return b.answer('invested', `You have ${b.money(t.costValue)} invested in unsold inventory. That's your inventory cost: what you paid for everything in stock today.`, {
+        details: [stock, `For comparison, these are not money invested:`, askingLine, marketLine, ...(projectedLine ? [projectedLine] : [])],
+        table: {
+          columns: ['Figure', 'Amount'],
+          rows: [
+            [TERMS.inventoryCost.label, b.money(t.costValue)],
+            [TERMS.totalAsking.label, t.itemsWithAsking ? b.money(t.askingValue) : '—'],
+            [TERMS.marketValue.label, t.itemsWithEstimate ? b.money(t.estimatedValue) : '—'],
+          ],
+        },
+        followUps: ['What is my inventory worth?', 'What inventory has been sitting the longest?'],
+      });
     }
-    if (t.itemsMissingEstimate && t.itemsWithEstimate) details.push(`${plural(t.itemsMissingEstimate, 'item')} ${pluralWord(t.itemsMissingEstimate, 'has', 'have')} no estimated value and ${pluralWord(t.itemsMissingEstimate, 'isn’t', 'aren’t')} included in that figure.`);
-    if (projection.itemsIncluded) {
-      details.push(`Projected (not yet realized): selling the ${projection.itemsIncluded} priced items at asking would bring ${b.money(projection.projectedRevenue)}, or about ${b.money(projection.projectedProfit)} profit after ~${formatPercent(projection.rate.percent)} selling costs.`);
-    }
-    return b.answer('invested', `You have ${b.money(t.costValue)} invested in unsold inventory (what you paid for everything currently in stock).`, {
-      details,
-      followUps: ['What inventory has been sitting the longest?', 'Which categories are performing best?'],
-    });
+    return b.answer(
+      'worth',
+      `There are three ways to put a number on your unsold inventory today: you paid ${b.money(t.costValue)} for it (inventory cost), it's listed for ${t.itemsWithAsking ? b.money(t.askingValue) : 'nothing yet'} (total asking price), and ${t.itemsWithEstimate ? `you estimate it's worth ${b.money(t.estimatedValue)}` : "you haven't estimated its value"} (est. market value).`,
+      {
+        details: [stock, `${TERMS.inventoryCost.label}: ${TERMS.inventoryCost.definition}`, askingLine, marketLine, ...(projectedLine ? [projectedLine] : [])],
+        table: {
+          columns: ['Figure', 'Amount', 'Items included'],
+          rows: [
+            [TERMS.inventoryCost.label, b.money(t.costValue), String(t.itemsInStock)],
+            [TERMS.totalAsking.label, t.itemsWithAsking ? b.money(t.askingValue) : '—', String(t.itemsWithAsking)],
+            [TERMS.marketValue.label, t.itemsWithEstimate ? b.money(t.estimatedValue) : '—', String(t.itemsWithEstimate)],
+          ],
+        },
+        followUps: ['How much money do I have invested in unsold inventory?', 'What does projected profit mean?'],
+      },
+    );
   }
 
   // --- Categories -----------------------------------------------------------
@@ -315,7 +370,8 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
 
   // --- Losing money / low margin -------------------------------------------
   if (/\b(losing|lose money|lost money|at a loss|loss|unprofitable|negative|low margin|worst|least profitable)\b/.test(q)) {
-    const s = report().lowMarginSales;
+    const range = parseTimeframe(q, today) ?? periodRange('all', today);
+    const s = lowMarginSection(data, settings, range);
     const p = report().pricingRisks;
     if (s.insufficient && p.insufficient) return b.answer('low-margin', s.insufficient);
     const rows = s.findings.map((f) => [f.group.label, b.money(f.group.revenue), b.money(f.group.netProfit), formatPercent(f.group.margin)]);
@@ -400,9 +456,10 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     const sales = data.sales.filter((s) => s.itemId === item.id);
     const t = totalSales(sales);
     const details = [
-      `On hand: ${item.quantity} · Cost per item: ${b.money(item.unitCost)} · Asking: ${item.askingPrice === null ? 'not set' : b.money(item.askingPrice)} · Estimated value: ${item.estimatedValue === null ? 'not set' : b.money(item.estimatedValue)}.`,
+      `On hand: ${item.quantity} · Cost per item: ${b.money(item.unitCost)} · Asking price: ${item.askingPrice === null ? 'not set' : b.money(item.askingPrice)} · Est. market value: ${item.estimatedValue === null ? 'not set' : b.money(item.estimatedValue)} (per item).`,
+      `Inventory cost for the ${plural(item.quantity, 'unit')} on hand: ${b.money(itemCostValue(item))}.`,
       sales.length
-        ? `Sold ${plural(t.unitsSold, 'unit')} for ${b.money(t.revenue)} revenue and ${b.money(t.netProfit)} net profit (${formatPercent(t.margin)} margin).`
+        ? `Sold ${plural(t.unitsSold, 'unit')} (all time) for ${b.money(t.revenue)} revenue and ${b.money(t.netProfit)} realized profit (${formatPercent(t.margin)} margin).`
         : 'No sales recorded for this item yet.',
       `${plural(daysWithoutSale(item, data.sales, today), 'day')} since it was bought or last sold.`,
     ];
@@ -416,7 +473,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   if (/\bhow many\b|\bcount of\b|\bnumber of\b/.test(q)) {
     const t = inventoryTotals(data.items);
     return b.answer('counts', `You have ${plural(t.unitsInStock, 'unit')} in stock across ${plural(t.itemsInStock, 'item')} (${plural(t.totalItems, 'item')} recorded in total).`, {
-      details: [`${plural(t.totalItems - t.itemsInStock, 'item')} ${pluralWord(t.totalItems - t.itemsInStock, 'is', 'are')} sold out or at zero.`],
+      details: [`${plural(t.totalItems - t.itemsInStock, 'item')} ${pluralWord(t.totalItems - t.itemsInStock, 'is', 'are')} out of stock (quantity 0).`],
     });
   }
 

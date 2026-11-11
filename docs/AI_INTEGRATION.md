@@ -1,5 +1,7 @@
 # Adding genuine AI to StockPilot Insights
 
+> The first real AI feature, the **AI Inventory Scanner** (photo → suggested item details), follows this plan with a Cloudflare Worker backend and private-beta invite codes. See [AI_SCANNER.md](AI_SCANNER.md). Insights remain rule-based.
+
 The prototype ships **rule-based** insights only. Every answer is produced by fixed, testable rules in `src/insights/` that read the user's recorded data, and the UI labels them as such (“Rule-based · no AI model yet”, “Rule-based answer”). This document describes how to add a real AI model later without a redesign.
 
 ## The seam that already exists
@@ -43,4 +45,4 @@ Rules for a safe integration:
 - Free-form questions the rules can't parse, answered with tool calls into the existing calculations.
 - Plain-language weekly summaries (“You made $412 this week; candles are 60% of profit…”).
 - Pricing suggestions that cite the user's own sell-through and margins (and, later, authorised market-price data sources).
-- Photo-based item identification to pre-fill the add-item form (opt-in, images sent only when requested).
+- ~~Photo-based item identification to pre-fill the add-item form~~ — built as the AI Inventory Scanner ([AI_SCANNER.md](AI_SCANNER.md)). Its backend (`worker/`) can host the endpoints above.

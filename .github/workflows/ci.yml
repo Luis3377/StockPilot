@@ -29,3 +29,22 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  scanner-backend:
+    # The AI scanner's Cloudflare Worker. Every AI call is mocked; nothing is deployed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:integration
