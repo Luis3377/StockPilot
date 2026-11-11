@@ -83,7 +83,7 @@ export function PayoutDetailPage() {
       <PageHeader
         title={`${MARKETPLACE_LABELS[p.marketplace]} payout ${p.date ? formatDate(p.date) : ''}`.trim()}
         description={
-          <span className="break-all">
+          <span className="break-words">
             Ref {p.ref}
             {p.statusText && ` · eBay status: ${p.statusText}`}
             {p.payout?.method && ` · ${p.payout.method}`}

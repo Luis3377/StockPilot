@@ -161,7 +161,7 @@ export function PayoutsPage() {
                         <div className="font-medium text-ink">
                           {MARKETPLACE_LABELS[p.marketplace]} · {p.date ? formatDate(p.date) : 'Date unknown'}
                         </div>
-                        <div className="text-xs break-all text-muted">Ref {p.ref}</div>
+                        <div className="text-xs break-words text-muted">Ref {p.ref}</div>
                       </div>
                       <StatusBadge status={p.status} />
                     </div>
