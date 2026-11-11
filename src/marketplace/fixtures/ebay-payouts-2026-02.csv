@@ -1,0 +1,8 @@
+Seller,Start date,End date,Payouts,Amount
+stockpilot_test_seller,"Jan 25, 2026","Mar 2, 2026",4,421.18
+
+Payout date,Payout ID,Status,Payout method,Amount,Currency,Payout type,Memo
+"Feb 2, 2026",5000000001,Succeeded,Checking ...1234,250.48,USD,Scheduled,--
+"Feb 9, 2026",5000000002,Succeeded,Checking ...1234,77.82,USD,Scheduled,--
+"Feb 16, 2026",5000000003,Initiated,Checking ...1234,31.25,USD,Scheduled,Funds typically arrive in 1-3 business days
+"Mar 2, 2026",5000000004,Succeeded,Checking ...1234,61.63,USD,Scheduled,--

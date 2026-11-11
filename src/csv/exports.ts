@@ -34,7 +34,7 @@ export function salesCsv(sales: Sale[]): string {
   const header = [
     'sale_date', 'item_name', 'sku', 'category', 'platform', 'quantity', 'price_entered', 'price_type',
     'revenue', 'unit_cost', 'cost_of_goods_sold', 'marketplace_fees', 'seller_shipping', 'other_expenses',
-    'net_profit', 'profit_margin_percent', 'roi_percent', 'notes',
+    'net_profit', 'profit_margin_percent', 'roi_percent', 'notes', 'order_number',
   ];
   const sorted = [...sales].sort((a, b) => a.saleDate.localeCompare(b.saleDate));
   const rows = sorted.map((s) => {
@@ -42,7 +42,7 @@ export function salesCsv(sales: Sale[]): string {
     return [
       s.saleDate, s.itemName, s.itemSku, s.itemCategory, s.platform, s.quantity, s.salePrice,
       s.priceMode === 'per_unit' ? 'per item' : 'total', f.revenue, s.unitCost, f.costOfGoods, f.fees,
-      f.shipping, f.otherExpenses, f.netProfit, pct(f.margin), pct(f.roi), s.notes,
+      f.shipping, f.otherExpenses, f.netProfit, pct(f.margin), pct(f.roi), s.notes, s.orderNumber,
     ];
   });
   return toCsv(header, rows);

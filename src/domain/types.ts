@@ -52,6 +52,8 @@ export interface Sale {
   /** Unit acquisition cost captured when the sale was recorded (used for cost of goods sold). */
   unitCost: number;
   platform: string;
+  /** The marketplace's order number (e.g. eBay "Order number"), used to match payouts. '' when not entered. */
+  orderNumber: string;
   /** Marketplace / payment fees, total for this sale. */
   fees: number;
   /** Shipping paid by the seller, total for this sale. */
@@ -229,6 +231,166 @@ export interface Lot {
   updatedAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Marketplace payout reconciliation. Imported marketplace reports are kept as their own
+// records: they never create, change or replace sales. Added without a schema bump; data and
+// backups without `marketplace` load with an empty one.
+// ---------------------------------------------------------------------------
+
+export type MarketplaceId = 'ebay';
+
+/** What a marketplace transaction is, normalised from the report's own "Type" text. */
+export type MarketplaceTxnKind =
+  | 'sale'
+  | 'refund'
+  | 'shipping_label'
+  | 'fee'
+  | 'claim'
+  | 'dispute'
+  | 'hold'
+  | 'charge'
+  | 'adjustment'
+  | 'credit'
+  | 'payout'
+  | 'other';
+
+export interface MarketplaceFee {
+  /** Column name as it appears in the report. */
+  label: string;
+  /** Positive = charged to the seller. */
+  amount: number;
+}
+
+/**
+ * One row of a marketplace transaction report. Amounts are currency units with whole cents,
+ * as reported; null when the report didn't include that column. Buyer names and addresses are
+ * deliberately not stored.
+ */
+export interface MarketplaceTxn {
+  id: string;
+  marketplace: MarketplaceId;
+  /** Stable key that recognises this transaction when it appears in a later report. */
+  key: string;
+  /** Imports that contained this row; the first is where it was first seen. */
+  importIds: string[];
+  /** The 1-based row number in the first file it came from. */
+  sourceRow: number;
+  kind: MarketplaceTxnKind;
+  /** The report's "Type" text, exactly. */
+  rawType: string;
+  /** Transaction creation date (YYYY-MM-DD). */
+  date: string;
+  orderNumber: string;
+  legacyOrderId: string;
+  /** The marketplace's own transaction ID (eBay: buyer + item + price). */
+  transactionRef: string;
+  /** eBay "Reference ID": the payment transaction's unique ID. */
+  referenceId: string;
+  itemId: string;
+  title: string;
+  /** Seller's SKU ("Custom label"). */
+  customLabel: string;
+  quantity: number | null;
+  description: string;
+  /** Amount after fees and credits: what this row adds to (or takes from) the payout. */
+  net: number;
+  gross: number | null;
+  itemSubtotal: number | null;
+  shippingAndHandling: number | null;
+  sellerCollectedTax: number | null;
+  marketplaceCollectedTax: number | null;
+  /** Σ fee columns present on the row (null when the export has no fee columns). */
+  fees: number | null;
+  feeBreakdown: MarketplaceFee[];
+  payoutId: string;
+  payoutDate: string | null;
+  payoutStatus: string;
+  holdReason: string;
+  currency: string;
+  transactionCurrency: string;
+}
+
+/** A transfer from the marketplace to the seller's bank (from the payout report). */
+export interface MarketplacePayout {
+  id: string;
+  marketplace: MarketplaceId;
+  key: string;
+  importIds: string[];
+  /** The marketplace's payout reference (eBay "Payout ID"). */
+  payoutId: string;
+  date: string | null;
+  /** Amount actually paid out; null when no report has given it yet. */
+  amount: number | null;
+  /** Status text exactly as reported (e.g. "Succeeded"). */
+  status: string;
+  method: string;
+  currency: string;
+  payoutType: string;
+  memo: string;
+}
+
+export type MarketplaceReportFormat = 'ebay_transactions' | 'ebay_payouts';
+
+export interface MarketplaceImport {
+  id: string;
+  marketplace: MarketplaceId;
+  format: MarketplaceReportFormat;
+  fileName: string;
+  /** Fingerprint of the file's contents, to recognise the same file imported twice. */
+  fingerprint: string;
+  importedAt: string;
+  added: number;
+  updated: number;
+  unchanged: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+}
+
+/** A user-confirmed link between a marketplace sale row and a StockPilot sale. */
+export interface SaleMatch {
+  id: string;
+  txnId: string;
+  saleId: string;
+  createdAt: string;
+}
+
+/**
+ * A user's decision about a reconciliation item, with their reason. `amount` is the amount in
+ * question when they decided: if it later changes, the decision no longer covers it.
+ */
+export interface ReconciliationReview {
+  id: string;
+  /** What was reviewed, e.g. "finding:<payout>:<key>", "payout:<payout>", "adjustment:<txn key>". */
+  target: string;
+  decision: 'resolved' | 'not_tracked' | 'reviewed';
+  reason: string;
+  amount: number;
+  createdAt: string;
+  undoneAt: string | null;
+}
+
+export interface ReconciliationEvent {
+  id: string;
+  date: string;
+  action: 'import' | 'match' | 'unmatch' | 'review' | 'undo_review';
+  summary: string;
+  /** Related payout references, transaction keys, sale ids… */
+  refs: string[];
+}
+
+export interface MarketplaceData {
+  imports: MarketplaceImport[];
+  transactions: MarketplaceTxn[];
+  payouts: MarketplacePayout[];
+  matches: SaleMatch[];
+  reviews: ReconciliationReview[];
+  log: ReconciliationEvent[];
+}
+
+export function emptyMarketplace(): MarketplaceData {
+  return { imports: [], transactions: [], payouts: [], matches: [], reviews: [], log: [] };
+}
+
 export interface AppData {
   schemaVersion: 1;
   items: Item[];
@@ -239,6 +401,8 @@ export interface AppData {
   snapshots: ValueSnapshot[];
   /** Bulk lots. Missing in data saved before lots existed (loads as []). */
   lots: Lot[];
+  /** Imported marketplace reports and reconciliation decisions. Missing in older data (loads empty). */
+  marketplace: MarketplaceData;
 }
 
 export interface Settings {
@@ -281,6 +445,7 @@ export function emptyData(): AppData {
     countHistory: [],
     snapshots: [],
     lots: [],
+    marketplace: emptyMarketplace(),
   };
 }
 

@@ -2,12 +2,22 @@
 // CRLF line endings and a UTF-8 byte-order mark (as written by Excel).
 
 export function parseCsv(text: string): string[][] {
+  return parseCsvLines(text).map((r) => r.cells);
+}
+
+/**
+ * Like parseCsv, with the line each row starts on in the file (1-based, counting blank lines
+ * and lines inside quoted fields), so error messages can point at the line a spreadsheet shows.
+ */
+export function parseCsvLines(text: string): { cells: string[]; line: number }[] {
   const input = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-  const rows: string[][] = [];
+  const rows: { cells: string[]; line: number }[] = [];
   let row: string[] = [];
   let field = '';
   let inQuotes = false;
   let i = 0;
+  let line = 1;
+  let rowLine = 1;
   while (i < input.length) {
     const ch = input[i];
     if (inQuotes) {
@@ -21,6 +31,7 @@ export function parseCsv(text: string): string[][] {
         i++;
         continue;
       }
+      if (ch === '\n' || (ch === '\r' && input[i + 1] !== '\n')) line++;
       field += ch;
       i++;
       continue;
@@ -34,10 +45,12 @@ export function parseCsv(text: string): string[][] {
       i++;
     } else if (ch === '\r' || ch === '\n') {
       row.push(field);
-      rows.push(row);
+      rows.push({ cells: row, line: rowLine });
       row = [];
       field = '';
       i += ch === '\r' && input[i + 1] === '\n' ? 2 : 1;
+      line++;
+      rowLine = line;
     } else {
       field += ch;
       i++;
@@ -45,10 +58,10 @@ export function parseCsv(text: string): string[][] {
   }
   if (field !== '' || row.length > 0) {
     row.push(field);
-    rows.push(row);
+    rows.push({ cells: row, line: rowLine });
   }
   // Drop fully blank lines (common at the end of files or between sections).
-  return rows.filter((r) => r.some((c) => c.trim() !== ''));
+  return rows.filter((r) => r.cells.some((c) => c.trim() !== ''));
 }
 
 /**
