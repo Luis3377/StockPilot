@@ -257,8 +257,9 @@ test.describe('AI build (mocked backend)', () => {
     await expect(mapped.getByTestId('calculation-lines')).toContainText(/Realized profit\s*\$21\.50/);
     expect(sent[0].body).toEqual({ mode: 'interpret', question: 'how are my flips going' });
     // The original question doesn't offer a second request.
-    await expect(unknown).toContainText('Answered below, from your records.');
-    await expect(unknown.getByRole('button', { name: 'Ask AI to understand the question' })).toHaveCount(0);
+    const original = page.getByTestId('assistant-answer').first();
+    await expect(original).toContainText('Answered below, from your records.');
+    await expect(original.getByRole('button', { name: 'Ask AI to understand the question' })).toHaveCount(0);
 
     const other = await ask(page, 'write me a poem about candles');
     await other.getByRole('button', { name: 'Ask AI to understand the question' }).click();

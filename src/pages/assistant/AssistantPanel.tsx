@@ -56,7 +56,7 @@ export function AssistantPanel() {
   };
 
   const last = turns[turns.length - 1];
-  const chips = last ? (last.answer.followUps.length ? last.answer.followUps : SUGGESTED_QUESTIONS.slice(0, 4)) : SUGGESTED_QUESTIONS.slice(0, 8);
+  const chips = last ? (last.answer.followUps.length ? last.answer.followUps : SUGGESTED_QUESTIONS.slice(0, 4)) : SUGGESTED_QUESTIONS;
 
   return (
     <Card className="flex flex-col p-4 sm:p-5 xl:sticky xl:top-6" data-testid="assistant">
