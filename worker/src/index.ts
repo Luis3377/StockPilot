@@ -25,7 +25,7 @@ export class UsageLedger extends DurableObject<Env> {
     return this.core.beginScan(args);
   }
   finishScan(args: Parameters<LedgerCore['finishScan']>[0]) {
-    this.core.finishScan(args);
+    return this.core.finishScan(args);
   }
   status(args: Parameters<LedgerCore['status']>[0]) {
     return this.core.status(args);

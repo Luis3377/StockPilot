@@ -12,13 +12,14 @@
 import { toWire } from '../../src/ai/scanSchema';
 import { analyzeImage, type MessagesClient } from './claude';
 import { clientKey, generateCode, hashCode, newId, normalizeCode, secretsMatch } from './codes';
-import { MAX_BODY_BYTES, MODELS, worstCaseMicros, type Config, type Limits } from './config';
+import { precheckLength, readTextLimited, type BodyRead } from './body';
+import { MAX_ADMIN_BODY_BYTES, MAX_BODY_BYTES, MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, MODELS, worstCaseMicros, type Config, type Limits } from './config';
 import { checkImage } from './image';
-import type { BeginResult, CodeSummary, StatusResult } from './ledgerCore';
+import type { BeginResult, CodeSummary, FinishResult, StatusResult } from './ledgerCore';
 
 export interface LedgerApi {
   beginScan(args: { codeHash: string | null; clientKey: string; reservationId: string; estimateMicros: number; limits: Limits; now: number }): Promise<BeginResult>;
-  finishScan(args: { reservationId: string; actualMicros: number; refundScan: boolean }): Promise<void>;
+  finishScan(args: { reservationId: string; actualMicros: number; refundScan: boolean }): Promise<FinishResult>;
   status(args: { codeHash: string | null; clientKey: string; now: number }): Promise<StatusResult>;
   throttledFor(clientKey: string, now: number): Promise<number>;
   recordFailure(clientKey: string, now: number): Promise<void>;
@@ -57,6 +58,7 @@ const MESSAGES: Record<string, string> = {
   not_found: 'Not found.',
   invalid_request: 'The request wasn’t valid.',
   image_too_large: 'That photo is too large. Try a smaller photo.',
+  bad_length: 'The upload was incomplete or its size didn’t match. Try again.',
 };
 
 const STATUS_FOR: Record<string, number> = {
@@ -101,6 +103,13 @@ function corsFor(request: Request, config: Config): Cors | null {
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
   };
+}
+
+/** The response for a body that couldn't be read within the limits. */
+function bodyError(read: Extract<BodyRead, { ok: false }>, cors: Cors): Response {
+  if (read.reason === 'too_large') return errorResponse('image_too_large', cors, { status: 413 });
+  if (read.reason === 'bad_length') return errorResponse('invalid_request', cors, { status: 400, message: MESSAGES.bad_length });
+  return errorResponse('invalid_request', cors, { status: 400, message: 'The photo couldn’t be read. Try again.' });
 }
 
 function bearer(request: Request): string | null {
@@ -157,37 +166,60 @@ async function scan(request: Request, deps: HandlerDeps, cors: Cors): Promise<Re
   const { config, ledger, now, log } = deps;
   if (!config.enabled || !config.codePepper || !deps.ai) return errorResponse('scanner_unavailable', cors);
 
-  const length = Number(request.headers.get('Content-Length') ?? '0');
-  if (length > MAX_BODY_BYTES) return errorResponse('image_too_large', cors, { status: 413 });
+  // A declared size that is invalid or over the limit is refused before any other work.
+  const early = precheckLength(request.headers, MAX_BODY_BYTES);
+  if (early) return bodyError(early, cors);
 
   // Authenticate and reserve before reading the body, so unauthenticated requests cost nothing.
   const codeHash = await codeHashFrom(request, config.codePepper);
   if (codeHash === undefined) return errorResponse('missing_code', cors);
   const key = await clientKey(config.codePepper, request.headers.get('CF-Connecting-IP'));
-  const estimate = worstCaseMicros(config.model);
-  const begin = await ledger.beginScan({ codeHash, clientKey: key, reservationId: newId('rsv'), estimateMicros: estimate, limits: config.limits, now: now() });
+  const begin = await ledger.beginScan({
+    codeHash,
+    clientKey: key,
+    reservationId: newId('rsv'),
+    estimateMicros: worstCaseMicros(config.model),
+    limits: config.limits,
+    now: now(),
+  });
   if (!begin.ok) {
     log({ evt: 'scan_denied', reason: begin.error });
     return errorResponse(begin.error, cors, { retryAfterSeconds: begin.retryAfterSeconds });
   }
 
-  const settle = (actualMicros: number, refundScan: boolean) => ledger.finishScan({ reservationId: begin.reservationId, actualMicros, refundScan });
+  /**
+   * Replaces the reservation with the real charge. A failed scan is given back to the tester
+   * only if nothing was charged; a successful scan always counts.
+   */
+  const settle = async (chargeMicros: number, succeeded = false): Promise<FinishResult> => {
+    const refundScan = !succeeded && chargeMicros === 0;
+    const result = await ledger.finishScan({ reservationId: begin.reservationId, actualMicros: chargeMicros, refundScan });
+    if (result.overrunMicros > 0) {
+      // The worst-case estimate was too low (e.g. prices or limits changed). Charged in full;
+      // later reservations are raised automatically. Shown by `node scripts/admin.mjs usage`.
+      log({ evt: 'budget_overrun', code: begin.codeId, model: config.model, reservedMicros: begin.reservedMicros, chargedMicros: result.chargedMicros });
+    }
+    return result;
+  };
 
+  // The body is read with a hard limit on the bytes actually received, whatever the headers say.
+  const read = await readTextLimited(request, MAX_BODY_BYTES);
+  if (!read.ok) {
+    await settle(0);
+    log({ evt: 'upload_rejected', reason: read.reason });
+    return bodyError(read, cors);
+  }
   let body: unknown;
   try {
-    const text = await request.text();
-    if (text.length > MAX_BODY_BYTES) {
-      await settle(0, true);
-      return errorResponse('image_too_large', cors, { status: 413 });
-    }
-    body = JSON.parse(text);
+    body = JSON.parse(read.text);
   } catch {
-    await settle(0, true);
+    await settle(0);
     return errorResponse('invalid_request', cors, { status: 400, message: 'The photo couldn’t be read. Try again.' });
   }
   const image = checkImage(body);
   if (!image.ok) {
-    await settle(0, true);
+    await settle(0);
+    log({ evt: 'upload_rejected', reason: image.code });
     return errorResponse(image.code, cors, { status: image.status, message: image.message });
   }
 
@@ -196,8 +228,18 @@ async function scan(request: Request, deps: HandlerDeps, cors: Cors): Promise<Re
   const ms = Date.now() - started;
 
   if (outcome.kind === 'ok') {
-    await settle(outcome.costMicros, false);
-    log({ evt: 'scan', code: begin.codeId, model: config.model, status: outcome.result.status, inTok: outcome.usage.inputTokens, outTok: outcome.usage.outputTokens, micros: outcome.costMicros, ms });
+    await settle(outcome.costMicros, true);
+    log({
+      evt: 'scan',
+      code: begin.codeId,
+      model: config.model,
+      status: outcome.result.status,
+      imgTok: image.imageTokens,
+      inTok: outcome.usage.inputTokens,
+      outTok: outcome.usage.outputTokens,
+      micros: outcome.costMicros,
+      ms,
+    });
     return json(
       200,
       { ok: true, result: toWire(outcome.result), model: { id: config.model, label: MODELS[config.model].label }, scansLeftToday: begin.scansLeftToday, codeExpiresAt: begin.expiresAt },
@@ -205,10 +247,13 @@ async function scan(request: Request, deps: HandlerDeps, cors: Cors): Promise<Re
     );
   }
 
-  // Failed scans give the tester's scan back. A timeout is charged at the worst case because
-  // the provider may still have billed it; other failures are charged what was reported.
-  await settle(outcome.error === 'timeout' ? estimate : outcome.costMicros, true);
-  log({ evt: 'scan_failed', code: begin.codeId, model: config.model, error: outcome.error, detail: outcome.detail, micros: outcome.costMicros, ms });
+  // A failure that may still have been billed (timeout, dropped connection, server error) is
+  // charged the full reservation, because its real cost is unknown. A failed answer that did
+  // come back is charged its reported cost. The tester gets the scan back only if nothing was
+  // charged, so repeated billable failures can't get around the daily limit.
+  const charge = outcome.mayBeBilled ? begin.reservedMicros : outcome.costMicros;
+  await settle(charge);
+  log({ evt: 'scan_failed', code: begin.codeId, model: config.model, error: outcome.error, detail: outcome.detail, micros: charge, ms });
   const map = {
     timeout: ['ai_timeout', 504],
     busy: ['ai_busy', 503],
@@ -236,13 +281,26 @@ async function admin(request: Request, path: string, deps: HandlerDeps): Promise
   if (path === '/admin/codes' && request.method === 'GET') return json(200, { codes: await ledger.listCodes(now()) });
   if (path === '/admin/usage' && request.method === 'GET') {
     // Configuration problems are listed by name only (never secret values) to help with setup.
-    const scanner = { ready: config.enabled, model: config.model, effort: config.effort, problems: config.problems };
+    const prices = MODELS[config.model];
+    const scanner = {
+      ready: config.enabled,
+      model: config.model,
+      effort: config.effort,
+      problems: config.problems,
+      // So the admin can compare them with Anthropic's pricing page.
+      pricePerMillionTokens: { input: prices.inputMicrosPerToken, output: prices.outputMicrosPerToken },
+      reservationPerScanMicros: worstCaseMicros(config.model),
+      maxTokensPerScan: { input: MAX_INPUT_TOKENS, output: MAX_OUTPUT_TOKENS },
+    };
     return json(200, { ...(await ledger.usage(now(), config.limits)), scanner });
   }
   if (path === '/admin/codes' && request.method === 'POST') {
+    const read = await readTextLimited(request, MAX_ADMIN_BODY_BYTES);
+    if (!read.ok) return bodyError(read, {});
     let body: Record<string, unknown> = {};
     try {
-      body = (await request.json()) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(read.text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
     } catch {
       // Defaults below.
     }

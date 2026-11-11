@@ -4,8 +4,8 @@
 // THIS CALLS THE REAL ANTHROPIC API AND COSTS MONEY. Without --confirm-cost it only prints the
 // plan and the worst-case cost. See docs/AI_SCANNER.md → "Choosing the model".
 //
-//   npm run compare-models -- --photos ~/scanner-photos                     (dry run, free)
-//   ANTHROPIC_API_KEY=… npm run compare-models -- --photos ~/scanner-photos --confirm-cost
+//   npx tsx scripts/compare-models.ts --photos ~/scanner-photos                     (dry run, free)
+//   ANTHROPIC_API_KEY=… npx tsx scripts/compare-models.ts --photos ~/scanner-photos --confirm-cost
 //
 // Options:
 //   --photos <dir>        folder of .jpg/.jpeg/.png/.webp photos (required)
@@ -20,7 +20,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statS
 import { basename, extname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { analyzeImage, createClient, type AiOutcome } from '../src/claude';
-import { MAX_IMAGE_BYTES, MODELS, worstCaseMicros, type Effort, type ScanModel } from '../src/config';
+import { MAX_IMAGE_BYTES, MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, MODELS, worstCaseMicros, type Effort, type ScanModel } from '../src/config';
 import { checkImage, type ImageMediaType } from '../src/image';
 
 const SHORT: Record<string, ScanModel> = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' };
@@ -38,7 +38,7 @@ interface Args {
 }
 
 function usage(message: string): never {
-  console.error(`${message}\n\nUsage: npm run compare-models -- --photos <dir> [--models haiku,sonnet,opus] [--effort low] [--labels labels.csv] [--max-usd 5] [--confirm-cost]`);
+  console.error(`${message}\n\nUsage: npx tsx scripts/compare-models.ts --photos <dir> [--models haiku,sonnet,opus] [--effort low] [--labels labels.csv] [--max-usd 5] [--confirm-cost]`);
   process.exit(2);
 }
 
@@ -70,27 +70,6 @@ function parseArgs(argv: string[]): Args {
     maxUsd,
     confirm: argv.includes('--confirm-cost'),
   };
-}
-
-/** Width and height from the file header (JPEG, PNG, WebP), or null if it can't be read. */
-export function imageSize(b: Uint8Array, type: ImageMediaType): { w: number; h: number } | null {
-  const u16be = (i: number) => (b[i] << 8) | b[i + 1];
-  if (type === 'image/png') return b.length >= 24 ? { w: (u16be(16) << 16) | u16be(18), h: (u16be(20) << 16) | u16be(22) } : null;
-  if (type === 'image/jpeg') {
-    let i = 2;
-    while (i + 9 < b.length) {
-      if (b[i] !== 0xff) return null;
-      const marker = b[i + 1];
-      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) return { w: u16be(i + 7), h: u16be(i + 5) };
-      i += 2 + u16be(i + 2);
-    }
-    return null;
-  }
-  const chunk = String.fromCharCode(...b.slice(12, 16));
-  if (chunk === 'VP8 ' && b.length >= 30) return { w: ((b[27] << 8) | b[26]) & 0x3fff, h: ((b[29] << 8) | b[28]) & 0x3fff };
-  if (chunk === 'VP8L' && b.length >= 25) return { w: 1 + (((b[22] & 0x3f) << 8) | b[21]), h: 1 + (((b[24] & 0x0f) << 10) | (b[23] << 2) | ((b[22] & 0xc0) >> 6)) };
-  if (chunk === 'VP8X' && b.length >= 30) return { w: 1 + (b[24] | (b[25] << 8) | (b[26] << 16)), h: 1 + (b[27] | (b[28] << 8) | (b[29] << 16)) };
-  return null;
 }
 
 interface Photo {
@@ -136,7 +115,7 @@ function loadPhotos(dir: string, labels: Map<string, string>): Photo[] {
       path: join(dir, file),
       mediaType: check.mediaType,
       data: check.data,
-      size: imageSize(bytes, check.mediaType),
+      size: { w: check.width, h: check.height },
       label: labels.get(file) ?? labels.get(basename(file, extname(file))) ?? null,
     });
   }
@@ -321,7 +300,7 @@ async function main() {
           r?.description,
           r?.conditionNotes,
           r?.notes,
-          outcome.kind === 'error' ? `${outcome.error}: ${outcome.detail}` : '',
+          outcome.kind === 'error' ? `${outcome.error}: ${outcome.detail}${outcome.mayBeBilled ? ' (may have been billed; the scanner would charge the worst case)' : ''}` : '',
           (ms / 1000).toFixed(2),
           outcome.usage?.inputTokens ?? '',
           outcome.usage?.outputTokens ?? '',
@@ -334,14 +313,23 @@ async function main() {
     }
   }
 
-  const summary = summarize(rows, args.models);
+  // Check the scanner's per-scan reservation against what the API actually reported.
+  const used = rows.flatMap((r) => (r.outcome.usage ? [r.outcome.usage] : []));
+  const maxIn = Math.max(0, ...used.map((u) => u.inputTokens + u.cacheWriteTokens));
+  const maxOut = Math.max(0, ...used.map((u) => u.outputTokens));
+  const tokenCheck =
+    `Largest scan: ${maxIn} input tokens (reserved for: ${MAX_INPUT_TOKENS}), ${maxOut} output tokens (cap: ${MAX_OUTPUT_TOKENS}). ` +
+    (maxIn > MAX_INPUT_TOKENS * 0.9
+      ? 'WARNING: input is close to or above the reservation. Raise REQUEST_OVERHEAD_TOKENS in worker/src/config.ts before testing with real users.'
+      : 'The reservation covers real usage.');
+  const summary = `${summarize(rows, args.models)}\n\n${tokenCheck}`;
   writeFileSync(join(args.out, 'summary.md'), `# Scanner model comparison\n\n${photos.length} photos, effort ${args.effort}, ${new Date().toISOString()}\n\n${summary}\n\nTotal spent: ${money(spent, 2)}\n`);
   writeFileSync(join(args.out, 'review.html'), reviewPage(rows, photos, args.models, args.out, summary));
   console.log(`\n${summary}\n\nTotal spent: ${money(spent, 2)}`);
   console.log(`\nResults: ${csvPath}\nOpen ${join(args.out, 'review.html')} in a browser to mark each answer right, partly or wrong.`);
 }
 
-// Only run when executed directly (the tests import imageSize).
+// Only run when executed directly.
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename ?? '')) {
   main().catch((e) => {
     console.error(e instanceof Error ? e.message : e);

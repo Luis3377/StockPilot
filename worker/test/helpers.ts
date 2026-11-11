@@ -44,11 +44,34 @@ export function asyncLedger(core: LedgerCore): LedgerApi {
   };
 }
 
+/** JPEG header bytes: start marker, a JFIF segment and a frame header with the given size. */
+export function jpegHeader(width = 1600, height = 1200): number[] {
+  const app0 = [0xff, 0xe0, 0x00, 0x10, ...Buffer.from('JFIF\0'), 1, 1, 0, 0, 1, 0, 1, 0, 0];
+  const sof0 = [0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 0xff, width >> 8, width & 0xff, 0x03, ...new Array(9).fill(0)];
+  return [0xff, 0xd8, ...app0, ...sof0];
+}
+
 /** A small valid-looking JPEG payload (header + padding) as base64. */
-export function fakeJpegBase64(bytes = 2048): string {
+export function fakeJpegBase64(bytes = 2048, width = 1600, height = 1200): string {
   const buf = Buffer.alloc(bytes, 0x11);
-  buf.set([0xff, 0xd8, 0xff, 0xe0]);
+  buf.set(jpegHeader(width, height).slice(0, bytes));
   return buf.toString('base64');
+}
+
+/** A request body as a stream of `chunks` chunks of `size` bytes, counting how many were pulled. */
+export function countingStream(chunks: number, size: number, fill = 0x41) {
+  const state = { pulled: 0, cancelled: false };
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (state.pulled >= chunks) return controller.close();
+      state.pulled++;
+      controller.enqueue(new Uint8Array(size).fill(fill));
+    },
+    cancel() {
+      state.cancelled = true;
+    },
+  });
+  return { stream, state };
 }
 
 export function fakeMessage(json: unknown, overrides: Partial<Anthropic.Message> = {}): Anthropic.Message {

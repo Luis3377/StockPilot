@@ -1,6 +1,6 @@
 // Manage private-beta invite codes and check usage.
 //
-//   SCANNER_URL=https://stockpilot-scanner.<you>.workers.dev  SCANNER_ADMIN_TOKEN=…  npm run admin -- <command>
+//   SCANNER_URL=https://stockpilot-scanner.<you>.workers.dev  SCANNER_ADMIN_TOKEN=…  node scripts/admin.mjs <command>
 //
 // Commands:
 //   create "<label>" [--days 30] [--daily 20]   Create a code (shown once — send it to the tester)
@@ -14,7 +14,7 @@ const token = process.env.SCANNER_ADMIN_TOKEN;
 
 function usage(message) {
   if (message) console.error(`Error: ${message}\n`);
-  console.error('Usage: SCANNER_URL=… SCANNER_ADMIN_TOKEN=… npm run admin -- create "<label>" [--days 30] [--daily 20] | list | revoke <id> | usage');
+  console.error('Usage: SCANNER_URL=… SCANNER_ADMIN_TOKEN=… node scripts/admin.mjs create "<label>" [--days 30] [--daily 20] | list | revoke <id> | usage');
   process.exit(1);
 }
 if (!base || !token) usage('Set SCANNER_URL and SCANNER_ADMIN_TOKEN.');
@@ -43,7 +43,7 @@ if (command === 'create') {
   const c = await call('/admin/codes', { method: 'POST', body: JSON.stringify({ label, days: flag('--days'), dailyLimit: flag('--daily') }) });
   console.log(`\nInvite code for ${c.label}:\n\n    ${c.code}\n`);
   console.log(`Id: ${c.id} · ${c.dailyLimit} scans/day · expires ${date(c.expiresAt)}`);
-  console.log(`This is the only time the code is shown. Send it privately. To turn it off: npm run admin -- revoke ${c.id}`);
+  console.log(`This is the only time the code is shown. Send it privately. To turn it off: node scripts/admin.mjs revoke ${c.id}`);
 } else if (command === 'list') {
   const { codes } = await call('/admin/codes');
   if (!codes.length) console.log('No codes yet.');
@@ -57,11 +57,23 @@ if (command === 'create') {
   console.log(`Revoked ${args[0]}.`);
 } else if (command === 'usage') {
   const u = await call('/admin/usage');
+  const usd = (micros, digits = 4) => `$${(micros / 1e6).toFixed(digits)}`;
   if (u.scanner) {
     console.log(u.scanner.ready ? `Scanner: ready · ${u.scanner.model} · effort ${u.scanner.effort}` : `Scanner: OFF · ${u.scanner.problems.join('; ')}`);
+    const p = u.scanner.pricePerMillionTokens;
+    if (p) {
+      console.log(`Prices used for the budget: $${p.input} / $${p.output} per million input / output tokens (compare with Anthropic's pricing page)`);
+      console.log(`Reserved per scan (worst case): ${usd(u.scanner.reservationPerScanMicros)}`);
+    }
   }
   console.log(`Today (${u.day} UTC): ${u.scansToday}/${u.dailyGlobalLimit} scans`);
-  console.log(`This month (${u.month}): $${(u.spentMicros / 1e6).toFixed(4)} spent, $${(u.reservedMicros / 1e6).toFixed(4)} in flight, budget $${(u.monthlyBudgetMicros / 1e6).toFixed(2)}`);
+  console.log(`This month (${u.month}): ${usd(u.spentMicros)} spent, ${usd(u.reservedMicros)} in flight, budget ${usd(u.monthlyBudgetMicros, 2)}`);
+  if (u.overruns?.count) {
+    console.log(
+      `WARNING: ${u.overruns.count} scan(s) this month cost more than reserved (${usd(u.overruns.excessMicros)} over in total, most expensive ${usd(u.overruns.maxScanMicros)}). ` +
+        'Reservations have been raised automatically. Check the prices in worker/src/config.ts and the Claude Console cost page.',
+    );
+  }
 } else {
   usage(command ? `Unknown command "${command}".` : undefined);
 }

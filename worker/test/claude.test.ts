@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
 import { analyzeImage, buildScanRequest, interpretMessage } from '../src/claude';
-import { costMicros, worstCaseMicros } from '../src/config';
+import { costMicros, MAX_INPUT_TOKENS, worstCaseMicros } from '../src/config';
 import { fakeClient, fakeJpegBase64, fakeMessage, SNEAKERS } from './helpers';
 
 const args = { model: 'claude-sonnet-5-5' as const, effort: 'low' as const, mediaType: 'image/jpeg' as const, data: fakeJpegBase64() };
@@ -56,6 +56,18 @@ describe('analyzeImage error mapping', () => {
     expect(await analyzeImage(failing(new Error('socket hang up')), args)).toMatchObject({ kind: 'error', error: 'upstream' });
   });
 
+  it('marks failures that may still have been billed', async () => {
+    const billed = async (e: unknown) => ((await analyzeImage(failing(e), args)) as { mayBeBilled?: boolean }).mayBeBilled;
+    // May have reached the model: timeouts, dropped connections, server errors, the unknown.
+    expect(await billed(new Anthropic.APIConnectionTimeoutError())).toBe(true);
+    expect(await billed(new Anthropic.APIConnectionError({ message: 'reset' }))).toBe(true);
+    expect(await billed(apiError(500))).toBe(true);
+    expect(await billed(apiError(503))).toBe(true);
+    expect(await billed(new Error('socket hang up'))).toBe(true);
+    // Rejected before processing: not billed.
+    for (const status of [400, 401, 403, 404, 413, 429, 529]) expect(await billed(apiError(status)), String(status)).toBe(false);
+  });
+
   it('returns the validated result on success', async () => {
     const client = fakeClient(async () => fakeMessage(SNEAKERS));
     expect(await analyzeImage(client, args)).toMatchObject({ kind: 'ok', result: { brand: 'Nike' } });
@@ -69,6 +81,6 @@ describe('cost tracking', () => {
     expect(costMicros('claude-opus-5-5', 3000, 400)).toBe(3000 * 4 + 400 * 20);
     // Worst case reserved per scan stays a few cents even on Opus.
     expect(worstCaseMicros('claude-opus-5-5')).toBeLessThan(100_000);
-    expect(worstCaseMicros('claude-sonnet-5-5')).toBe(6500 * 2 + 2048 * 10);
+    expect(worstCaseMicros('claude-sonnet-5-5')).toBe(MAX_INPUT_TOKENS * 2 + 2048 * 10);
   });
 });

@@ -30,8 +30,24 @@ export type BeginError =
   | 'budget_exhausted';
 
 export type BeginResult =
-  | { ok: true; reservationId: string; codeId: string; label: string; scansLeftToday: number; expiresAt: number }
+  | { ok: true; reservationId: string; codeId: string; label: string; scansLeftToday: number; expiresAt: number; reservedMicros: number }
   | { ok: false; error: BeginError; retryAfterSeconds?: number };
+
+export interface FinishResult {
+  /** What was charged to the month (0 if the reservation was already settled). */
+  chargedMicros: number;
+  /** How far the charge went over the reservation (0 normally). */
+  overrunMicros: number;
+}
+
+export interface OverrunSummary {
+  /** Scans this month that cost more than was reserved for them. */
+  count: number;
+  /** Total cost above the reservations. */
+  excessMicros: number;
+  /** The most expensive of those scans; later reservations are raised to at least this. */
+  maxScanMicros: number;
+}
 
 export type StatusResult =
   | { ok: true; codeId: string; label: string; scansLeftToday: number; dailyLimit: number; expiresAt: number }
@@ -78,6 +94,8 @@ export class LedgerCore {
       `CREATE TABLE IF NOT EXISTS reservations (id TEXT PRIMARY KEY, code_id TEXT NOT NULL, day TEXT NOT NULL, month TEXT NOT NULL,
         estimate_micros INTEGER NOT NULL, created_at INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS auth_failures (client_key TEXT PRIMARY KEY, window_start INTEGER NOT NULL, failures INTEGER NOT NULL)`,
+      `CREATE TABLE IF NOT EXISTS overruns (month TEXT PRIMARY KEY, count INTEGER NOT NULL, excess_micros INTEGER NOT NULL,
+        max_scan_micros INTEGER NOT NULL)`,
     ]) {
       this.sql.exec(statement);
     }
@@ -198,6 +216,11 @@ export class LedgerCore {
     );
   }
 
+  overruns(month: string): OverrunSummary {
+    const row = this.rows<{ count: number; excess_micros: number; max_scan_micros: number }>('SELECT * FROM overruns WHERE month = ?', month)[0];
+    return { count: row?.count ?? 0, excessMicros: row?.excess_micros ?? 0, maxScanMicros: row?.max_scan_micros ?? 0 };
+  }
+
   /** Charges abandoned reservations in full and drops old bookkeeping rows. */
   private housekeeping(now: number): void {
     const stale = this.rows<{ id: string; month: string; estimate_micros: number }>('SELECT id, month, estimate_micros FROM reservations WHERE created_at <= ?', now - RESERVATION_TTL_MS);
@@ -213,6 +236,11 @@ export class LedgerCore {
   /**
    * Authenticates the code and, if every limit allows it, counts the scan and reserves its
    * worst-case cost against this month's budget. Call finishScan when the AI call ends.
+   *
+   * The reservation is the caller's worst-case estimate, raised to the most expensive scan
+   * seen this month if one ever cost more than its estimate. So if the estimate turns out to
+   * be too low, the budget self-corrects after the first overrun instead of being exceeded by
+   * every scan in flight.
    */
   beginScan(args: { codeHash: string | null; clientKey: string; reservationId: string; estimateMicros: number; limits: Limits; now: number }): BeginResult {
     const { now, limits } = args;
@@ -232,8 +260,9 @@ export class LedgerCore {
     const codeScans = this.scansOn(day, code.id);
     if (codeScans >= code.daily_limit) return { ok: false, error: 'code_daily_limit', retryAfterSeconds: secondsUntilNextUtcDay(now) };
     if (this.scansOn(day, '*') >= limits.dailyGlobal) return { ok: false, error: 'global_daily_limit', retryAfterSeconds: secondsUntilNextUtcDay(now) };
+    const reserve = Math.max(Math.ceil(args.estimateMicros), this.overruns(month).maxScanMicros);
     const { spent, reserved } = this.spend(month);
-    if (spent + reserved + args.estimateMicros > limits.monthlyBudgetMicros) return { ok: false, error: 'budget_exhausted' };
+    if (spent + reserved + reserve > limits.monthlyBudgetMicros) return { ok: false, error: 'budget_exhausted' };
 
     this.addScans(day, code.id, 1);
     this.addScans(day, '*', 1);
@@ -243,14 +272,14 @@ export class LedgerCore {
       code.id,
       minute,
     );
-    this.adjustSpend(month, 0, args.estimateMicros);
+    this.adjustSpend(month, 0, reserve);
     this.sql.exec(
       'INSERT INTO reservations (id, code_id, day, month, estimate_micros, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       args.reservationId,
       code.id,
       day,
       month,
-      args.estimateMicros,
+      reserve,
       now,
     );
     return {
@@ -260,25 +289,41 @@ export class LedgerCore {
       label: code.label,
       scansLeftToday: Math.max(0, code.daily_limit - codeScans - 1),
       expiresAt: code.expires_at,
+      reservedMicros: reserve,
     };
   }
 
   /**
-   * Replaces a reservation with the actual cost. `refundScan` gives the scan back to the
-   * tester's daily allowance (used when the AI call failed without producing anything).
+   * Replaces a reservation with the actual cost. A cost above the reservation is still
+   * charged in full and recorded as an overrun (see beginScan). `refundScan` gives the scan
+   * back to the tester's daily allowance (used when nothing was charged).
    */
-  finishScan(args: { reservationId: string; actualMicros: number; refundScan: boolean }): void {
+  finishScan(args: { reservationId: string; actualMicros: number; refundScan: boolean }): FinishResult {
     const r = this.rows<{ code_id: string; day: string; month: string; estimate_micros: number }>(
         'SELECT code_id, day, month, estimate_micros FROM reservations WHERE id = ?',
         args.reservationId,
       )[0];
-    if (!r) return; // Already settled (or charged in full by housekeeping).
-    this.adjustSpend(r.month, Math.max(0, Math.ceil(args.actualMicros)), -r.estimate_micros);
+    if (!r) return { chargedMicros: 0, overrunMicros: 0 }; // Already settled (or charged in full by housekeeping).
+    const charged = Number.isFinite(args.actualMicros) ? Math.max(0, Math.ceil(args.actualMicros)) : r.estimate_micros;
+    this.adjustSpend(r.month, charged, -r.estimate_micros);
+    const overrun = Math.max(0, charged - r.estimate_micros);
+    if (overrun > 0) {
+      this.sql.exec(
+        `INSERT INTO overruns (month, count, excess_micros, max_scan_micros) VALUES (?, 1, ?, ?)
+         ON CONFLICT (month) DO UPDATE SET count = count + 1, excess_micros = excess_micros + ?, max_scan_micros = MAX(max_scan_micros, ?)`,
+        r.month,
+        overrun,
+        charged,
+        overrun,
+        charged,
+      );
+    }
     if (args.refundScan) {
       this.addScans(r.day, r.code_id, -1);
       this.addScans(r.day, '*', -1);
     }
     this.sql.exec('DELETE FROM reservations WHERE id = ?', args.reservationId);
+    return { chargedMicros: charged, overrunMicros: overrun };
   }
 
   status(args: { codeHash: string | null; clientKey: string; now: number }): StatusResult {
@@ -298,6 +343,7 @@ export class LedgerCore {
   usage(now: number, limits: Limits) {
     const { spent, reserved } = this.spend(monthKey(now));
     return {
+      overruns: this.overruns(monthKey(now)),
       day: dayKey(now),
       scansToday: this.scansOn(dayKey(now), '*'),
       dailyGlobalLimit: limits.dailyGlobal,

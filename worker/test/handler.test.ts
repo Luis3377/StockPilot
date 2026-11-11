@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { handleRequest, type HandlerDeps } from '../src/handler';
 import { loadConfig, worstCaseMicros, type ConfigEnv } from '../src/config';
 import { LedgerCore } from '../src/ledgerCore';
-import { asyncLedger, fakeClient, fakeJpegBase64, fakeMessage, memorySql, SNEAKERS } from './helpers';
+import { asyncLedger, countingStream, fakeClient, fakeJpegBase64, fakeMessage, memorySql, SNEAKERS } from './helpers';
 
 const ADMIN = 'a'.repeat(48);
 const BASE_ENV: ConfigEnv = {
@@ -57,6 +57,15 @@ describe('scan endpoint', () => {
     expect(t.core.usage(Date.UTC(2026, 10, 10, 15), t.config.limits)).toMatchObject({ spentMicros: 3000 * 2 + 400 * 10, reservedMicros: 0, scansToday: 1 });
   });
 
+  it('always counts a successful scan, even one reported as free', async () => {
+    const free = fakeMessage(SNEAKERS);
+    free.usage = { ...free.usage, input_tokens: 0, output_tokens: 0 };
+    const t = setup({ respond: async () => free });
+    const { code } = await t.createCode();
+    expect((await t.scan(code)).status).toBe(200);
+    expect(t.core.usage(Date.UTC(2026, 10, 10, 15), t.config.limits)).toMatchObject({ scansToday: 1, spentMicros: 0 });
+  });
+
   it('never logs the image or the invite code', async () => {
     const t = setup();
     const { code } = await t.createCode();
@@ -108,32 +117,34 @@ describe('scan endpoint', () => {
     expect(status.scansLeftToday).toBe(20);
   });
 
-  it('rejects oversized bodies before doing any work', async () => {
-    const t = setup();
-    const res = await t.send('/v1/scan', { method: 'POST', headers: { Authorization: 'Bearer x', 'Content-Length': String(20_000_000) }, body: '{}' });
-    expect(res.status).toBe(413);
-  });
-
-  it('maps AI timeouts, outages and bad answers to clear errors', async () => {
-    const cases: [() => Promise<Anthropic.Message>, number, string][] = [
-      [() => Promise.reject(new Anthropic.APIConnectionTimeoutError()), 504, 'ai_timeout'],
-      [() => Promise.reject(Anthropic.APIError.generate(529, {}, 'overloaded', new Headers())), 503, 'ai_busy'],
-      [() => Promise.reject(Anthropic.APIError.generate(500, {}, 'boom', new Headers())), 502, 'ai_error'],
-      [() => Promise.reject(Anthropic.APIError.generate(401, {}, 'bad key', new Headers())), 503, 'scanner_unavailable'],
-      [async () => fakeMessage('not json'), 502, 'ai_bad_response'],
-      [async () => fakeMessage({ name: 'Nike' }), 502, 'ai_bad_response'],
+  it('maps AI timeouts, outages and bad answers to clear errors, charging conservatively', async () => {
+    const worst = worstCaseMicros('claude-sonnet-5-5');
+    const reported = 3000 * 2 + 400 * 10;
+    // [AI behaviour, HTTP status, error code, amount charged]. Anything that may have been
+    // processed without an answer is charged the full reservation; rejected requests nothing.
+    const cases: [() => Promise<Anthropic.Message>, number, string, number][] = [
+      [() => Promise.reject(new Anthropic.APIConnectionTimeoutError()), 504, 'ai_timeout', worst],
+      [() => Promise.reject(new Anthropic.APIConnectionError({ message: 'reset' })), 502, 'ai_error', worst],
+      [() => Promise.reject(Anthropic.APIError.generate(500, {}, 'boom', new Headers())), 502, 'ai_error', worst],
+      [() => Promise.reject(new Error('unexpected')), 502, 'ai_error', worst],
+      [() => Promise.reject(Anthropic.APIError.generate(529, {}, 'overloaded', new Headers())), 503, 'ai_busy', 0],
+      [() => Promise.reject(Anthropic.APIError.generate(429, {}, 'slow down', new Headers())), 503, 'ai_busy', 0],
+      [() => Promise.reject(Anthropic.APIError.generate(400, {}, 'bad', new Headers())), 502, 'ai_error', 0],
+      [() => Promise.reject(Anthropic.APIError.generate(401, {}, 'bad key', new Headers())), 503, 'scanner_unavailable', 0],
+      [async () => fakeMessage('not json'), 502, 'ai_bad_response', reported],
+      [async () => fakeMessage({ name: 'Nike' }), 502, 'ai_bad_response', reported],
     ];
-    for (const [respond, status, code] of cases) {
+    for (const [respond, status, code, charged] of cases) {
       const t = setup({ respond });
       const created = await t.createCode();
       const res = await t.scan(created.code);
       expect(res.status, code).toBe(status);
       expect(((await res.json()) as any).error.code).toBe(code);
-      // The tester gets the scan back; a timeout is charged at the worst case.
       const usage = t.core.usage(Date.UTC(2026, 10, 10, 15), t.config.limits);
-      expect(usage.scansToday).toBe(0);
       expect(usage.reservedMicros).toBe(0);
-      if (code === 'ai_timeout') expect(usage.spentMicros).toBe(worstCaseMicros('claude-sonnet-5-5'));
+      expect(usage.spentMicros, `${code} charge`).toBe(charged);
+      // The tester gets the scan back only when nothing was charged.
+      expect(usage.scansToday, `${code} scans`).toBe(charged === 0 ? 0 : 1);
     }
   });
 
@@ -162,6 +173,89 @@ describe('scan endpoint', () => {
       expect(((await res.json()) as any).error.code).toBe('scanner_unavailable');
       expect(t.ai.calls).toHaveLength(0);
     }
+  });
+});
+
+describe('upload size limits', () => {
+  const upload = (t: ReturnType<typeof setup>, code: string, body: BodyInit, headers: Record<string, string> = {}) =>
+    t.send('/v1/scan', { method: 'POST', headers: { Authorization: `Bearer ${code}`, 'Content-Type': 'application/json', ...headers }, body, duplex: 'half' } as RequestInit);
+  const settledCleanly = (t: ReturnType<typeof setup>) => {
+    // Nothing reserved, nothing charged, the tester's scan given back, the AI never called.
+    expect(t.core.usage(Date.UTC(2026, 10, 10, 15), t.config.limits)).toMatchObject({ reservedMicros: 0, spentMicros: 0, scansToday: 0 });
+    expect(t.ai.calls).toHaveLength(0);
+  };
+
+  it('refuses an oversized declared Content-Length before reading or reserving anything', async () => {
+    const t = setup();
+    const { code } = await t.createCode();
+    const { stream, state } = countingStream(10_000, 64 * 1024);
+    const res = await upload(t, code, stream, { 'Content-Length': String(20_000_000) });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as any).error.code).toBe('image_too_large');
+    expect(state.pulled).toBeLessThanOrEqual(1);
+    settledCleanly(t);
+  });
+
+  it('stops reading an upload with no Content-Length as soon as it passes the limit', async () => {
+    const t = setup();
+    const { code } = await t.createCode();
+    // 100 MB on offer in 64 KB chunks; the limit is ~5.6 MB, so reading stops after ~86 chunks.
+    const { stream, state } = countingStream(1600, 64 * 1024);
+    const res = await upload(t, code, stream);
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as any).error.message).toContain('too large');
+    expect(state.pulled).toBeLessThan(100);
+    expect(state.cancelled).toBe(true);
+    settledCleanly(t);
+  });
+
+  it('rejects invalid and misleading Content-Length headers', async () => {
+    const t = setup();
+    const { code } = await t.createCode();
+    const body = JSON.stringify({ image: fakeJpegBase64() });
+    for (const bad of ['abc', '-5', '1e3', '10, 10']) {
+      const res = await upload(t, code, body, { 'Content-Length': bad });
+      expect(res.status, bad).toBe(400);
+    }
+    // Declares a small body, then keeps sending: stopped as soon as it goes past the declared size.
+    const { stream, state } = countingStream(1600, 64 * 1024);
+    const understated = await upload(t, code, stream, { 'Content-Length': '1000' });
+    expect(understated.status).toBe(400);
+    expect(state.pulled).toBeLessThanOrEqual(2);
+    // Declares more than it sends.
+    const overstated = await upload(t, code, body, { 'Content-Length': String(body.length + 500) });
+    expect(overstated.status).toBe(400);
+    settledCleanly(t);
+  });
+
+  it('accepts a normal upload with or without Content-Length', async () => {
+    const t = setup();
+    const { code } = await t.createCode();
+    const body = JSON.stringify({ image: fakeJpegBase64() });
+    expect((await upload(t, code, body, { 'Content-Length': String(Buffer.byteLength(body)) })).status).toBe(200);
+    const chunked = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(body));
+        controller.close();
+      },
+    });
+    expect((await upload(t, code, chunked)).status).toBe(200);
+    expect(t.ai.calls).toHaveLength(2);
+  });
+
+  it('rejects an image the AI provider would refuse (over 8000 px) without calling it', async () => {
+    const t = setup();
+    const { code } = await t.createCode();
+    const res = await t.scan(code, { image: fakeJpegBase64(4096, 12_000, 9_000) });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as any).error.code).toBe('image_too_large');
+    settledCleanly(t);
+  });
+
+  it('limits admin request bodies too', async () => {
+    const t = setup();
+    const res = await t.send('/admin/codes', { method: 'POST', origin: null, headers: { Authorization: `Bearer ${ADMIN}` }, body: 'x'.repeat(20_000) });
+    expect(res.status).toBe(413);
   });
 });
 
