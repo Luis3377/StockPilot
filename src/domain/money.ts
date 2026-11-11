@@ -28,6 +28,34 @@ export function multiplyMoney(amount: number, quantity: number): number {
   return roundMoney(amount * quantity);
 }
 
+/**
+ * A per-unit amount for `total` spread over `quantity` units, chosen so that
+ * multiplyMoney(perUnit, quantity) gives back `total` exactly. Uses the fewest decimals that
+ * do (2, then 4, 6, 8): $10 over 2 → 5, $10 over 3 → 3.3333 (3 × 3.3333 rounds to 10.00).
+ */
+export function exactPerUnit(total: number, quantity: number): number {
+  if (!(quantity >= 1) || !Number.isInteger(quantity)) throw new Error('quantity must be a whole number ≥ 1');
+  const cents = toCents(total);
+  if (cents % quantity === 0) return fromCents(cents / quantity);
+  for (const decimals of [4, 6, 8]) {
+    const scale = 10 ** decimals;
+    const candidate = Math.round((cents / quantity / 100) * scale) / scale;
+    if (toCents(multiplyMoney(candidate, quantity)) === cents) return candidate;
+  }
+  return cents / quantity / 100;
+}
+
+/**
+ * How a total in cents divides into whole-cent unit costs: `highUnits` units at
+ * `low + 0.01` and the rest at `low`. $10.00 over 3 → 1 unit at $3.34, 2 at $3.33.
+ */
+export function unitCentSplit(total: number, quantity: number): { low: number; high: number; highUnits: number; lowUnits: number } {
+  const cents = toCents(total);
+  const lowCents = Math.floor(cents / quantity);
+  const highUnits = cents - lowCents * quantity;
+  return { low: fromCents(lowCents), high: fromCents(lowCents + 1), highUnits, lowUnits: quantity - highUnits };
+}
+
 /** Percentage (e.g. 25.0 for 25%) or null when the denominator is not positive. */
 export function percent(numerator: number, denominator: number): number | null {
   if (!(denominator > 0)) return null;

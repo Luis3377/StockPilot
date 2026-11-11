@@ -177,6 +177,17 @@ export function itemCostValue(item: Item): number {
   return multiplyMoney(item.unitCost, item.quantity);
 }
 
+/**
+ * The cost that leaves inventory when `units` of the `onHand` units go (a sale, a loss): the
+ * inventory cost before minus the inventory cost after. When the unit cost isn't a whole
+ * number of cents ($10 split over 3 units = 3.3333), single-unit sales get $3.33, $3.34 and
+ * $3.33, so the cost of everything sold plus what's left always equals what was paid —
+ * no penny is lost or created, however the units are split across sales.
+ */
+export function costLeaving(unitCost: number, onHand: number, units: number): number {
+  return fromCents(toCents(multiplyMoney(unitCost, onHand)) - toCents(multiplyMoney(unitCost, onHand - units)));
+}
+
 export function itemAskingValue(item: Item): number | null {
   return item.askingPrice === null ? null : multiplyMoney(item.askingPrice, item.quantity);
 }

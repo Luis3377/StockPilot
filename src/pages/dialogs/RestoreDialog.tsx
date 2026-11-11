@@ -101,6 +101,7 @@ export function RestoreDialog({ open, onClose, onRestored }: { open: boolean; on
               <li>{plural(backup.data.sales.length, 'sale')}</li>
               <li>{plural(backup.photos.length, 'photo')}</li>
               <li>{plural(backup.data.countHistory.length, 'count')}</li>
+              {backup.data.lots.length > 0 && <li>{plural(backup.data.lots.length, 'bulk lot')}</li>}
             </ul>
             <p className="rounded-lg bg-warn-soft p-2 text-warn-text">
               Your current {plural(current.items.length, 'item')} and {plural(current.sales.length, 'sale')} will be replaced. Consider downloading a backup of them first.

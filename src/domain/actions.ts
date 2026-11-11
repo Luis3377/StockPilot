@@ -18,15 +18,15 @@ import type {
 import { DomainError, FieldErrors, isDomainError } from './errors';
 import { newId } from './ids';
 import { isValidISODate, todayISO } from './dates';
-import { fromCents, multiplyMoney, roundMoney, toCents } from './money';
-import { itemCostValue, mostCommon, nameKey } from './calc';
+import { exactPerUnit, fromCents, multiplyMoney, roundMoney, toCents } from './money';
+import { costLeaving, itemCostValue, mostCommon, nameKey } from './calc';
 import { plural, pluralWord } from './format';
 
 export interface Clock {
   now: Date;
 }
 
-function nowParts(clock?: Clock): { iso: string; today: string } {
+export function nowParts(clock?: Clock): { iso: string; today: string } {
   const now = clock?.now ?? new Date();
   return { iso: now.toISOString(), today: todayISO(now) };
 }
@@ -35,20 +35,20 @@ function nowParts(clock?: Clock): { iso: string; today: string } {
 // Validation helpers
 // ---------------------------------------------------------------------------
 
-function requireText(value: string, field: string, label: string, max = 200): string {
+export function requireText(value: string, field: string, label: string, max = 200): string {
   const t = value.trim();
   if (!t) throw new DomainError(`${label} is required.`, field);
   if (t.length > max) throw new DomainError(`${label} must be ${max} characters or fewer.`, field);
   return t;
 }
 
-function optionalText(value: string | undefined, field: string, label: string, max = 200): string {
+export function optionalText(value: string | undefined, field: string, label: string, max = 200): string {
   const t = (value ?? '').trim();
   if (t.length > max) throw new DomainError(`${label} must be ${max} characters or fewer.`, field);
   return t;
 }
 
-function requireMoney(value: number | null | undefined, field: string, label: string, decimals = 2): number {
+export function requireMoney(value: number | null | undefined, field: string, label: string, decimals = 2): number {
   if (value === null || value === undefined) throw new DomainError(`${label} is required.`, field);
   if (!Number.isFinite(value)) throw new DomainError(`${label} must be a number.`, field);
   if (value < 0) throw new DomainError(`${label} can't be negative.`, field);
@@ -57,16 +57,16 @@ function requireMoney(value: number | null | undefined, field: string, label: st
 }
 
 /** Unit costs keep 4 decimals so averaged costs (e.g. 3 for $10 = $3.3333) stay exact enough. */
-function roundUnitCost(value: number): number {
+export function roundUnitCost(value: number): number {
   return Math.round(Number((value * 10_000).toPrecision(14))) / 10_000;
 }
 
-function optionalMoney(value: number | null | undefined, field: string, label: string): number | null {
+export function optionalMoney(value: number | null | undefined, field: string, label: string): number | null {
   if (value === null || value === undefined) return null;
   return requireMoney(value, field, label);
 }
 
-function requireWholeNumber(value: number | null | undefined, field: string, label: string, min = 0): number {
+export function requireWholeNumber(value: number | null | undefined, field: string, label: string, min = 0): number {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     throw new DomainError(`${label} is required.`, field);
   }
@@ -78,7 +78,7 @@ function requireWholeNumber(value: number | null | undefined, field: string, lab
   return value;
 }
 
-function optionalDate(value: string | null | undefined, field: string, label: string): string | null {
+export function optionalDate(value: string | null | undefined, field: string, label: string): string | null {
   if (value === null || value === undefined || value.trim() === '') return null;
   if (!isValidISODate(value.trim())) throw new DomainError(`${label} must be a valid date.`, field);
   return value.trim();
@@ -101,7 +101,7 @@ function findItem(data: AppData, id: string): Item {
   return item;
 }
 
-function replaceItem(items: Item[], updated: Item): Item[] {
+export function replaceItem(items: Item[], updated: Item): Item[] {
   return items.map((i) => (i.id === updated.id ? updated : i));
 }
 
@@ -112,6 +112,7 @@ function makeAdjustment(
   source: AdjustmentSource,
   iso: string,
   countId: string | null = null,
+  valueDifference?: number,
 ): Adjustment {
   const difference = newQuantity - item.quantity;
   return {
@@ -123,7 +124,9 @@ function makeAdjustment(
     newQuantity,
     difference,
     unitCost: item.unitCost,
-    valueDifference: multiplyMoney(item.unitCost, difference),
+    // Inventory cost after − before, so losses and corrections account for every cent even
+    // when the unit cost isn't a whole number of cents (see costLeaving).
+    valueDifference: valueDifference ?? 0 - costLeaving(item.unitCost, item.quantity, -difference),
     reason,
     source,
     countId,
@@ -220,7 +223,7 @@ export function itemInputErrors(data: AppData, input: ItemInput, existingId: str
   }
 }
 
-function withValuePoint(history: ValuePoint[], value: number | null, today: string): ValuePoint[] {
+export function withValuePoint(history: ValuePoint[], value: number | null, today: string): ValuePoint[] {
   if (value === null) return history;
   const last = history[history.length - 1];
   if (last && last.value === value) return history;
@@ -259,6 +262,8 @@ export function updateItem(
   const { iso, today } = nowParts(clock);
   const existing = findItem(data, id);
   const fields = normalizeItemInput(data, input, id);
+  // An unchanged cost is kept exactly (a split lot cost can have more than 4 decimals).
+  if (input.unitCost === existing.unitCost) fields.unitCost = existing.unitCost;
   const item: Item = {
     ...existing,
     ...fields,
@@ -324,10 +329,12 @@ export function restockItem(
   const qty = checkedQty!;
   const cost = checkedCost!;
   const newQuantity = item.quantity + qty;
-  const totalCents = toCents(itemCostValue(item)) + toCents(multiplyMoney(cost, qty));
-  const averaged = roundUnitCost(fromCents(totalCents) / newQuantity);
+  const added = multiplyMoney(cost, qty);
+  const totalCents = toCents(itemCostValue(item)) + toCents(added);
+  // The average is chosen so (average × new quantity) is exactly the old cost plus the new.
+  const averaged = exactPerUnit(fromCents(totalCents), newQuantity);
   const updated: Item = { ...item, quantity: newQuantity, unitCost: averaged, updatedAt: iso };
-  const adjustment = makeAdjustment({ ...item, unitCost: cost }, newQuantity, `Restocked ${plural(qty, 'unit')}`, 'restock', iso);
+  const adjustment = makeAdjustment({ ...item, unitCost: cost }, newQuantity, `Restocked ${plural(qty, 'unit')}`, 'restock', iso, null, added);
   return {
     data: { ...data, items: replaceItem(data.items, updated), adjustments: [...data.adjustments, adjustment] },
     item: updated,
@@ -422,6 +429,16 @@ function overSellMessage(item: Item, available: number, requested: number): stri
     : `Only ${available} of "${item.name}" ${pluralWord(available, 'is', 'are')} available — you entered ${requested}.`;
 }
 
+/**
+ * The per-unit cost a new sale of `quantity` units records: the cost leaving inventory ÷
+ * quantity (see costLeaving), so cost × quantity is exactly what left. For a whole-cent
+ * unit cost this is simply the item's unit cost.
+ */
+export function saleUnitCost(item: Item, quantity: number): number {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > item.quantity) return item.unitCost;
+  return exactPerUnit(costLeaving(item.unitCost, item.quantity, quantity), quantity);
+}
+
 export function recordSale(data: AppData, input: SaleInput, clock?: Clock): { data: AppData; sale: Sale } {
   const { iso } = nowParts(clock);
   const v = new FieldErrors();
@@ -433,13 +450,15 @@ export function recordSale(data: AppData, input: SaleInput, clock?: Clock): { da
   }
   v.throwIfAny();
   const fields = checked as SaleFields;
+  // Cost of goods sold is the cost leaving inventory, so a lot or average cost that doesn't
+  // divide into whole cents still adds up exactly across sales (see costLeaving).
   const sale: Sale = {
     id: newId(),
     itemId: item!.id,
     itemName: item!.name,
     itemSku: item!.sku,
     itemCategory: item!.category,
-    unitCost: item!.unitCost,
+    unitCost: saleUnitCost(item!, fields.quantity),
     ...fields,
     createdAt: iso,
     updatedAt: iso,
@@ -482,12 +501,14 @@ export function updateSale(data: AppData, id: string, input: SaleInput, clock?: 
   }
   v.throwIfAny();
   const fields = checked as SaleFields;
+  const switchedItem = input.itemId !== existing.itemId && target;
+  // Moved to another item: like a new sale of that item. Same item: the recorded cost is kept.
+  const unitCost = switchedItem ? saleUnitCost(target!, fields.quantity) : existing.unitCost;
   if (target) {
     target = { ...target, quantity: target.quantity - fields.quantity, updatedAt: iso };
     items = replaceItem(items, target);
   }
 
-  const switchedItem = input.itemId !== existing.itemId && target;
   const sale: Sale = {
     ...existing,
     ...fields,
@@ -495,7 +516,7 @@ export function updateSale(data: AppData, id: string, input: SaleInput, clock?: 
     itemName: switchedItem ? target!.name : existing.itemName,
     itemSku: switchedItem ? target!.sku : existing.itemSku,
     itemCategory: switchedItem ? target!.category : existing.itemCategory,
-    unitCost: switchedItem ? target!.unitCost : existing.unitCost,
+    unitCost,
     updatedAt: iso,
   };
   return { data: { ...data, items, sales: data.sales.map((s) => (s.id === id ? sale : s)) }, sale };
@@ -613,7 +634,7 @@ export function compareCount(items: Item[], draft: CountDraft): CountComparison 
       countedQuantity: counted,
       difference,
       unitCost: item.unitCost,
-      valueDifference: multiplyMoney(item.unitCost, difference),
+      valueDifference: 0 - costLeaving(item.unitCost, item.quantity, -difference),
       status: difference === 0 ? 'match' : difference < 0 ? 'missing' : 'excess',
       applied: false,
       reason: '',

@@ -68,3 +68,21 @@ The AI scanner's backend has its own tests: `cd worker && npm ci && npm test && 
 | Long names wrap, full name available, no overflow (cards, item page, AI result) | `trust.spec.ts`; `scanner.spec.ts` — "scanner panel and result fit phone screens, with long names shown in full" |
 | Form text ≥ 16px on phones (no iOS zoom); scanner panel fits at 320/375/390/414 px | `trust.spec.ts`; `scanner.spec.ts` |
 
+## Bulk lot cost splitting → tests
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Relative sales value allocation ($100 → $50 / $30 / $20) | `src/domain/lots.test.ts` — “splits by relative sales value”; `e2e/lots.spec.ts` — “splits a lot by estimated resale value, with additional costs…” |
+| Penny-accurate, deterministic rounding | `src/domain/lots.test.ts` — `splitCents` (largest remainder, ties, BigInt amounts), “never loses or creates a penny…”, and a seeded random test of 60 lots with random sales, losses and edits that checks every cent each time |
+| Multiple quantities; line total vs cost per item | `src/domain/lots.test.ts` — “weights each line by estimate × quantity…”, `exactPerUnit`; `e2e/lots.spec.ts` — “uneven pennies and several units…” (3 single-unit sales add up to exactly $10.00) |
+| Missing or zero estimates; equal allocation | `src/domain/lots.test.ts` — “asks for estimates…”, “gives a $0 estimate a $0 share”, “splits equally per unit”; `e2e/lots.spec.ts` — “without estimates the lot can be split equally per unit” |
+| Additional acquisition costs | `src/domain/lots.test.ts` — “creates one inventory item per line…”, empty/unnamed cost rows; `e2e/lots.spec.ts` (freight + buyer's premium) |
+| Buying isn't a loss; inventory and profit integration | `src/domain/lots.test.ts` — “treats buying as inventory, not a loss”, “partial sales keep realized and projected figures apart” |
+| Partial sales, losses, restocks, undone sales | `src/domain/lots.test.ts` — “accounts for losses, restocks, undone sales and edits without losing a cent”; existing `src/domain/actions.test.ts` still passes with cost-leaving cost of goods sold |
+| Editing allocations: confirmation, history, completed sales protected | `src/domain/lots.test.ts` — “editing a lot” (delta and re-split, method switch, refusals, no-cost edits); `e2e/lots.spec.ts` — “editing costs after a sale…”, “lowering a lot's cost below what's already sold is refused” |
+| Changes outside the lot are shown, not hidden | `src/domain/lots.test.ts` — “shows changes made outside the lot instead of hiding them” |
+| Persistence | `e2e/lots.spec.ts` — reload after an edit |
+| Backup/restore compatibility | `src/data/backup.test.ts` — “backup with bulk lots” (round trip, backups from before lots, older apps ignoring lots, broken lots rejected); `e2e/lots.spec.ts` — “backups keep lots…” |
+| Scanner integration (identifies, never prices) | `e2e/lots.spec.ts` — “a scan identifies an item in the lot but never sets its price” (mocked API that wrongly returns prices), “the standard build offers no AI scanner in a lot” |
+| Phones and accessibility | every `e2e/lots.spec.ts` test runs on desktop and an iPhone-sized viewport with no sideways scrolling; axe check of the review step, lot page and edit dialog |
+

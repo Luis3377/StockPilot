@@ -4,6 +4,8 @@ import { SaleFormDialog } from './SaleFormDialog';
 import { StockDialog, type StockMode } from './StockDialog';
 import { ImportDialog } from './ImportDialog';
 import { RestoreDialog } from './RestoreDialog';
+import { LotFormDialog } from './LotFormDialog';
+import { LotEditDialog } from './LotEditDialog';
 
 interface DialogApi {
   addItem(): void;
@@ -15,6 +17,9 @@ interface DialogApi {
   stock(itemId: string, mode: StockMode): void;
   importCsv(): void;
   restoreBackup(): void;
+  /** Add a bulk lot: several items bought for one price. */
+  addLot(): void;
+  editLot(lotId: string): void;
 }
 
 const Ctx = createContext<DialogApi | null>(null);
@@ -25,6 +30,8 @@ type Open =
   | { kind: 'stock'; itemId: string; mode: StockMode }
   | { kind: 'import' }
   | { kind: 'restore' }
+  | { kind: 'lot' }
+  | { kind: 'editLot'; lotId: string }
   | null;
 
 /** Hosts the app's shared dialogs so any screen can open them. */
@@ -42,6 +49,8 @@ export function DialogHub({ children }: { children: ReactNode }) {
       stock: (itemId, mode) => setOpen({ kind: 'stock', itemId, mode }),
       importCsv: () => setOpen({ kind: 'import' }),
       restoreBackup: () => setOpen({ kind: 'restore' }),
+      addLot: () => setOpen({ kind: 'lot' }),
+      editLot: (lotId) => setOpen({ kind: 'editLot', lotId }),
     }),
     [],
   );
@@ -65,6 +74,8 @@ export function DialogHub({ children }: { children: ReactNode }) {
       <StockDialog open={open?.kind === 'stock'} itemId={open?.kind === 'stock' ? open.itemId : null} mode={open?.kind === 'stock' ? open.mode : 'restock'} onClose={close} />
       <ImportDialog open={open?.kind === 'import'} onClose={close} />
       <RestoreDialog open={open?.kind === 'restore'} onClose={close} />
+      <LotFormDialog open={open?.kind === 'lot'} onClose={close} />
+      <LotEditDialog open={open?.kind === 'editLot'} lotId={open?.kind === 'editLot' ? open.lotId : null} onClose={close} />
     </Ctx.Provider>
   );
 }

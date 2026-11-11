@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Boxes, Download, FileUp, LayoutGrid, List, PackagePlus, Search, SearchX, Sparkles, X } from 'lucide-react';
+import { Boxes, Download, FileUp, Layers, LayoutGrid, List, PackagePlus, Search, SearchX, Sparkles, X } from 'lucide-react';
 import { acquiredDate, itemCostValue, knownCategories, knownLocations, stockStatus, uniqueSorted, daysWithoutSale } from '../domain/calc';
 import { todayISO } from '../domain/dates';
 import type { Item } from '../domain/types';
@@ -9,7 +9,7 @@ import { inventoryCsv } from '../csv/exports';
 import { downloadText, fileStamp } from '../lib/download';
 import { useMoney } from '../lib/hooks';
 import { PageHeader, Card } from '../ui/Card';
-import { Button, IconButton } from '../ui/Button';
+import { Button, IconButton, buttonClass } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { EmptyState } from '../ui/EmptyState';
 import { ItemThumb } from '../ui/Photo';
@@ -133,13 +133,16 @@ export function InventoryPage() {
                     Scan with AI
                   </Button>
                 )}
+                <Button icon={<Layers className="size-4" />} onClick={dialogs.addLot}>
+                  Add bulk lot
+                </Button>
                 <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv}>
                   Import CSV
                 </Button>
               </>
             }
           >
-            Add items one at a time, or import a spreadsheet you already have.
+            Add items one at a time, a whole lot bought for one price, or import a spreadsheet you already have.
           </EmptyState>
         </Card>
       </>
@@ -159,11 +162,19 @@ export function InventoryPage() {
             <Button icon={<Download className="size-4" />} onClick={exportCsv}>
               Export
             </Button>
+            {data.lots.length > 0 && (
+              <Link to="/inventory/lots" className={buttonClass('secondary', 'md')} data-testid="lots-link">
+                <Layers className="size-4" /> Lots ({data.lots.length})
+              </Link>
+            )}
             {scannerEnabled && (
               <Button icon={<Sparkles className="size-4" />} onClick={dialogs.scanItem}>
                 Scan with AI
               </Button>
             )}
+            <Button icon={<Layers className="size-4" />} onClick={dialogs.addLot}>
+              Add bulk lot
+            </Button>
             <Button variant="primary" icon={<PackagePlus className="size-4" />} onClick={dialogs.addItem}>
               Add item
             </Button>

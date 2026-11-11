@@ -10,6 +10,8 @@ import { Onboarding } from './pages/Onboarding';
 import { OverviewPage } from './pages/overview/OverviewPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { ItemDetailPage } from './pages/ItemDetailPage';
+import { LotsPage } from './pages/LotsPage';
+import { LotDetailPage } from './pages/LotDetailPage';
 import { SalesPage } from './pages/SalesPage';
 import { InsightsPage } from './pages/InsightsPage';
 import { CountCheckPage } from './pages/CountCheckPage';
@@ -76,6 +78,8 @@ export function App() {
                 <Route element={<Layout />}>
                   <Route index element={<OverviewPage />} />
                   <Route path="inventory" element={<InventoryPage />} />
+                  <Route path="inventory/lots" element={<LotsPage />} />
+                  <Route path="inventory/lots/:id" element={<LotDetailPage />} />
                   <Route path="inventory/:id" element={<ItemDetailPage />} />
                   <Route path="sales" element={<SalesPage />} />
                   <Route path="insights" element={<InsightsPage />} />

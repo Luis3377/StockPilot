@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, MapPin, MoreHorizontal, Package, PackageMinus, PackagePlus, Pencil, Receipt, Tag, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, Layers, MapPin, MoreHorizontal, Package, PackageMinus, PackagePlus, Pencil, Receipt, Tag, Trash2 } from 'lucide-react';
 import { deleteItem } from '../domain/actions';
+import { lotForItem } from '../domain/lots';
 import { computeSale, daysWithoutSale, itemCostValue, projectedUnitProfit, sellingCostRate, totalSales } from '../domain/calc';
 import { formatDate, formatDateTime, todayISO } from '../domain/dates';
 import { formatPercent } from '../domain/money';
@@ -56,6 +57,7 @@ export function ItemDetailPage() {
     );
   }
 
+  const fromLot = lotForItem(data, item.id);
   const sales = data.sales.filter((s) => s.itemId === item.id).sort((a, b) => b.saleDate.localeCompare(a.saleDate));
   const adjustments = data.adjustments.filter((a) => a.itemId === item.id).sort((a, b) => b.date.localeCompare(a.date));
   const totals = totalSales(sales);
@@ -150,6 +152,18 @@ export function ItemDetailPage() {
               {item.name}
             </h1>
             <p className="mt-1 text-sm text-muted">{item.sku}</p>
+            {fromLot && (
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-ink-2" data-testid="item-lot-link">
+                <Layers className="size-3.5 shrink-0" aria-hidden />
+                <span className="min-w-0 break-words">
+                  Part of lot{' '}
+                  <Link to={`/inventory/lots/${fromLot.lot.id}`} className="font-medium text-accent-text hover:underline">
+                    {fromLot.lot.name}
+                  </Link>{' '}
+                  · {money(fromLot.line.allocatedCost)} of its cost for {plural(fromLot.line.quantity, 'unit')}
+                </span>
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-2">

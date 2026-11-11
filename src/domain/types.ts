@@ -139,6 +139,96 @@ export interface ValueSnapshot {
   value: number;
 }
 
+// ---------------------------------------------------------------------------
+// Bulk lots: several items bought together for one price, with the cost split across them.
+// Each lot item is an ordinary Item (with its share of the cost as unitCost); the lot keeps
+// the purchase, how the cost was split, and a history of changes. Added without a schema
+// bump: data and backups without `lots` load with an empty list.
+// ---------------------------------------------------------------------------
+
+/** How a lot's cost is split: by each item's estimated resale value, or equally per unit. */
+export type LotAllocationMethod = 'relative_value' | 'equal';
+
+/**
+ * Where an estimated resale value came from. Only the user's own estimate exists today; AI
+ * identification never sets a price. A future market-price lookup would add a value here.
+ */
+export type EstimateSource = 'user';
+
+export interface LotExtraCost {
+  id: string;
+  /** e.g. "Shipping / freight", "Buyer's premium". */
+  label: string;
+  amount: number;
+}
+
+export interface LotLine {
+  id: string;
+  /** The inventory record created for this line. It may later be deleted; the line stays. */
+  itemId: string;
+  /** Name when the lot was saved, so the lot stays readable if the item is deleted. */
+  itemName: string;
+  /** Units bought in the lot. */
+  quantity: number;
+  /** Estimated resale value per unit used to split the cost (null when not given). */
+  estimatedUnitValue: number | null;
+  estimateSource: EstimateSource;
+  /**
+   * Total cost assigned to this line's units, in currency units with whole cents. Across all
+   * lines this always adds up to the lot's purchase price + extra costs exactly.
+   */
+  allocatedCost: number;
+}
+
+export interface LotLineChange {
+  lineId: string;
+  itemId: string;
+  itemName: string;
+  /** Units on hand that the change applied to. */
+  unitsAffected: number;
+  previousUnitCost: number;
+  newUnitCost: number;
+  previousRemainingCost: number;
+  newRemainingCost: number;
+  previousEstimate: number | null;
+  newEstimate: number | null;
+}
+
+export interface LotChange {
+  id: string;
+  date: string; // ISO timestamp
+  kind: 'created' | 'costs' | 'details';
+  /** Which lot fields changed (e.g. "purchasePrice", "estimates", "name"). */
+  changedFields: string[];
+  /** The user's reason, if they gave one. */
+  note: string;
+  previousTotal: number;
+  newTotal: number;
+  previousMethod: LotAllocationMethod;
+  newMethod: LotAllocationMethod;
+  /** Cost already in completed sales or written off when the change was made (never changed). */
+  lockedCost: number;
+  lines: LotLineChange[];
+}
+
+export interface Lot {
+  id: string;
+  name: string;
+  /** What was paid for the lot itself. */
+  purchasePrice: number;
+  /** Freight, buyer's premium and other costs of acquiring the lot. Part of its cost. */
+  extraCosts: LotExtraCost[];
+  purchaseDate: string | null; // YYYY-MM-DD
+  /** Where it was bought (auction, estate sale, wholesaler…). */
+  source: string;
+  notes: string;
+  method: LotAllocationMethod;
+  lines: LotLine[];
+  history: LotChange[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppData {
   schemaVersion: 1;
   items: Item[];
@@ -147,6 +237,8 @@ export interface AppData {
   countDraft: CountDraft | null;
   countHistory: CountRecord[];
   snapshots: ValueSnapshot[];
+  /** Bulk lots. Missing in data saved before lots existed (loads as []). */
+  lots: Lot[];
 }
 
 export interface Settings {
@@ -188,6 +280,7 @@ export function emptyData(): AppData {
     countDraft: null,
     countHistory: [],
     snapshots: [],
+    lots: [],
   };
 }
 
