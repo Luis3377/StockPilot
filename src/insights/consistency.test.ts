@@ -26,13 +26,20 @@ describe('financial terms', () => {
   });
 
   it('answers "how much have I invested" with inventory cost — the dashboard figure — not market value', () => {
-    for (const q of ['How much money do I have invested in unsold inventory?', 'How much money is tied up in stock?', 'how much did i spend on inventory']) {
+    for (const q of ['How much money do I have invested in unsold inventory?', 'How much money is tied up in stock?']) {
       const a = ask(q);
       expect(a.intent, q).toBe('invested');
       expect(a.text, q).toContain(money(t.costValue));
       expect(a.text, q).not.toContain(money(t.estimatedValue));
       expect(a.text).toContain('inventory cost');
     }
+  });
+
+  it('answers "how much did I spend on inventory" with all purchases, naming the inventory cost part', () => {
+    const a = ask('how much did i spend on inventory');
+    expect(a.intent).toBe('inventory-spend');
+    expect(a.text).toContain(`${money(t.costValue)} of it is still in stock (your inventory cost)`);
+    expect(a.text).not.toContain(money(t.estimatedValue));
   });
 
   it('answers "what is it worth" with all three figures, each named', () => {

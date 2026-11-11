@@ -23,7 +23,25 @@ import { addDays, formatDate, periodRange, todayISO, type DateRange } from '../d
 import { formatMoney, formatPercent, roundMoney } from '../domain/money';
 import type { AppData, Item, Settings } from '../domain/types';
 import { buildInsights, lowMarginSection } from './rules';
-import { explainPayout, reconcile } from '../domain/reconcile';
+import { explainPayout } from '../domain/reconcile';
+import { toCents } from '../domain/money';
+import {
+  calcContext,
+  expensesCalculation,
+  inventoryCostCalculation,
+  inventorySpendCalculation,
+  inventoryWorthCalculation,
+  itemRankingCalculation,
+  lossReviewCalculation,
+  lotProfitCalculation,
+  payoutCalculation,
+  payoutsReceivedCalculation,
+  profitCalculation,
+  projectedProfitCalculation,
+  revenueCalculation,
+  slowMovingCalculation,
+  type Calculation,
+} from './calculations';
 import { plural, pluralWord } from '../domain/format';
 import { TERMS, type TermKey } from '../domain/terms';
 
@@ -40,6 +58,8 @@ export interface AssistantAnswer {
   table?: AnswerTable;
   items?: { id: string; name: string }[];
   followUps: string[];
+  /** The verified calculation behind a financial answer: figures, period, formula and source records. */
+  calculation?: Calculation;
 }
 
 export interface InsightsContext {
@@ -56,14 +76,23 @@ export interface InsightsProvider {
 
 export const SUGGESTED_QUESTIONS = [
   'How much profit have I made this month?',
+  'What’s my inventory worth?',
+  'Show my best-selling items',
+  'Explain my latest payout',
+  'Which items are losing money?',
+  'How much money do I have invested in unsold inventory?',
+  'What are my biggest selling expenses?',
+  'How much profit have my bulk lots made?',
   'Which items are making me the most money?',
   'What inventory has been sitting the longest?',
-  'How much money do I have invested in unsold inventory?',
   'Which categories are performing best?',
   'What items should I consider discounting?',
   'Which products are running low?',
   'Which platform earns me the most?',
 ];
+
+/** Period phrases offered when a question doesn't say which dates it means. */
+const PERIOD_CHOICES = ['this month', 'last month', 'this year', 'in total'];
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 
@@ -90,7 +119,8 @@ export function parseTimeframe(q: string, today: string): DateRange | null {
   if (/\b(last|previous) month\b/.test(q)) return periodRange('last_month', today);
   if (/\b(this|current) year\b|\bytd\b|\byear to date\b/.test(q)) return periodRange('this_year', today);
   if (/\b(last|previous) year\b/.test(q)) return periodRange('last_year', today);
-  if (/\b(all time|ever|overall|in total|so far|total)\b/.test(q)) return periodRange('all', today);
+  // "In total" is a period; the adjective in "total sales" isn't.
+  if (/\b(all[- ]time|ever|overall|in total|so far|to date|lifetime)\b/.test(q)) return periodRange('all', today);
   const month = MONTHS.findIndex((m) => new RegExp(`\\b(${m}|${m.slice(0, 3)})\\b`).test(q));
   if (month >= 0 && !/\bmay i\b/.test(q)) {
     let year = Number(today.slice(0, 4));
@@ -104,6 +134,14 @@ export function parseTimeframe(q: string, today: string): DateRange | null {
 
 const STOPWORDS = new Set(
   'a an the my i me of on in for to and or is are was were how much many what which who did do does have has had made make sold sell selling item items about tell show give with from that this it its'.split(' '),
+);
+
+/**
+ * Words that are about the question, not an item: an item named "Profit Pro" (or a name crafted
+ * to steer the assistant) mustn't turn "how much profit did I make?" into an item lookup.
+ */
+const QUESTION_WORDS = new Set(
+  'profit profits revenue sales sale month months year years week weeks today yesterday total money inventory stock cost costs worth value price prices margin margins fees fee shipping expense expenses payout payouts ebay platform platforms category categories best worst most least selling sold lots lot bulk all time ever last much spent spend paid invested'.split(' '),
 );
 
 function tokens(s: string): string[] {
@@ -123,7 +161,7 @@ export function matchItem(q: string, items: Item[]): Item | null {
   const lower = q.toLowerCase();
   const bySku = items.find((i) => i.sku && new RegExp(`(^|[^a-z0-9])${i.sku.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(lower));
   if (bySku) return bySku;
-  const qTokens = new Set(tokens(q));
+  const qTokens = new Set(tokens(q).filter((t) => !QUESTION_WORDS.has(t)));
   if (qTokens.size === 0) return null;
   const nameTokens = new Map(items.map((i) => [i.id, [...new Set(tokens(i.name))]]));
   const df = new Map<string, number>();
@@ -172,7 +210,9 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   const ctx: Required<InsightsContext> = { today: todayISO(), ...input };
   const { data, settings, today } = ctx;
   const b = new AnswerBuilder(ctx);
-  const q = question.toLowerCase().trim();
+  const cc = calcContext(data, settings, today);
+  // Curly apostrophes (iPhone keyboards) read the same as straight ones.
+  const q = question.toLowerCase().replace(/[\u2018\u2019]/g, "'").trim();
   const report = () => buildInsights(data, settings, today);
 
   if (!q) return b.answer('empty', 'Type a question about your inventory, sales or profit.', { followUps: SUGGESTED_QUESTIONS.slice(0, 4) });
@@ -217,29 +257,147 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     });
   }
 
-  // --- Payout reconciliation ------------------------------------------------
-  // The answer is the reconciliation engine's own figures and findings, word for word: nothing
-  // here calculates or estimates an amount.
-  if (/\bpayouts?\b/.test(q) || /\b(ebay|marketplace)\b.*\b(paid|pay|deposit|transfer)/.test(q)) {
-    const r = reconcile(data, settings.currency);
+  // --- Marketplace payouts ------------------------------------------------------
+  // Answers come from the reconciliation engine's own figures and findings, word for word:
+  // nothing here calculates, estimates or invents an amount. A payout is money moved, not profit.
+  const asksCash = /\b(cash (received|in|from)|payouts? (received|total)|total payouts?|paid out to me|how much (did|has|have) (ebay|the marketplace|marketplaces) (paid|pay|sent))\b/.test(q);
+  const asksPayout = /\bpayouts?\b/.test(q) || /\b(ebay|marketplace)\b.*\b(paid|pay|deposit|transfer)/.test(q);
+  if (asksCash || asksPayout) {
+    const r = cc.recon();
     if (!r.payouts.length) {
       return b.answer('payouts', 'You haven’t imported any eBay payout or transaction reports yet, so there’s nothing to compare.', {
         details: ['Open Sales & Profit → Payouts and import the Transaction report and Payout report from eBay Seller Hub (Payments → Reports).'],
       });
     }
+    if (asksCash && !/\b(why|match|short|differ|explain)\b/.test(q)) {
+      const range = parseTimeframe(q, today) ?? periodRange('all', today);
+      const calc = payoutsReceivedCalculation(cc, range);
+      const received = calc.records.filter((r) => 'amount' in r.parts).length;
+      const notYet = calc.lines.find((l) => l.key === 'inProgress');
+      const text = `eBay paid out ${b.money(calc.value ?? 0)} ${range.label}, across ${plural(received, 'completed payout')}.${notYet ? ` Another ${b.money(notYet.amount)} is still in progress and not counted as received.` : ''}`;
+      return b.answer('payouts-received', text, {
+        details: ['That’s cash moved to your bank, not revenue or profit: eBay deducts fees, labels and refunds before paying out, and what the items cost you was paid when you bought them.'],
+        calculation: calc,
+        followUps: ['Explain my latest payout', 'How much profit have I made this month?'],
+      });
+    }
     const named = r.payouts.find((p) => q.includes(p.ref.toLowerCase()));
-    const target = named ?? r.payouts.find((p) => p.status === 'unreconciled') ?? r.payouts.find((p) => p.status === 'needs_review') ?? r.payouts[0];
+    const amountMatch = /\$?\s?(\d[\d,]*\.\d{2})\b/.exec(q);
+    const amount = amountMatch ? Number(amountMatch[1].replace(/,/g, '')) : null;
+    const byAmount = amount === null ? undefined : r.payouts.find((p) => p.difference !== null && toCents(Math.abs(p.difference)) === toCents(amount));
+    const latest = /\b(latest|last|most recent|newest|recent)\b/.test(q) ? r.payouts[0] : undefined;
+    const target = named ?? byAmount ?? latest ?? r.payouts.find((p) => p.status === 'unreconciled') ?? r.payouts.find((p) => p.status === 'needs_review') ?? r.payouts[0];
     const [headline, ...rest] = explainPayout(target, settings.currency);
     const others = r.payouts.filter((p) => p !== target && p.status === 'unreconciled').length;
     return b.answer('payouts', headline, {
-      details: [...rest, ...(others ? [`${others} other payout${others === 1 ? ' is' : 's are'} unreconciled too.`] : []), 'Open Sales & Profit → Payouts to see the report rows and sales behind each figure.'],
-      followUps: ['How much profit have I made this month?'],
+      details: [
+        ...(amount !== null && !byAmount && !named ? [`None of your imported payouts differs by exactly ${b.money(amount)}, so this is the ${latest ? 'latest' : 'first one that needs attention'}.`] : []),
+        ...rest,
+        ...(others ? [`${others} other payout${others === 1 ? ' is' : 's are'} unreconciled too.`] : []),
+        'A payout is money moved, not profit. Open the payout to see the report rows and sales behind each figure.',
+      ],
+      calculation: payoutCalculation(cc, target),
+      followUps: ['How much has eBay paid me in total?', 'How much profit have I made this month?'],
     });
   }
 
   if (data.items.length === 0 && data.sales.length === 0) {
     return b.answer('no-data', "There's no inventory recorded yet, so I don't have anything to analyse.", {
       details: ['Add your first item from the Inventory screen, or import a CSV file from Settings.'],
+    });
+  }
+
+  // --- Bulk lots ----------------------------------------------------------------
+  if (/\b(bulk lots?|lot purchases?|my lots|from (my |the )?lots?)\b/.test(q)) {
+    if (!data.lots.length) {
+      return b.answer('lot-profit', 'You haven’t recorded any bulk lots yet, so there’s no lot profit to report.', {
+        details: ['Add one from Inventory → Add bulk lot when you buy several items for one price.'],
+      });
+    }
+    const calc = lotProfitCalculation(cc);
+    const line = (k: string) => calc.lines.find((l) => l.key === k)!.amount;
+    return b.answer(
+      'lot-profit',
+      `Your ${plural(data.lots.length, 'bulk lot')} ${data.lots.length === 1 ? 'has' : 'have'} made ${b.money(calc.value ?? 0)} in realized profit so far${(calc.value ?? 0) < 0 ? ' (a loss)' : ''}.`,
+      {
+        details: [
+          `You paid ${b.money(line('totalCost'))} for ${data.lots.length === 1 ? 'it' : 'them'}; ${b.money(line('remaining'))} of that cost is still in unsold stock, so the final result isn’t known yet.`,
+          'Cost of goods sold uses each item’s exact share of its lot.',
+        ],
+        calculation: calc,
+        followUps: ['How much profit have I made this month?', 'What inventory has been sitting the longest?'],
+      },
+    );
+  }
+
+  // --- Inventory purchases (all time) ---------------------------------------------
+  if (/\b(spen[dt]|spending)\b.*\b(inventory|stock)\b|\binventory purchases\b/.test(q)) {
+    const calc = inventorySpendCalculation(cc);
+    const line = (k: string) => calc.lines.find((l) => l.key === k)!;
+    const wo = line('writtenOff');
+    return b.answer(
+      'inventory-spend',
+      `You’ve recorded ${b.money(calc.value ?? 0)} of inventory purchases in total. ${b.money(line('inStock').amount)} of it is still in stock (your inventory cost) and ${b.money(line('sold').amount)} has been sold (cost of goods sold)${wo.amount ? `; ${b.money(wo.amount)} was ${wo.op === '-' ? 'found back in counts' : 'written off'}` : ''}.`,
+      {
+        details: ['Buying stock isn’t an expense: its cost counts against profit as cost of goods sold when it sells.'],
+        calculation: calc,
+        followUps: ['How much money do I have invested in unsold inventory?', 'How much profit have I made this month?'],
+      },
+    );
+  }
+
+  // --- Selling expenses -----------------------------------------------------------
+  if (/\b(expenses|fees|selling costs?)\b/.test(q) && /\b(biggest|largest|top|most|what are|how much|total|selling)\b/.test(q) && !/\bprofit\b/.test(q)) {
+    if (!data.sales.length) return needSales(b, 'selling-expenses');
+    const range = parseTimeframe(q, today) ?? periodRange('all', today);
+    const sales = salesInRange(data.sales, range);
+    if (!sales.length) return b.answer('selling-expenses', `You have no recorded sales ${range.label}, so there are no selling expenses.`);
+    const calc = expensesCalculation(cc, sales, range);
+    const parts = calc.lines.filter((l) => l.op === '+').sort((a, c) => c.amount - a.amount);
+    return b.answer(
+      'selling-expenses',
+      `Your biggest selling expense ${range.label} is ${parts[0].label.toLowerCase()}: ${b.money(parts[0].amount)} of ${b.money(calc.value ?? 0)} in total.`,
+      {
+        details: [
+          parts.map((l) => `${l.label}: ${b.money(l.amount)}`).join(' · '),
+          'What the items cost you isn’t a selling expense: it’s cost of goods sold.',
+          ...(parseTimeframe(q, today) ? [] : ['No period was mentioned, so this covers all time.']),
+        ],
+        calculation: calc,
+        followUps: ['Which platform earns me the most?', 'How much profit have I made this month?'],
+      },
+    );
+  }
+
+  // --- Projected profit at asking prices -------------------------------------------
+  if (/\bprojected profit\b|\bsells? at (its|their|my)? ?asking|\bat (its|their|my) asking prices?\b/.test(q)) {
+    const calc = projectedProfitCalculation(cc);
+    if (!calc.records.length) {
+      return b.answer('projected-profit', 'None of your in-stock items has an asking price, so there’s nothing to project yet.', {
+        details: ['Add asking prices to your items and ask again.'],
+      });
+    }
+    return b.answer(
+      'projected-profit',
+      `If your ${plural(calc.records.length, 'priced item')} sell at their asking prices, you’d make about ${b.money(calc.value ?? 0)} in profit${(calc.value ?? 0) < 0 ? ' (a loss)' : ''}. That’s a projection, not money earned.`,
+      { calculation: calc, followUps: ['What’s my inventory worth?', 'What items should I consider discounting?'] },
+    );
+  }
+
+  // --- Possible losses ----------------------------------------------------------
+  if (/\b(review|check|look at)\b.*\b(loss|losses|losing)\b|\b(possible|potential) loss(es)?\b/.test(q)) {
+    const calc = lossReviewCalculation(cc);
+    if (!calc.records.length) {
+      return b.answer('loss-review', 'Nothing to review: no item has sold at a loss, no units were written off, and no item in stock is priced or valued below its cost.', { calculation: calc });
+    }
+    const line = (k: string) => calc.lines.find((l) => l.key === k)!.amount;
+    return b.answer('loss-review', `${plural(new Set(calc.records.map((r) => r.label)).size, 'item')} could be costing you money.`, {
+      details: [
+        `Recorded: ${b.money(line('realized'))} lost on completed sales and ${b.money(line('writtenOff'))} written off in counts and adjustments.`,
+        `Estimate: ${b.money(line('estimated'))} by which your own value estimates for unsold stock fall below what it cost. That isn’t a loss until it sells.`,
+      ],
+      calculation: calc,
+      followUps: ['What items should I consider discounting?', 'Which items are losing money?'],
     });
   }
 
@@ -297,6 +455,20 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     const ranked = inStock.map((item) => ({ item, days: daysWithoutSale(item, data.sales, today) })).sort((a, c) => c.days - a.days);
     const slow = ranked.filter((r) => r.days >= settings.slowMovingDays);
     const tied = slow.reduce((s, r) => s + itemCostValue(r.item), 0);
+    const slowCalc = slowMovingCalculation(cc);
+    if (/\b(how much|money|tied up|worth|cost|value)\b/.test(q)) {
+      return b.answer(
+        'slow-moving',
+        slow.length
+          ? `${b.money(slowCalc.value ?? 0)} of inventory cost is tied up in ${plural(slow.length, 'item')} that ${slow.length === 1 ? 'hasn’t' : 'haven’t'} sold for ${settings.slowMovingDays}+ days.`
+          : `Nothing has gone ${settings.slowMovingDays}+ days without a sale, so no money is tied up in slow-moving stock.`,
+        {
+          details: ['“Inventory cost” is what you paid for the units on hand, not their asking price.', `The ${settings.slowMovingDays}-day threshold can be changed in Settings.`],
+          calculation: slowCalc,
+          followUps: ['What items should I consider discounting?'],
+        },
+      );
+    }
     return b.answer(
       'slow-moving',
       `${ranked[0].item.name} has been sitting the longest — ${plural(ranked[0].days, 'day')} without a sale. ${slow.length ? `${plural(slow.length, 'item')} ${pluralWord(slow.length, 'has', 'have')} gone ${settings.slowMovingDays}+ days, holding ${b.money(tied)} in inventory cost (what you paid).` : `Nothing has passed your ${settings.slowMovingDays}-day slow-moving threshold.`}`,
@@ -308,6 +480,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
         },
         items: ranked.slice(0, 8).map((r) => ({ id: r.item.id, name: r.item.name })),
         followUps: ['What items should I consider discounting?'],
+        calculation: slowCalc,
       },
     );
   }
@@ -315,7 +488,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   // --- Money invested / value ----------------------------------------------
   // "Invested" is always inventory cost (what was paid). "Worth / value" gets all three figures,
   // each named, because asking prices and the user's own estimates are different things.
-  const asksInvested = /\b(invested|invest|tied up|unsold|spen[dt] on (my )?(stock|inventory)|money in|cost of (my )?(inventory|stock)|paid for)\b/.test(q);
+  const asksInvested = /\b(invested|invest|tied up|unsold|money in|cost of (my )?(inventory|stock)|paid for)\b/.test(q);
   const asksWorth = /\b(worth|value|valued)\b/.test(q);
   if (asksInvested || asksWorth) {
     const t = inventoryTotals(data.items);
@@ -342,6 +515,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
           ],
         },
         followUps: ['What is my inventory worth?', 'What inventory has been sitting the longest?'],
+        calculation: inventoryCostCalculation(cc),
       });
     }
     return b.answer(
@@ -357,7 +531,8 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
             [TERMS.marketValue.label, t.itemsWithEstimate ? b.money(t.estimatedValue) : '—', String(t.itemsWithEstimate)],
           ],
         },
-        followUps: ['How much money do I have invested in unsold inventory?', 'What does projected profit mean?'],
+        followUps: ['How much money do I have invested in unsold inventory?', 'What is my projected profit if my remaining inventory sells at its asking prices?'],
+        calculation: inventoryWorthCalculation(cc),
       },
     );
   }
@@ -397,21 +572,35 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     const p = report().pricingRisks;
     if (s.insufficient && p.insufficient) return b.answer('low-margin', s.insufficient);
     const rows = s.findings.map((f) => [f.group.label, b.money(f.group.revenue), b.money(f.group.netProfit), formatPercent(f.group.margin)]);
+    const inRange = salesInRange(data.sales, range);
     return b.answer('low-margin', s.insufficient ?? s.summary, {
       details: [s.rule, p.findings.length ? `Also, ${p.summary.charAt(0).toLowerCase()}${p.summary.slice(1)} See Smart Insights for the list.` : p.summary],
       table: rows.length ? { columns: ['Item', 'Revenue', 'Net profit', 'Margin'], rows: rows.slice(0, 8) } : undefined,
+      calculation: inRange.length ? itemRankingCalculation(cc, inRange, range, 'margin') : undefined,
+      followUps: ['Which items should I review for possible losses?'],
     });
   }
 
   // --- Top items ------------------------------------------------------------
-  if (/\b(most money|most profit|best[- ]sell|top (item|product|seller|earner)s?|most profitable|best (item|product)s?|making me|biggest earner|highest (profit|revenue))\b/.test(q)) {
+  if (/\b(most money|most profit|best[- ]?sell(?:ing|ers?)?|top (item|product|seller|earner)s?|most profitable|best (item|product)s?|making me|biggest earner|highest (profit|revenue))\b/.test(q)) {
     if (!data.sales.length) return needSales(b, 'top-items');
     const range = parseTimeframe(q, today) ?? periodRange('all', today);
     const byRevenue = /\brevenue|sales\b/.test(q) && !/\bprofit\b/.test(q);
-    const groups = salesByItem(salesInRange(data.sales, range)).sort((a, c) => (byRevenue ? c.revenue - a.revenue : c.netProfit - a.netProfit));
+    const inRange = salesInRange(data.sales, range);
+    const groups = salesByItem(inRange).sort((a, c) => (byRevenue ? c.revenue - a.revenue : c.netProfit - a.netProfit));
     if (!groups.length) return b.answer('top-items', `No sales ${range.label}.`);
+    if (/\bbest[- ]?sell/.test(q)) {
+      const calc = itemRankingCalculation(cc, inRange, range, 'units');
+      const best = calc.records[0];
+      return b.answer('best-selling', `${best.label} is your best-selling item ${range.label}: ${plural(best.parts.units, 'unit')} sold for ${b.money(best.parts.revenue)}.`, {
+        details: ['Ranked by units sold (revenue breaks ties).'],
+        calculation: calc,
+        followUps: ['Which items are making me the most money?'],
+      });
+    }
     const top = groups[0];
     return b.answer('top-items', `${top.label} has made you the most ${range.label}: ${b.money(top.netProfit)} net profit from ${b.money(top.revenue)} in sales.`, {
+      calculation: itemRankingCalculation(cc, inRange, range, byRevenue ? 'revenue' : 'profit'),
       details: [`Ranked by ${byRevenue ? 'revenue' : 'realized net profit (after cost, fees, shipping and other expenses)'}.`],
       table: b.groupTable(groups, 'Item'),
       items: groups.slice(0, 8).flatMap((g) => (data.items.some((i) => i.id === g.key) ? [{ id: g.key, name: g.label }] : [])),
@@ -443,7 +632,16 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   if (asksMoney && !item) {
     if (!data.sales.length) return needSales(b, 'profit');
     const explicit = parseTimeframe(q, today);
-    const range = explicit ?? periodRange('all', today);
+    const wantsRevenue = /\brevenue|sales|sold\b/.test(q) && !/\bprofit|made|make|earn/.test(q);
+    if (!explicit) {
+      // Profit and sales depend on the dates; ask rather than guess.
+      const base = question.trim().replace(/[?.!\s]+$/, '');
+      return b.answer('clarify', `Which period do you mean? ${wantsRevenue ? 'Sales' : 'Realized profit'} depends on the dates.`, {
+        // "What were my total sales in total?" reads badly; say "all time" there.
+        followUps: PERIOD_CHOICES.map((p) => `${base} ${p === 'in total' && /\btotal\b/i.test(base) ? 'all time' : p}?`),
+      });
+    }
+    const range = explicit;
     let sales = salesInRange(data.sales, range);
     const scope: string[] = [];
     if (platform) {
@@ -455,21 +653,28 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
       scope.push(`in ${category}`);
     }
     const where = [scope.join(' '), range.label].filter(Boolean).join(' ');
+    const scopeLabel = scope.join(' ');
     if (!sales.length) {
-      return b.answer('profit', `You have no recorded sales ${where}.`, { followUps: ['How much profit have I made this year?'] });
+      return b.answer(wantsRevenue ? 'revenue' : 'profit', `You have no recorded sales ${where}, so ${wantsRevenue ? 'sales revenue' : 'realized profit'} ${where} is ${b.money(0)}.`, {
+        followUps: ['How much profit have I made this year?'],
+        calculation: wantsRevenue ? revenueCalculation(cc, sales, range, scopeLabel) : profitCalculation(cc, sales, range, scopeLabel),
+      });
     }
     const t = totalSales(sales);
-    const headline = /\brevenue|sales|sold\b/.test(q) && !/\bprofit|made|make|earn/.test(q)
-      ? `Revenue ${where} is ${b.money(t.revenue)} from ${plural(t.salesCount, 'sale')} (${plural(t.unitsSold, 'unit')}).`
-      : `You've made ${b.money(t.netProfit)} in net profit ${where}, from ${b.money(t.revenue)} in sales.`;
-    return b.answer('profit', headline, {
+    if (wantsRevenue) {
+      return b.answer('revenue', `Your total sales ${where} were ${b.money(t.revenue)}, from ${plural(t.salesCount, 'sale')} (${plural(t.unitsSold, 'unit')}).`, {
+        details: ['Sales revenue is before any costs, so it isn’t profit.'],
+        calculation: revenueCalculation(cc, sales, range, scopeLabel),
+        followUps: ['How much profit did I make in the same period?'.replace('in the same period', range.label)],
+      });
+    }
+    return b.answer('profit', `Your realized profit ${where} was ${b.money(t.netProfit)}${t.netProfit < 0 ? ' (a loss)' : ''}.`, {
       details: [
-        `Revenue ${b.money(t.revenue)} − cost of goods ${b.money(t.costOfGoods)} − fees ${b.money(t.fees)} − shipping ${b.money(t.shipping)} − other ${b.money(t.otherExpenses)} = ${b.money(t.netProfit)} net profit.`,
         `Profit margin ${formatPercent(t.margin)} · ROI ${formatPercent(t.roi)} · ${plural(t.salesCount, 'sale')}, ${plural(t.unitsSold, 'unit')}.`,
-        ...(explicit ? [] : ['No time period was mentioned, so this covers all time. Try "this month" or "last 30 days".']),
-        'This is realized profit from recorded sales only — unsold inventory is not included.',
+        'This is realized profit from recorded sales only. Unsold inventory and marketplace payouts are not part of it.',
       ],
-      followUps: ['Which items are making me the most money?', 'Which platform earns me the most?'],
+      calculation: profitCalculation(cc, sales, range, scopeLabel),
+      followUps: ['Which items are making me the most money?', 'What are my biggest selling expenses?'],
     });
   }
 
@@ -488,6 +693,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     return b.answer('item', `Here's what I know about ${item.name}${item.sku ? ` (${item.sku})` : ''}.`, {
       details,
       items: [{ id: item.id, name: item.name }],
+      calculation: sales.length ? profitCalculation(cc, sales, periodRange('all', today), `from ${item.name}`) : undefined,
     });
   }
 
