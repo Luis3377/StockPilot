@@ -23,6 +23,7 @@ import { addDays, formatDate, periodRange, todayISO, type DateRange } from '../d
 import { formatMoney, formatPercent, roundMoney } from '../domain/money';
 import type { AppData, Item, Settings } from '../domain/types';
 import { buildInsights, lowMarginSection } from './rules';
+import { explainPayout, reconcile } from '../domain/reconcile';
 import { plural, pluralWord } from '../domain/format';
 import { TERMS, type TermKey } from '../domain/terms';
 
@@ -186,6 +187,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
         'Inventory discrepancies from Count Check',
         'A summary of any item by name or SKU',
         'What a number means ("what does projected profit mean?")',
+        'Why an eBay payout doesn’t match your records ("why doesn’t my eBay payout match?")',
       ],
       followUps: SUGGESTED_QUESTIONS.slice(0, 4),
     });
@@ -212,6 +214,26 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
     return b.answer('definitions', asked.length === 1 ? `${TERMS[keys[0]].label}: ${TERMS[keys[0]].definition}` : 'StockPilot keeps these figures separate, because they answer different questions:', {
       details: asked.length === 1 ? [] : keys.map((k) => `${TERMS[k].label}: ${TERMS[k].definition}`),
       followUps: ['How much money do I have invested in unsold inventory?', 'What is my inventory worth?'],
+    });
+  }
+
+  // --- Payout reconciliation ------------------------------------------------
+  // The answer is the reconciliation engine's own figures and findings, word for word: nothing
+  // here calculates or estimates an amount.
+  if (/\bpayouts?\b/.test(q) || /\b(ebay|marketplace)\b.*\b(paid|pay|deposit|transfer)/.test(q)) {
+    const r = reconcile(data, settings.currency);
+    if (!r.payouts.length) {
+      return b.answer('payouts', 'You haven’t imported any eBay payout or transaction reports yet, so there’s nothing to compare.', {
+        details: ['Open Sales & Profit → Payouts and import the Transaction report and Payout report from eBay Seller Hub (Payments → Reports).'],
+      });
+    }
+    const named = r.payouts.find((p) => q.includes(p.ref.toLowerCase()));
+    const target = named ?? r.payouts.find((p) => p.status === 'unreconciled') ?? r.payouts.find((p) => p.status === 'needs_review') ?? r.payouts[0];
+    const [headline, ...rest] = explainPayout(target, settings.currency);
+    const others = r.payouts.filter((p) => p !== target && p.status === 'unreconciled').length;
+    return b.answer('payouts', headline, {
+      details: [...rest, ...(others ? [`${others} other payout${others === 1 ? ' is' : 's are'} unreconciled too.`] : []), 'Open Sales & Profit → Payouts to see the report rows and sales behind each figure.'],
+      followUps: ['How much profit have I made this month?'],
     });
   }
 
