@@ -245,7 +245,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
             </Button>
           }
         >
-          A sale is recorded against an item in your inventory. Add the item first (or restock one that’s sold out).
+          A sale is recorded against an item in your inventory. Add the item first (or restock one that’s out of stock).
         </EmptyState>
       ) : (
         <form id="sale-form-el" onSubmit={submit} noValidate className="grid grid-cols-1 gap-5 md:grid-cols-[1fr_260px]">

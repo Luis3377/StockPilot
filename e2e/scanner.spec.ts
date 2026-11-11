@@ -99,7 +99,7 @@ const field = (page: Page, label: string) => page.getByTestId('item-form').getBy
 async function expectMoneyAndQuantityUntouched(page: Page) {
   await expect(page.getByTestId('item-form').getByRole('textbox', { name: 'Quantity', exact: true })).toHaveValue('1');
   await expect(page.getByTestId('item-form').getByLabel('Cost per item')).toHaveValue('');
-  const prices = await page.getByTestId('item-form').getByLabel(/Asking price|Selling price|Estimated value/).all();
+  const prices = await page.getByTestId('item-form').getByLabel(/Asking price|Selling price|market value/).all();
   expect(prices.length).toBeGreaterThan(0);
   for (const price of prices) await expect(price).toHaveValue('');
 }
@@ -602,21 +602,41 @@ test('the invite code is never included in backups', async ({ page }) => {
   expect(text).not.toContain(CODE_KEY);
 });
 
-test('scanner panel and result fit a phone screen', async ({ page }) => {
+test('scanner panel and result fit phone screens, with long names shown in full', async ({ page }) => {
   test.skip(!isMobile(page), 'phone layout only');
-  await mockScanner(page, [success(ITEM_TYPES[0].result)]);
+  const LONG = 'Stanley Quencher H2.0 FlowState Stainless Steel Vacuum Insulated Tumbler with Lid and Straw 40 oz Rose Quartz';
+  await mockScanner(page, [success({ ...ITEM_TYPES[0].result, name: LONG, brand: 'Stanley', model: 'Quencher H2.0 FlowState 40 oz', category: 'Drinkware' })]);
   await onboard(page, 'Reseller');
-  await saveCode(page);
   const dialog = await startScan(page);
+  const body = dialog.locator('.overflow-y-auto').first();
+  const fits = async (state: string) => {
+    for (const width of [320, 375, 390, 414]) {
+      await page.setViewportSize({ width, height: 800 });
+      await noHorizontalOverflow(page);
+      const sideways = await body.evaluate((el) => el.scrollWidth - el.clientWidth);
+      expect(sideways, `${state} at ${width}px`).toBeLessThanOrEqual(1);
+      const panel = await dialog.getByTestId('scan-panel').boundingBox();
+      expect(panel!.x + panel!.width, `${state} at ${width}px`).toBeLessThanOrEqual(width);
+    }
+  };
+
+  // Invite code step: the code field is 16px (no iOS zoom) and can shrink on narrow phones.
+  const code = dialog.getByLabel('Private beta: enter your invite code');
+  expect(parseFloat(await code.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+  await fits('invite code');
+  await code.fill(CODE);
+  await dialog.getByRole('button', { name: 'Save code' }).click();
+  await fits('ready');
   await dialog.getByRole('button', { name: 'Analyze photo' }).click();
   await expect(dialog.getByTestId('scan-result')).toBeVisible();
-  await noHorizontalOverflow(page);
-  const panel = await dialog.getByTestId('scan-panel').boundingBox();
-  const width = page.viewportSize()!.width;
-  expect(panel!.x).toBeGreaterThanOrEqual(0);
-  expect(panel!.x + panel!.width).toBeLessThanOrEqual(width);
-  const overflow = await dialog.getByTestId('scan-panel').evaluate((el) => el.scrollWidth - el.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
+  await fits('result');
+
+  // The suggested name is shown in full (wrapped, not cut off), and fills the form.
+  const shown = dialog.getByTestId('scan-result').locator('dd').first();
+  await expect(shown).toHaveText(LONG);
+  const style = await shown.evaluate((el) => ({ overflow: getComputedStyle(el).textOverflow, clipped: el.scrollWidth > el.clientWidth + 1 }));
+  expect(style).toEqual({ overflow: 'clip', clipped: false });
+  await expect(field(page, 'Item name')).toHaveValue(LONG);
 });
 
 test.describe('standard build (scanner off)', () => {

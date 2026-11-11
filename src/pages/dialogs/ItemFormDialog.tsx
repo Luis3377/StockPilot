@@ -285,8 +285,8 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
   const valueField = (
     <MoneyField
       key="value"
-      label="Estimated value (per item)"
-      hint="What one is worth today, if you know"
+      label="Est. market value (per item)"
+      hint="Optional. Your own estimate of what one is worth today. Kept separate from your asking price."
       currency={currency}
       value={form.estimatedValue}
       onChange={(v) => set('estimatedValue', v)}

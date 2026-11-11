@@ -20,6 +20,7 @@ import { useToast } from '../ui/Toast';
 import { useDialogs } from './dialogs/DialogHub';
 import { StatusBadge } from './InventoryPage';
 import { plural, pluralWord } from '../domain/format';
+import { TERMS } from '../domain/terms';
 
 const SOURCE_LABEL = { count_check: 'Count Check', manual: 'Adjustment', edit: 'Edited', restock: 'Restock', import: 'CSV import' } as const;
 
@@ -104,9 +105,16 @@ export function ItemDetailPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         <div>
-          <button type="button" onClick={() => photo && setZoom(true)} className="block w-full overflow-hidden rounded-3xl border border-line bg-surface-2" aria-label={photo ? 'Enlarge photo' : undefined}>
-            <ItemThumb photoId={photo} name={item.name} variant="full" className="aspect-square w-full" />
-          </button>
+          {photo ? (
+            <button type="button" onClick={() => setZoom(true)} className="block w-full overflow-hidden rounded-3xl border border-line bg-surface-2" aria-label="Enlarge photo">
+              <ItemThumb photoId={photo} name={item.name} variant="full" className="aspect-square w-full" />
+            </button>
+          ) : (
+            // No photo: a placeholder, not a button (there's nothing to enlarge).
+            <div className="block w-full overflow-hidden rounded-3xl border border-line bg-surface-2">
+              <ItemThumb name={item.name} variant="full" className="aspect-square w-full" />
+            </div>
+          )}
           {item.photoIds.length > 1 && (
             <div className="mt-2 flex gap-2 overflow-x-auto">
               {item.photoIds.map((pid, i) => (
@@ -138,7 +146,7 @@ export function ItemDetailPage() {
                 </span>
               )}
             </div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-3xl" data-testid="item-title">
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight break-words text-ink sm:text-3xl" data-testid="item-title">
               {item.name}
             </h1>
             <p className="mt-1 text-sm text-muted">{item.sku}</p>
@@ -181,10 +189,10 @@ export function ItemDetailPage() {
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Fact label="On hand" value={String(item.quantity)} testId="item-quantity" />
-            <Fact label="Cost per item" value={money(item.unitCost)} />
-            <Fact label="Total cost" value={money(itemCostValue(item))} />
-            <Fact label="Asking price" value={item.askingPrice === null ? 'Not set' : money(item.askingPrice)} />
-            <Fact label="Estimated value" value={item.estimatedValue === null ? 'Not set' : money(item.estimatedValue)} />
+            <Fact label="Cost per item" value={money(item.unitCost)} hint="What you paid for one" />
+            <Fact label={TERMS.inventoryCost.label} value={money(itemCostValue(item))} hint={`Cost × ${item.quantity} on hand`} />
+            <Fact label="Asking price" value={item.askingPrice === null ? 'Not set' : money(item.askingPrice)} hint="Your listed price, per item" />
+            <Fact label={TERMS.marketValue.label} value={item.estimatedValue === null ? 'Not set' : money(item.estimatedValue)} hint="Your own estimate, per item" />
             <Fact
               label="Projected profit / item"
               value={unitProfit === null ? '—' : money(unitProfit)}
@@ -320,7 +328,7 @@ function Fact({ label, value, hint, tone, testId }: { label: string; value: stri
   return (
     <div className="rounded-2xl border border-line bg-surface p-3 shadow-card">
       <div className="text-xs text-ink-2">{label}</div>
-      <div className={`mt-1 text-lg font-semibold ${tone === 'bad' ? 'text-bad-text' : 'text-ink'}`} data-testid={testId}>
+      <div className={`mt-1 text-lg font-semibold break-words ${tone === 'bad' ? 'text-bad-text' : 'text-ink'}`} data-testid={testId}>
         {value}
       </div>
       {hint && <div className="mt-0.5 text-[11px] text-muted">{hint}</div>}

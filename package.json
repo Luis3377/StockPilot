@@ -2,7 +2,7 @@
   "name": "stockpilot",
   "private": true,
   "version": "0.1.0",
-  "description": "StockPilot \u2014 know what you own, know what it's worth, and know what you're making.",
+  "description": "StockPilot — know what you own, know what it's worth, and know what you're making.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,6 +23,7 @@
     "react-router-dom": "7.18.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "^24.19.2",

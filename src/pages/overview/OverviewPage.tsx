@@ -1,25 +1,23 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Boxes, ClipboardCheck, DollarSign, Gem, Package, PackagePlus, Receipt, ShoppingBag, TrendingUp, Wallet } from 'lucide-react';
 import { categoryLabel, inventoryTotals, isLowStock, mostCommon, nameKey, projectUnsold, salesByItem, salesInRange, splitDiscrepancies, totalSales } from '../../domain/calc';
-import { formatDate, periodRange, PERIOD_OPTIONS, previousPeriodRange, todayISO, type PeriodKey } from '../../domain/dates';
+import { formatDate, periodRange, previousPeriodRange, todayISO, type PeriodKey } from '../../domain/dates';
 import { formatNumber, formatPercent } from '../../domain/money';
 import { useAppState } from '../../data/store';
 import { modeInfo, salesEnabled } from '../../lib/modes';
-import { useInsights, useMoney } from '../../lib/hooks';
-import { usePersistentState } from '../../lib/usePersistentState';
+import { useInsights, useMoney, useReportingPeriod } from '../../lib/hooks';
 import { PageHeader, Card, SectionHeader } from '../../ui/Card';
 import { Button } from '../../ui/Button';
-import { Delta, StatTile, REALIZED, PROJECTED, ESTIMATED } from '../../ui/Stat';
+import { CURRENT, Delta, StatTile, REALIZED, PROJECTED, ESTIMATED } from '../../ui/Stat';
+import { TERMS } from '../../domain/terms';
 import { PeriodPicker } from '../../ui/PeriodPicker';
 import { BarList, ChartCard, LineChart, StockMeter } from '../../ui/charts';
 import { ItemThumb } from '../../ui/Photo';
 import { Badge } from '../../ui/Badge';
 import { useDialogs } from '../dialogs/DialogHub';
-import { AlertStrip, CategoryProfit, GetStarted, MonthlyTrend, RecentSales, SlowMovers } from './widgets';
+import { AlertStrip, CategoryProfit, Definitions, GetStarted, MonthlyTrend, RecentSales, SlowMovers } from './widgets';
 import { DeviceNotice } from '../DeviceNotice';
-import { plural, pluralWord } from '../../domain/format';
-
-const PERIOD_KEYS = PERIOD_OPTIONS.map((p) => p.key);
+import { plural } from '../../domain/format';
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -30,7 +28,7 @@ export function OverviewPage() {
   const data = useAppState((s) => s.data);
   const settings = useAppState((s) => s.settings);
   const dialogs = useDialogs();
-  const [period, setPeriod] = usePersistentState<PeriodKey>('overview-period', 'this_month', PERIOD_KEYS);
+  const [period, setPeriod] = useReportingPeriod();
   const canSell = salesEnabled(settings);
 
   return (
@@ -91,12 +89,12 @@ function ResellerOverview({ period, setPeriod }: PeriodProps) {
 
   return (
     <>
-      <AlertStrip />
+      <AlertStrip period={period} />
       <PeriodPicker value={period} onChange={setPeriod} />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-1" data-testid="hero-profit">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-ink-2">Net profit {range.label}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-ink-2">Realized profit {range.label}</span>
             <Badge tone="good">Realized</Badge>
           </div>
           <div className={`mt-2 text-5xl font-semibold tracking-tight ${t.netProfit < 0 ? 'text-bad-text' : 'text-ink'}`} data-testid="hero-profit-value">
@@ -110,37 +108,44 @@ function ResellerOverview({ period, setPeriod }: PeriodProps) {
               <Delta current={t.netProfit} previous={prev.netProfit} format={money} label={prevRange.label} />
             </p>
           )}
-          <p className="mt-3 text-xs text-muted">After cost of goods, marketplace fees, shipping and other expenses.</p>
+          <p className="mt-3 text-xs text-muted">Net profit from completed sales: revenue − what the items cost you − marketplace fees − shipping − other expenses.</p>
         </Card>
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
           <StatTile label={`Revenue ${range.label}`} value={money(t.revenue)} tag={REALIZED} icon={<DollarSign className="size-4" />} testId="stat-revenue" />
           <StatTile label={`Items sold ${range.label}`} value={formatNumber(t.unitsSold)} sub={plural(t.salesCount, 'sale')} icon={<ShoppingBag className="size-4" />} testId="stat-sold" />
-          <StatTile label="Inventory cost" value={money(inv.costValue)} sub="What you paid for unsold stock" icon={<Wallet className="size-4" />} testId="stat-inventory-cost" />
           <StatTile
-            label="Est. selling value"
+            label={TERMS.inventoryCost.label}
+            value={money(inv.costValue)}
+            tag={CURRENT}
+            sub="What you paid for unsold stock"
+            info={TERMS.inventoryCost.definition}
+            icon={<Wallet className="size-4" />}
+            testId="stat-inventory-cost"
+          />
+          <StatTile
+            label={TERMS.totalAsking.label}
             value={money(inv.askingValue)}
-            tag={PROJECTED}
-            sub={inv.itemsMissingAsking ? `${plural(inv.itemsMissingAsking, 'item')} ${pluralWord(inv.itemsMissingAsking, 'has', 'have')} no asking price` : 'At your asking prices'}
+            tag={CURRENT}
+            sub={inv.itemsMissingAsking ? `Unsold stock at asking · ${plural(inv.itemsMissingAsking, 'item')} without an asking price not included` : 'Unsold stock at your asking prices'}
+            info={TERMS.totalAsking.definition}
             icon={<TrendingUp className="size-4" />}
             testId="stat-selling-value"
           />
           <StatTile
-            label="Items in stock"
+            label="Units in stock"
             value={formatNumber(inv.unitsInStock)}
+            tag={CURRENT}
             sub={plural(inv.itemsInStock, 'listing')}
             icon={<Boxes className="size-4" />}
             testId="stat-in-stock"
           />
           <StatTile
-            label="Potential profit on unsold"
+            label={TERMS.projectedProfit.label}
             value={money(projection.projectedProfit)}
             tag={PROJECTED}
             tone={projection.projectedProfit < 0 ? 'bad' : 'default'}
-            sub={
-              projection.rate.source === 'none'
-                ? 'Before selling fees (no fee history yet)'
-                : `After ~${formatPercent(projection.rate.percent, 0)} selling costs`
-            }
+            sub={`If unsold stock sells at asking${projection.rate.source === 'none' ? ', before selling fees (no fee history yet)' : `, after ~${formatPercent(projection.rate.percent, 0)} selling costs`}${projection.itemsExcluded ? ` · ${plural(projection.itemsExcluded, 'item')} without an asking price not included` : ''}`}
+            info={TERMS.projectedProfit.definition}
             icon={<TrendingUp className="size-4" />}
             testId="stat-projected-profit"
           />
@@ -154,6 +159,7 @@ function ResellerOverview({ period, setPeriod }: PeriodProps) {
         <SlowMovers data={data} />
         <RecentSales sales={data.sales} />
       </div>
+      <Definitions keys={['realizedProfit', 'margin', 'inventoryCost', 'totalAsking', 'projectedProfit', 'marketValue']} />
     </>
   );
 }
@@ -196,7 +202,7 @@ function CollectorOverview() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Card className="p-5" data-testid="hero-collection-value">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-ink-2">Estimated collection value</span>
+            <span className="text-sm text-ink-2">{TERMS.marketValue.label} of your collection</span>
             <Badge tone="accent">Estimated</Badge>
           </div>
           <div className="mt-2 text-5xl font-semibold tracking-tight text-ink" data-testid="hero-collection-value-value">
@@ -212,21 +218,38 @@ function CollectorOverview() {
           </p>
         </Card>
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
-          <StatTile label="Items in collection" value={formatNumber(inv.unitsInStock)} sub={plural(inv.itemsInStock, 'unique item')} icon={<Gem className="size-4" />} testId="stat-collection-size" />
-          <StatTile label="Acquisition cost" value={money(inv.costValue)} sub="What you paid in total" icon={<Wallet className="size-4" />} testId="stat-acquisition-cost" />
+          <StatTile label="Items in collection" value={formatNumber(inv.unitsInStock)} tag={CURRENT} sub={plural(inv.itemsInStock, 'unique item')} icon={<Gem className="size-4" />} testId="stat-collection-size" />
+          <StatTile
+            label={TERMS.inventoryCost.label}
+            value={money(inv.costValue)}
+            tag={CURRENT}
+            sub="What you paid for what you still own"
+            info={TERMS.inventoryCost.definition}
+            icon={<Wallet className="size-4" />}
+            testId="stat-acquisition-cost"
+          />
           <StatTile
             label="Unrealized gain"
             value={money(gain)}
             tone={gain < 0 ? 'bad' : 'good'}
             tag={ESTIMATED}
-            sub="Estimated value − cost, valued items only"
+            sub="Est. market value − cost, valued items only"
+            info={`${TERMS.marketValue.definition} Unrealized gain is that estimate minus what you paid for the same items. It becomes real only when you sell.`}
             icon={<TrendingUp className="size-4" />}
             testId="stat-unrealized"
           />
           {settings.collectorSalesEnabled ? (
-            <StatTile label="Profit from sales" value={money(realized.netProfit)} tag={REALIZED} sub={`${plural(realized.unitsSold, 'item')} sold`} icon={<DollarSign className="size-4" />} testId="stat-realized" />
+            <StatTile
+              label="Realized profit (all time)"
+              value={money(realized.netProfit)}
+              tag={REALIZED}
+              sub={`${plural(realized.unitsSold, 'item')} sold`}
+              info={TERMS.realizedProfit.definition}
+              icon={<DollarSign className="size-4" />}
+              testId="stat-realized"
+            />
           ) : (
-            <StatTile label="Valued items" value={`${inv.itemsWithEstimate} / ${inv.itemsInStock}`} sub="Items with an estimated value" icon={<Package className="size-4" />} testId="stat-valued" />
+            <StatTile label="Valued items" value={`${inv.itemsWithEstimate} / ${inv.itemsInStock}`} tag={CURRENT} sub="Items with an est. market value" icon={<Package className="size-4" />} testId="stat-valued" />
           )}
         </div>
       </div>
@@ -236,13 +259,13 @@ function CollectorOverview() {
           title="Collection value over time"
           description="Items without an estimate are counted at cost"
           empty={snapshots.length < 2 ? 'Value history builds up as you use StockPilot — check back after a few days.' : undefined}
-          table={{ columns: ['Date', 'Estimated value', 'Cost'], rows: snapshots.map((s) => [formatDate(s.date), money(s.value), money(s.cost)]) }}
+          table={{ columns: ['Date', 'Est. market value', 'Cost'], rows: snapshots.map((s) => [formatDate(s.date), money(s.value), money(s.cost)]) }}
         >
           <LineChart
             ariaLabel="Collection value and cost over time"
             labels={snapshots.map((s) => formatDate(s.date).replace(/, \d{4}$/, ''))}
             series={[
-              { id: 'value', name: 'Estimated value', color: 'var(--series-1)', values: snapshots.map((s) => s.value) },
+              { id: 'value', name: 'Est. market value', color: 'var(--series-1)', values: snapshots.map((s) => s.value) },
               { id: 'cost', name: 'Cost', color: 'var(--series-2)', values: snapshots.map((s) => s.cost) },
             ]}
             format={money}
@@ -251,7 +274,7 @@ function CollectorOverview() {
         </ChartCard>
         <ChartCard
           title="Value by category"
-          description="Estimated value (or cost when not valued)"
+          description="Est. market value (cost when not valued) · today"
           empty={categoryRows.length === 0 ? 'Nothing in your collection yet.' : undefined}
           table={{ columns: ['Category', 'Value', 'Items'], rows: categoryRows.map(([k, v]) => [k, money(v.value), v.count]) }}
         >
@@ -261,7 +284,7 @@ function CollectorOverview() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card className="p-4 sm:p-5">
-          <SectionHeader title="Most valuable" as="h3" action={<ViewAll to="/inventory?sort=value" />} />
+          <SectionHeader title="Most valuable" description="By est. market value × quantity (cost when not valued)" as="h3" action={<ViewAll to="/inventory?sort=value" />} />
           <ItemRows
             rows={topValued.map((i) => ({
               id: i.id,
@@ -273,7 +296,7 @@ function CollectorOverview() {
           />
         </Card>
         <Card className="p-4 sm:p-5">
-          <SectionHeader title="Biggest changes in value" description="Estimated value vs. what you paid" as="h3" />
+          <SectionHeader title="Biggest changes in value" description="Est. market value vs. what you paid" as="h3" />
           {movers.length === 0 ? (
             <p className="mt-4 text-sm text-ink-2">Add estimated values to items to see gains and losses.</p>
           ) : (
@@ -291,6 +314,7 @@ function CollectorOverview() {
         </Card>
       </div>
       {settings.collectorSalesEnabled && <RecentSales sales={data.sales} />}
+      <Definitions keys={['marketValue', 'inventoryCost', ...(settings.collectorSalesEnabled ? (['realizedProfit'] as const) : [])]} />
     </>
   );
 }
@@ -316,19 +340,21 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
 
   return (
     <>
-      <AlertStrip />
+      <AlertStrip period={period} />
       <PeriodPicker value={period} onChange={setPeriod} />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Card className="p-5" data-testid="hero-inventory-value">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-ink-2">Inventory value at cost</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-ink-2">{TERMS.inventoryCost.label}</span>
+            <Badge tone="neutral">Today</Badge>
           </div>
           <div className="mt-2 text-5xl font-semibold tracking-tight text-ink" data-testid="hero-inventory-value-value">
             {money(inv.costValue)}
           </div>
           <p className="mt-2 text-sm text-ink-2">
-            {plural(inv.unitsInStock, 'unit')} across {plural(inv.itemsInStock, 'product')} · {money(inv.askingValue)} at selling price
+            {plural(inv.unitsInStock, 'unit')} across {plural(inv.itemsInStock, 'product')} · {money(inv.askingValue)} {TERMS.totalAsking.label.toLowerCase()}
           </p>
+          <p className="mt-3 text-xs text-muted">What you paid for the stock you have now (cost × quantity on hand).</p>
         </Card>
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
           <StatTile
@@ -339,9 +365,19 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
             icon={<DollarSign className="size-4" />}
             testId="stat-revenue"
           />
-          <StatTile label={`Net profit ${range.label}`} value={money(t.netProfit)} tone={t.netProfit < 0 ? 'bad' : 'default'} tag={REALIZED} sub={`${formatPercent(t.margin)} margin`} icon={<TrendingUp className="size-4" />} testId="stat-profit" />
+          <StatTile
+            label={`Realized profit ${range.label}`}
+            value={money(t.netProfit)}
+            tone={t.netProfit < 0 ? 'bad' : 'default'}
+            tag={REALIZED}
+            sub={`${formatPercent(t.margin)} margin ${range.label}`}
+            info={`${TERMS.realizedProfit.definition} ${TERMS.margin.definition}`}
+            icon={<TrendingUp className="size-4" />}
+            testId="stat-profit"
+          />
           <StatTile
             label="Low-stock products"
+            tag={CURRENT}
             value={String(inv.lowStockCount + inv.outOfStockCount)}
             tone={inv.lowStockCount + inv.outOfStockCount > 0 ? 'warn' : 'default'}
             sub={inv.outOfStockCount ? `${inv.outOfStockCount} out of stock` : 'At or below alert level'}
@@ -370,7 +406,9 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
                 <li key={i.id}>
                   <Link to={`/inventory/${i.id}`} className="block hover:opacity-80">
                     <div className="mb-1 flex justify-between gap-3 text-sm">
-                      <span className="truncate font-medium text-ink">{i.name}</span>
+                      <span className="line-clamp-2 min-w-0 font-medium break-words text-ink" title={i.name}>
+                        {i.name}
+                      </span>
                       <span className={`tabular shrink-0 ${i.quantity === 0 ? 'text-bad-text' : 'text-warn-text'}`}>
                         {i.quantity} left · alert at {i.lowStockThreshold}
                       </span>
@@ -383,7 +421,7 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
           )}
         </Card>
         <Card className="p-4 sm:p-5">
-          <SectionHeader title="Top products" description={`By net profit ${range.label}`} as="h3" />
+          <SectionHeader title="Top products" description={`By realized profit ${range.label}`} as="h3" />
           {topProducts.length === 0 ? (
             <p className="mt-4 text-sm text-ink-2">No sales {range.label}.</p>
           ) : (
@@ -398,6 +436,7 @@ function BusinessOverview({ period, setPeriod }: PeriodProps) {
         <MonthlyTrend sales={data.sales} />
         <RecentSales sales={data.sales} />
       </div>
+      <Definitions keys={['inventoryCost', 'totalAsking', 'realizedProfit', 'margin']} />
     </>
   );
 }
@@ -423,7 +462,9 @@ function ItemRows({ rows }: { rows: { id: string; name: string; photoId?: string
           <Link to={`/inventory/${r.id}`} className="flex items-center gap-3 py-2.5 hover:opacity-80">
             <ItemThumb photoId={r.photoId} name={r.name} className="size-10 shrink-0 rounded-lg" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-ink">{r.name}</p>
+              <p className="line-clamp-2 text-sm font-medium break-words text-ink" title={r.name}>
+                {r.name}
+              </p>
               <p className="truncate text-xs text-ink-2">{r.sub}</p>
             </div>
             <span className={`tabular shrink-0 text-sm font-medium ${r.tone === 'bad' ? 'text-bad-text' : r.tone === 'good' ? 'text-good-text' : 'text-ink'}`}>{r.value}</span>

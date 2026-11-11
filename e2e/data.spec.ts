@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Download, type Page } from '@playwright/test';
-import { addItem, nav, onboard } from './helpers';
+import { addItem, nav, onboard, reloadWhenSaved } from './helpers';
 
 async function text(download: Download): Promise<string> {
   return readFileSync(await download.path(), 'utf8');
@@ -84,7 +84,7 @@ test('backup and restore round-trip all data', async ({ page }) => {
   const file = JSON.parse(await text(backup));
   expect(file.format).toBe('stockpilot-backup');
   expect(file.data.items[0].name).toBe('Rookie card');
-  await expect(page.getByText(/Last backup: (?!never)/)).toBeVisible();
+  await expect(page.getByTestId('last-backup')).toContainText('(today) · up to date');
 
   // Erase everything (requires typing DELETE), then restore.
   await page.getByRole('button', { name: 'Erase all data' }).click();
@@ -145,16 +145,16 @@ test('demo data is clearly labeled and kept separate from real data', async ({ p
 test('a one-time notice explains that data stays in this browser', async ({ page }) => {
   await onboard(page, 'Reseller');
   const notice = page.getByTestId('device-notice');
-  await expect(notice).toContainText('Your data lives only in this browser. To move it to another device, use Download backup here and Restore on the other device.');
-  await notice.getByRole('link', { name: 'Go to Backup & restore' }).click();
-  await expect(page).toHaveURL(/#\/settings#backup$/);
-  await expect(page.getByRole('button', { name: 'Download backup' })).toBeInViewport();
+  await expect(notice).toContainText('Your data lives only in this browser on this device. Clearing website data, switching browsers or changing devices means you won’t see it.');
+  await notice.getByRole('link', { name: 'Protect your data' }).click();
+  await expect(page).toHaveURL(/#\/settings#data$/);
+  await expect(page.getByTestId('data-safety').getByRole('button', { name: 'Back up now' })).toBeInViewport();
 
   // Shown on the empty inventory screen too, until dismissed.
   await nav(page, 'Inventory');
   await page.getByTestId('device-notice').getByRole('button', { name: 'Got it' }).click();
   await expect(page.getByTestId('device-notice')).toHaveCount(0);
-  await page.reload();
+  await reloadWhenSaved(page);
   await nav(page, 'Overview');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(page.getByTestId('device-notice')).toHaveCount(0);

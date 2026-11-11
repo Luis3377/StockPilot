@@ -106,8 +106,20 @@ export class AppStore {
     this.channel?.postMessage({ from: TAB_ID, kind });
   }
 
+  private pendingWrites = 0;
+
+  /**
+   * Marks the page while writes are pending (`<html data-saving>`), so automated tests can
+   * wait for a save before reloading. Nothing in the UI depends on it.
+   */
+  private markSaving(delta: 1 | -1) {
+    this.pendingWrites += delta;
+    if (typeof document !== 'undefined') document.documentElement.toggleAttribute('data-saving', this.pendingWrites > 0);
+  }
+
   /** Queues a write so saves always land in the order changes were made. */
   private persist(write: () => Promise<void>, kind: 'data' | 'settings'): Promise<void> {
+    this.markSaving(1);
     this.saving = this.saving
       .then(write)
       .then(() => {
@@ -116,7 +128,8 @@ export class AppStore {
       })
       .catch((e: unknown) => {
         this.set({ saveError: e instanceof Error ? e.message : 'Your latest change could not be saved.' });
-      });
+      })
+      .finally(() => this.markSaving(-1));
     return this.saving;
   }
 

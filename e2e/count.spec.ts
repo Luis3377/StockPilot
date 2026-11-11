@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addItem, nav, onboard, openItem, recordSale } from './helpers';
+import { addItem, nav, onboard, openItem, recordSale, reloadWhenSaved } from './helpers';
 
 test('Count Check finds shortages and overages and applies approved adjustments', async ({ page }) => {
   await onboard(page, 'Small business');
@@ -25,7 +25,7 @@ test('Count Check finds shortages and overages and applies approved adjustments'
   await expect(page.getByTestId('count-net')).toContainText('-$3.00');
 
   // Progress is saved: reload keeps the draft.
-  await page.reload();
+  await reloadWhenSaved(page);
   await expect(page.getByTestId('count-missing')).toContainText('2 units');
 
   await page.getByRole('button', { name: 'Review & finish' }).click();
@@ -144,7 +144,7 @@ test('a count is flagged when stock changes after the item was counted', async (
   await expect(gadget).toContainText('+1');
 
   // Kept counts survive a reload (the snapshot is saved with the draft).
-  await page.reload();
+  await reloadWhenSaved(page);
   await expect(page.getByTestId('count-row').filter({ hasText: 'Gadget' })).toContainText('+1');
   await expect(page.getByTestId('count-changed')).toHaveCount(0);
 });

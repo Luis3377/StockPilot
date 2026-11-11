@@ -253,7 +253,7 @@ function Row({ label, value }: { label: string; value: string }) {
   return (
     <>
       <dt className="text-ink-2">{label}</dt>
-      <dd className="min-w-0 truncate font-medium text-ink">{value}</dd>
+      <dd className="min-w-0 font-medium break-words text-ink">{value}</dd>
     </>
   );
 }
@@ -349,7 +349,7 @@ export function InviteCodeForm({ provider = remoteScanProvider, onSaved }: { pro
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          className={cn(inputClass, 'h-10 border-line-strong font-mono text-sm')}
+          className={cn(inputClass, 'h-10 border-line-strong font-mono sm:text-sm')}
         />
         <Button variant="primary" size="md" onClick={() => void save()} loading={busy} disabled={!value.trim()}>
           Save code

@@ -1,15 +1,21 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Check, Database, Download, FileUp, FlaskConical, HardDrive, Monitor, Moon, RotateCcw, ShieldCheck, Sun, Trash2, Upload } from 'lucide-react';
-import { createBackup } from '../data/backup';
 import { store, useAppState } from '../data/store';
 import { adjustmentsCsv, inventoryCsv, profitSummaryCsv, salesCsv } from '../csv/exports';
 import { importTemplateCsv } from '../csv/inventoryImport';
 import { sellingCostRate } from '../domain/calc';
 import { formatDateTime, todayISO } from '../domain/dates';
+import { backupAgeText, backupStatus } from '../data/backupStatus';
+import { useBackup } from '../lib/useBackup';
+import { installContext } from '../lib/platform';
+import { DataRisks, Disclosure, HomeScreenAdvice, MoveDataSteps } from './DataSafety';
 import { formatPercent } from '../domain/money';
 import type { Settings, ThemePreference } from '../domain/types';
-import { CURRENCIES, MODES } from '../lib/modes';
+import { CURRENCIES, MODES, modeInfo } from '../lib/modes';
+import { useRadioGroup } from '../ui/useRadioGroup';
+
+const MODE_IDS = MODES.map((m) => m.id);
 import { downloadText, fileStamp } from '../lib/download';
 import { PageHeader, Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -89,7 +95,6 @@ export function SettingsPage() {
   const confirm = useConfirm();
   const toast = useToast();
   const location = useLocation();
-  const [busy, setBusy] = useState(false);
   const demo = dataset === 'demo';
   const prefix = `stockpilot-${demo ? 'demo-' : ''}`;
   const rate = sellingCostRate(data.sales, { sellingCostPercent: null });
@@ -103,23 +108,12 @@ export function SettingsPage() {
     toast.success(message);
   };
 
-  const backup = async () => {
-    setBusy(true);
-    try {
-      await store.flush();
-      const photos = await store.storage.listPhotos(dataset);
-      const file = createBackup(dataset, settings, data, photos);
-      downloadText(`${prefix}backup-${fileStamp()}.json`, JSON.stringify(file), 'application/json');
-      if (!demo) store.updateSettings({ lastBackupAt: new Date().toISOString() });
-      toast.success(`Backup downloaded: ${plural(data.items.length, 'item')}, ${plural(data.sales.length, 'sale')}, ${plural(file.photos.length, 'photo')}.`);
-    } catch {
-      toast.error('The backup could not be created.');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { backup, busy } = useBackup();
+  const status = backupStatus(data, settings.lastBackupAt);
+  const context = installContext();
 
   const withoutThreshold = data.items.filter((i) => i.lowStockThreshold === null).length;
+  const modeRadio = useRadioGroup(MODE_IDS, settings.mode, (m) => save({ mode: m }, `Switched to ${modeInfo(m).name} mode. Your inventory is unchanged.`));
 
   return (
     <>
@@ -133,6 +127,7 @@ export function SettingsPage() {
                 type="button"
                 role="radio"
                 aria-checked={settings.mode === m.id}
+                {...modeRadio(m.id)}
                 onClick={() => settings.mode !== m.id && save({ mode: m.id }, `Switched to ${m.name} mode. Your inventory is unchanged.`)}
                 className={cn('rounded-2xl border p-4 text-left transition-colors', settings.mode === m.id ? 'border-accent bg-accent-soft' : 'border-line hover:bg-surface-2')}
               >
@@ -234,38 +229,68 @@ export function SettingsPage() {
         </Section>
 
         <Section id="data" title="Your data" description={demo ? 'You’re in demo mode, so these actions apply to the sample data.' : 'Import, export and back up your records.'}>
-          <div className={cn('mb-4 flex gap-3 rounded-2xl p-4 text-sm', storageKind === 'memory' ? 'bg-bad-soft text-bad-text' : 'bg-surface-2 text-ink-2')}>
-            <HardDrive className="mt-0.5 size-5 shrink-0" />
-            <div>
-              {storageKind === 'memory' ? (
-                <p>This browser is blocking storage, so nothing is being saved. Leave private browsing or allow site data.</p>
-              ) : (
-                <>
-                  <p>
-                    <strong className="text-ink">Stored only on this device, in this browser.</strong> Clearing browser data or uninstalling the browser will delete it. Download a backup regularly and keep it somewhere safe.
-                  </p>
-                  <p className="mt-2 flex flex-wrap items-center gap-2">
-                    <span>Last backup: {settings.lastBackupAt ? formatDateTime(settings.lastBackupAt) : 'never'}</span>
+          {storageKind === 'memory' ? (
+            <div className="mb-4 flex gap-3 rounded-2xl bg-bad-soft p-4 text-sm text-bad-text" role="alert">
+              <HardDrive className="mt-0.5 size-5 shrink-0" />
+              <p>This browser is blocking storage (private browsing or blocked website data), so nothing is being saved. Open StockPilot in a normal window or allow website data.</p>
+            </div>
+          ) : (
+            <div className="mb-4 space-y-3" data-testid="data-safety">
+              <div className="rounded-2xl bg-surface-2 p-4 text-sm text-ink-2">
+                <p className="flex items-start gap-2">
+                  <HardDrive className="mt-0.5 size-4 shrink-0 text-accent" />
+                  <span>
+                    <strong className="text-ink">Where your inventory is saved:</strong> only in {context === 'ios-home-screen' ? 'this Home Screen app' : 'this browser'} on this device. There’s
+                    no account or cloud copy yet{demo ? ' (demo data is kept separately)' : ''}.
+                  </span>
+                </p>
+                <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-[auto_1fr]">
+                  <dt className="text-ink">Last backup</dt>
+                  <dd data-testid="last-backup">
+                    {settings.lastBackupAt ? `${formatDateTime(settings.lastBackupAt)} (${backupAgeText(settings.lastBackupAt)})` : 'never'}
+                    {settings.lastBackupAt && status.records > 0 && (status.changedSinceBackup ? ' · changes since then aren’t backed up' : ' · up to date')}
+                  </dd>
+                  <dt className="text-ink">Browser protection</dt>
+                  <dd className="flex flex-wrap items-center gap-2" data-testid="persist-status">
                     {persistGranted ? (
                       <Badge tone="good" icon={<ShieldCheck className="size-3" />}>
                         Protected from automatic cleanup
                       </Badge>
-                    ) : (
-                      persistGranted === false && (
+                    ) : persistGranted === false ? (
+                      <>
+                        <span>Not granted by this browser, so backups are your protection.</span>
                         <button
                           type="button"
                           className="text-xs font-medium text-accent-text underline"
-                          onClick={async () => toast.info((await store.requestPersistence()) ? 'The browser will keep your data unless you clear it.' : 'The browser didn’t grant extra protection. Keep regular backups.')}
+                          onClick={async () => toast.info((await store.requestPersistence()) ? 'The browser will keep your data unless you clear it yourself.' : 'The browser didn’t grant extra protection. Keep regular backups.')}
                         >
-                          Ask the browser to protect it
+                          Ask again
                         </button>
-                      )
+                      </>
+                    ) : (
+                      <span>Not available in this browser, so backups are your protection.</span>
                     )}
-                  </p>
-                </>
-              )}
+                  </dd>
+                </dl>
+                <p className="mt-2 text-xs">
+                  “Protected” means the browser won’t remove the data on its own to free space. You (or someone with the device) can still delete it, so keep backups either way.
+                </p>
+                <div className="mt-3">
+                  <Button variant="primary" size="sm" icon={<Download className="size-4" />} onClick={() => void backup()} loading={busy}>
+                    Back up now
+                  </Button>
+                </div>
+              </div>
+              <HomeScreenAdvice context={context} />
+              <Disclosure title="What could make my inventory disappear?" testId="risks-disclosure">
+                <DataRisks context={context} />
+                <p className="mt-2">A backup file kept somewhere else (Files, iCloud Drive, Google Drive or email) is the way to get everything back.</p>
+              </Disclosure>
+              <Disclosure title="Moving to a new phone, another browser, or the Home Screen app" testId="move-disclosure">
+                <MoveDataSteps />
+              </Disclosure>
             </div>
-          </div>
+          )}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <ActionGroup id="backup" title="Backup & restore" icon={<Database className="size-4" />}>
               <Button variant="primary" icon={<Download className="size-4" />} onClick={() => void backup()} loading={busy}>
@@ -274,7 +299,9 @@ export function SettingsPage() {
               <Button icon={<Upload className="size-4" />} onClick={dialogs.restoreBackup}>
                 Restore from backup
               </Button>
-              <p className="w-full text-xs text-muted">A backup includes items, photos, sales, counts and settings.</p>
+              <p className="w-full text-xs text-muted">
+                A backup is one .json file with your items, photos, sales, counts and settings. Restoring it replaces the data here. Your invite code for the AI scanner isn’t included.
+              </p>
             </ActionGroup>
             <ActionGroup title="Import" icon={<FileUp className="size-4" />}>
               <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv}>

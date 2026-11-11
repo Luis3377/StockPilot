@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addItem, contrastRatio, isMobile, nav, onboard, openItem, solidPng } from './helpers';
+import { addItem, contrastRatio, isMobile, nav, onboard, openItem, solidPng, reloadWhenSaved } from './helpers';
 
 // 1×1 PNG.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -87,7 +87,7 @@ test('edit an item and see calculations update everywhere', async ({ page }) => 
   await dialog.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByTestId('item-title')).toHaveText('Brass desk lamp');
   await expect(page.getByTestId('item-quantity')).toHaveText('5');
-  await expect(page.getByText('Total cost')).toBeVisible();
+  await expect(page.getByText('Inventory cost', { exact: true })).toBeVisible();
   await expect(page.getByText('$60.00').first()).toBeVisible();
   // The quantity change is logged.
   await expect(page.getByText('Edited: 4 → 5')).toBeVisible();
@@ -125,7 +125,7 @@ test('photos can be added, shown and kept after reload', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Add item' }).click();
   await nav(page, 'Collection');
   await expect(page.getByTestId('inventory-item').locator('img')).toHaveCount(1);
-  await page.reload();
+  await reloadWhenSaved(page);
   await expect(page.getByTestId('inventory-item').locator('img')).toHaveAttribute('src', /^data:image\/jpeg/);
 });
 
