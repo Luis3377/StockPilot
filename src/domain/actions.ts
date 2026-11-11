@@ -376,6 +376,8 @@ export interface SaleInput {
   salePrice: number | null;
   priceMode: PriceMode;
   platform?: string;
+  /** Marketplace order number, for matching payouts. Optional. */
+  orderNumber?: string;
   fees?: number | null;
   shipping?: number | null;
   otherExpenses?: number | null;
@@ -388,6 +390,7 @@ interface SaleFields {
   salePrice: number;
   priceMode: PriceMode;
   platform: string;
+  orderNumber: string;
   fees: number;
   shipping: number;
   otherExpenses: number;
@@ -404,6 +407,7 @@ function validateSaleFields(input: SaleInput, otherSales: Sale[], v: FieldErrors
     v.add('priceMode', 'Choose whether the price is per item or the total.');
   }
   const platform = v.check(() => optionalText(input.platform, 'platform', 'Platform', 80));
+  const orderNumber = v.check(() => optionalText(input.orderNumber, 'orderNumber', 'Order number', 80));
   const fees = v.check(() => requireMoney(input.fees ?? 0, 'fees', 'Marketplace fees'));
   const shipping = v.check(() => requireMoney(input.shipping ?? 0, 'shipping', 'Shipping'));
   const otherExpenses = v.check(() => requireMoney(input.otherExpenses ?? 0, 'otherExpenses', 'Other expenses'));
@@ -415,6 +419,7 @@ function validateSaleFields(input: SaleInput, otherSales: Sale[], v: FieldErrors
     salePrice,
     priceMode: input.priceMode,
     platform: platform === undefined ? undefined : existingSpelling(platform, otherSales.map((s) => s.platform)),
+    orderNumber,
     fees,
     shipping,
     otherExpenses,

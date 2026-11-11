@@ -16,10 +16,24 @@ import { EmptyState } from '../../ui/EmptyState';
 import { useToast } from '../../ui/Toast';
 import { cn } from '../../ui/cn';
 
+/** Values to start a new sale with (e.g. from an eBay order in payout reconciliation). The user still checks and saves it. */
+export interface SalePrefill {
+  quantity?: number;
+  /** Total for the quantity. */
+  total?: number;
+  fees?: number;
+  shipping?: number;
+  saleDate?: string;
+  platform?: string;
+  orderNumber?: string;
+  notes?: string;
+}
+
 interface Props {
   open: boolean;
   itemId: string | null;
   saleId: string | null;
+  prefill?: SalePrefill | null;
   onClose: () => void;
   onAddItem: () => void;
 }
@@ -30,6 +44,7 @@ interface FormState {
   salePrice: string;
   priceMode: PriceMode;
   platform: string;
+  orderNumber: string;
   fees: string;
   feeMode: 'amount' | 'percent';
   shipping: string;
@@ -40,7 +55,7 @@ interface FormState {
 
 const text = (n: number) => (n === 0 ? '' : String(n));
 
-function initial(sale: Sale | undefined, itemId: string | null, askingPrice: number | null): FormState {
+function initial(sale: Sale | undefined, itemId: string | null, askingPrice: number | null, prefill?: SalePrefill | null): FormState {
   if (sale) {
     return {
       itemId: sale.itemId,
@@ -48,6 +63,7 @@ function initial(sale: Sale | undefined, itemId: string | null, askingPrice: num
       salePrice: String(sale.salePrice),
       priceMode: sale.priceMode,
       platform: sale.platform,
+      orderNumber: sale.orderNumber,
       fees: text(sale.fees),
       feeMode: 'amount',
       shipping: text(sale.shipping),
@@ -56,12 +72,29 @@ function initial(sale: Sale | undefined, itemId: string | null, askingPrice: num
       notes: sale.notes,
     };
   }
+  if (prefill) {
+    return {
+      itemId: itemId ?? '',
+      quantity: String(prefill.quantity ?? 1),
+      salePrice: prefill.total === undefined ? '' : prefill.total.toFixed(2),
+      priceMode: 'total',
+      platform: prefill.platform ?? '',
+      orderNumber: prefill.orderNumber ?? '',
+      fees: prefill.fees ? prefill.fees.toFixed(2) : '',
+      feeMode: 'amount',
+      shipping: prefill.shipping ? prefill.shipping.toFixed(2) : '',
+      otherExpenses: '',
+      saleDate: prefill.saleDate ?? todayISO(),
+      notes: prefill.notes ?? '',
+    };
+  }
   return {
     itemId: itemId ?? '',
     quantity: '1',
     salePrice: askingPrice === null ? '' : String(askingPrice),
     priceMode: 'per_unit',
     platform: '',
+    orderNumber: '',
     fees: '',
     feeMode: 'amount',
     shipping: '',
@@ -76,21 +109,21 @@ const num = (s: string) => {
   return v === null || Number.isNaN(v) ? 0 : v;
 };
 
-export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Props) {
+export function SaleFormDialog({ open, itemId, saleId, prefill, onClose, onAddItem }: Props) {
   const data = useAppState((s) => s.data);
   const toast = useToast();
   const { money, currency } = useMoney();
   const sale = saleId ? data.sales.find((s) => s.id === saleId) : undefined;
   const presetItem = itemId ? data.items.find((i) => i.id === itemId) : undefined;
-  const [form, setForm] = useState<FormState>(() => initial(sale, itemId, presetItem?.askingPrice ?? null));
+  const [form, setForm] = useState<FormState>(() => initial(sale, itemId, presetItem?.askingPrice ?? null, prefill));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [priceTouched, setPriceTouched] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setForm(initial(sale, itemId, presetItem?.askingPrice ?? null));
+      setForm(initial(sale, itemId, presetItem?.askingPrice ?? null, prefill));
       setErrors({});
-      setPriceTouched(Boolean(sale));
+      setPriceTouched(Boolean(sale || prefill?.total !== undefined));
     }
   }, [open, saleId, itemId]);
 
@@ -165,6 +198,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
       salePrice,
       priceMode: form.priceMode,
       platform: form.platform,
+      orderNumber: form.orderNumber,
       fees: feesRaw === null ? null : form.feeMode === 'percent' ? feeAmount : feesRaw,
       shipping: moneyOrNull('shipping'),
       otherExpenses: moneyOrNull('otherExpenses'),
@@ -301,7 +335,18 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
                 )}
               </div>
             </div>
-            <TextField label="Where did it sell?" placeholder="e.g. eBay" value={form.platform} onChange={(v) => set('platform', v)} suggestions={platforms} error={errors.platform} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <TextField label="Where did it sell?" placeholder="e.g. eBay" value={form.platform} onChange={(v) => set('platform', v)} suggestions={platforms} error={errors.platform} />
+              <TextField
+                label="Order number (optional)"
+                placeholder="e.g. 12-34567-89012"
+                value={form.orderNumber}
+                onChange={(v) => set('orderNumber', v)}
+                error={errors.orderNumber}
+                hint="Matches this sale to marketplace payouts"
+                maxLength={80}
+              />
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 {form.feeMode === 'amount' ? (

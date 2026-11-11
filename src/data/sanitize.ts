@@ -6,6 +6,7 @@ import { isValidISODate } from '../domain/dates';
 import { newId } from '../domain/ids';
 import {
   defaultSettings,
+  emptyMarketplace,
   type Adjustment,
   type AdjustmentSource,
   type AppData,
@@ -18,7 +19,15 @@ import {
   type LotExtraCost,
   type LotLine,
   type LotLineChange,
+  type MarketplaceData,
+  type MarketplaceImport,
+  type MarketplacePayout,
+  type MarketplaceTxn,
+  type MarketplaceTxnKind,
+  type ReconciliationEvent,
+  type ReconciliationReview,
   type Sale,
+  type SaleMatch,
   type Settings,
   type ValueSnapshot,
 } from '../domain/types';
@@ -113,6 +122,8 @@ function sanitizeSale(raw: unknown, n: number): Sale {
     priceMode,
     unitCost: num(raw, 'unitCost', where, { min: 0 }),
     platform: str(raw, 'platform', where),
+    // Sales saved before order numbers existed have none.
+    orderNumber: str(raw, 'orderNumber', where),
     fees: num(raw, 'fees', where, { min: 0 }),
     shipping: num(raw, 'shipping', where, { min: 0 }),
     otherExpenses: num(raw, 'otherExpenses', where, { min: 0 }),
@@ -297,6 +308,133 @@ function sanitizeLot(raw: unknown, n: number): Lot {
   };
 }
 
+const TXN_KINDS: MarketplaceTxnKind[] = ['sale', 'refund', 'shipping_label', 'fee', 'claim', 'dispute', 'hold', 'charge', 'adjustment', 'credit', 'payout', 'other'];
+const strArr = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+
+function sanitizeTxn(raw: unknown, n: number): MarketplaceTxn {
+  const where = `Marketplace transaction ${n}`;
+  if (!isObj(raw)) fail(where, 'is not an object');
+  const kind = raw.kind as MarketplaceTxnKind;
+  if (!TXN_KINDS.includes(kind)) fail(where, `has an unknown kind "${String(raw.kind)}"`);
+  const fees = arr(raw, 'feeBreakdown', where)
+    .filter(isObj)
+    .filter((f) => typeof f.label === 'string' && typeof f.amount === 'number' && Number.isFinite(f.amount))
+    .map((f) => ({ label: f.label as string, amount: f.amount as number }));
+  return {
+    id: str(raw, 'id', where, true),
+    marketplace: 'ebay',
+    key: str(raw, 'key', where, true),
+    importIds: strArr(raw.importIds),
+    sourceRow: typeof raw.sourceRow === 'number' ? raw.sourceRow : 0,
+    kind,
+    rawType: str(raw, 'rawType', where),
+    date: date(raw, 'date', where),
+    orderNumber: str(raw, 'orderNumber', where),
+    legacyOrderId: str(raw, 'legacyOrderId', where),
+    transactionRef: str(raw, 'transactionRef', where),
+    referenceId: str(raw, 'referenceId', where),
+    itemId: str(raw, 'itemId', where),
+    title: str(raw, 'title', where),
+    customLabel: str(raw, 'customLabel', where),
+    quantity: optNum(raw, 'quantity', where, { integer: true }),
+    description: str(raw, 'description', where),
+    net: num(raw, 'net', where),
+    gross: optNum(raw, 'gross', where),
+    itemSubtotal: optNum(raw, 'itemSubtotal', where),
+    shippingAndHandling: optNum(raw, 'shippingAndHandling', where),
+    sellerCollectedTax: optNum(raw, 'sellerCollectedTax', where),
+    marketplaceCollectedTax: optNum(raw, 'marketplaceCollectedTax', where),
+    fees: optNum(raw, 'fees', where),
+    feeBreakdown: fees,
+    payoutId: str(raw, 'payoutId', where),
+    payoutDate: optDate(raw, 'payoutDate', where),
+    payoutStatus: str(raw, 'payoutStatus', where),
+    holdReason: str(raw, 'holdReason', where),
+    currency: str(raw, 'currency', where),
+    transactionCurrency: str(raw, 'transactionCurrency', where),
+  };
+}
+
+function sanitizePayout(raw: unknown, n: number): MarketplacePayout {
+  const where = `Payout ${n}`;
+  if (!isObj(raw)) fail(where, 'is not an object');
+  return {
+    id: str(raw, 'id', where, true),
+    marketplace: 'ebay',
+    key: str(raw, 'key', where, true),
+    importIds: strArr(raw.importIds),
+    payoutId: str(raw, 'payoutId', where, true),
+    date: optDate(raw, 'date', where),
+    amount: optNum(raw, 'amount', where),
+    status: str(raw, 'status', where),
+    method: str(raw, 'method', where),
+    currency: str(raw, 'currency', where),
+    payoutType: str(raw, 'payoutType', where),
+    memo: str(raw, 'memo', where),
+  };
+}
+
+function sanitizeImport(raw: unknown): MarketplaceImport | null {
+  if (!isObj(raw) || typeof raw.id !== 'string' || typeof raw.fingerprint !== 'string') return null;
+  const n = (k: string) => (typeof raw[k] === 'number' && Number.isFinite(raw[k]) ? (raw[k] as number) : 0);
+  const d = (k: string) => (typeof raw[k] === 'string' && isValidISODate(raw[k] as string) ? (raw[k] as string) : null);
+  return {
+    id: raw.id,
+    marketplace: 'ebay',
+    format: raw.format === 'ebay_payouts' ? 'ebay_payouts' : 'ebay_transactions',
+    fileName: typeof raw.fileName === 'string' ? raw.fileName : '',
+    fingerprint: raw.fingerprint,
+    importedAt: typeof raw.importedAt === 'string' ? raw.importedAt : '',
+    added: n('added'),
+    updated: n('updated'),
+    unchanged: n('unchanged'),
+    periodStart: d('periodStart'),
+    periodEnd: d('periodEnd'),
+  };
+}
+
+function sanitizeMatch(raw: unknown): SaleMatch | null {
+  if (!isObj(raw) || typeof raw.txnId !== 'string' || typeof raw.saleId !== 'string') return null;
+  return { id: typeof raw.id === 'string' ? raw.id : newId(), txnId: raw.txnId, saleId: raw.saleId, createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : '' };
+}
+
+function sanitizeReview(raw: unknown): ReconciliationReview | null {
+  if (!isObj(raw) || typeof raw.target !== 'string' || typeof raw.reason !== 'string') return null;
+  if (typeof raw.amount !== 'number' || !Number.isFinite(raw.amount)) return null;
+  const decision = raw.decision === 'not_tracked' || raw.decision === 'reviewed' ? raw.decision : 'resolved';
+  return {
+    id: typeof raw.id === 'string' ? raw.id : newId(),
+    target: raw.target,
+    decision,
+    reason: raw.reason,
+    amount: raw.amount,
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : '',
+    undoneAt: typeof raw.undoneAt === 'string' ? raw.undoneAt : null,
+  };
+}
+
+const EVENT_ACTIONS: ReconciliationEvent['action'][] = ['import', 'match', 'unmatch', 'review', 'undo_review'];
+
+function sanitizeEvent(raw: unknown): ReconciliationEvent | null {
+  if (!isObj(raw) || typeof raw.date !== 'string' || typeof raw.summary !== 'string') return null;
+  if (!EVENT_ACTIONS.includes(raw.action as ReconciliationEvent['action'])) return null;
+  return { id: typeof raw.id === 'string' ? raw.id : newId(), date: raw.date, action: raw.action as ReconciliationEvent['action'], summary: raw.summary, refs: strArr(raw.refs) };
+}
+
+/** Imported reports must be intact (they back financial figures); decisions and the log skip unreadable entries. */
+function sanitizeMarketplace(raw: unknown): MarketplaceData {
+  if (!isObj(raw)) return emptyMarketplace();
+  const keep = <T,>(list: (T | null)[]) => list.filter((x): x is T => x !== null);
+  return {
+    imports: keep(arr(raw, 'imports', 'Marketplace').map(sanitizeImport)),
+    transactions: arr(raw, 'transactions', 'Marketplace').map((r, i) => sanitizeTxn(r, i + 1)),
+    payouts: arr(raw, 'payouts', 'Marketplace').map((r, i) => sanitizePayout(r, i + 1)),
+    matches: keep(arr(raw, 'matches', 'Marketplace').map(sanitizeMatch)),
+    reviews: keep(arr(raw, 'reviews', 'Marketplace').map(sanitizeReview)),
+    log: keep(arr(raw, 'log', 'Marketplace').map(sanitizeEvent)),
+  };
+}
+
 export function sanitizeAppData(raw: unknown): AppData {
   if (!isObj(raw)) throw new DomainError('The data is not in the expected format.');
   const items = arr(raw, 'items', 'Data').map((r, i) => sanitizeItem(r, i + 1));
@@ -317,6 +455,8 @@ export function sanitizeAppData(raw: unknown): AppData {
       .filter((s): s is ValueSnapshot => s !== null),
     // Data and backups from before bulk lots have no "lots": they load with none.
     lots: arr(raw, 'lots', 'Data').map((r, i) => sanitizeLot(r, i + 1)),
+    // Data and backups from before payout reconciliation have no "marketplace": it loads empty.
+    marketplace: sanitizeMarketplace(raw.marketplace),
   };
 }
 

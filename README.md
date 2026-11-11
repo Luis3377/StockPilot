@@ -12,6 +12,7 @@ StockPilot is an inventory and profit assistant for resellers, collectors and sm
 | **Overview** | A dashboard per mode with a period filter (this month, 30/90 days, this year, all time): realized profit, revenue, items sold, inventory cost, selling value, projected profit, slow movers, recent sales, collection value over time, stock levels to watch, discrepancies and more. |
 | **Inventory** | Add, edit and delete (with confirmation) items with photos (resized on-device), SKU (auto-generated if blank), category, quantity, unit cost, asking price, estimated value, purchase date, condition, location, low-stock alert and notes. Search, filter (status, category, location, condition), sort and grid/list views. Restock (weighted-average cost) and manual quantity adjustments with reasons. |
 | **Bulk lots** | **Add bulk lot** in Inventory: record several items bought for one price (plus freight, buyer's premium and other acquisition costs) and split the cost by each item's estimated resale value, or equally per unit. Exact to the cent, with a review step, a lot page that reconciles every cent (sold, written off, in stock), realized vs projected profit, and edits that need confirmation, keep a history and never change completed sales. See [docs/BULK_LOTS.md](docs/BULK_LOTS.md). |
+| **Payout reconciliation** | Sales & Profit → **Payouts**: import eBay's Transaction and Payout reports (CSV) and compare each payout with the sales, fees and refunds you recorded. Matches by eBay order number (suggestions need your confirmation), splits every difference into findings traced to report rows and sales, separates held funds and timing from missing money, and records your decisions with reasons. Imports never change sales. See [docs/PAYOUT_RECONCILIATION.md](docs/PAYOUT_RECONCILIATION.md). |
 | **Sales & Profit** | Record a sale against an item; stock goes down automatically and can never go below zero. Price per item or total, fees as an amount or %, seller-paid shipping and other expenses, with a live profit preview. Edit or cancel sales without double-counting stock. Realized and projected figures are always shown separately. |
 | **AI Inventory Scanner (private beta, off by default)** | “Scan with AI” in Add Item: take or upload a photo and Claude suggests the name, brand, model, category, condition and a description. Suggestions are marked “AI” and must be checked; cost, quantity and prices are never filled in. Needs a build with the scanner enabled, the Cloudflare Worker in `worker/` and an invite code. See [docs/AI_SCANNER.md](docs/AI_SCANNER.md). |
 | **Smart Insights** | Rule-based alerts (low stock, slow movers, low/negative margins, prices that may not be profitable, top earners, category performance, discrepancies) and a question box that answers questions like “How much profit have I made this month?” from your own data. Clearly labeled as rule-based — no AI model is used yet. |
@@ -90,6 +91,7 @@ src/
   csv/         CSV parser/writer, inventory import with validation, exports
   insights/    Rule-based alerts and the question-answering assistant (provider interface for future AI)
   ai/          AI scanner: shared result schema and validator, form mapping, backend client
+  marketplace/ Marketplace report import (eBay transaction and payout reports), fixtures
   ui/          Design-system components (buttons, dialogs, fields, charts, photos…)
   pages/       Screens, dialogs and the app shell
 e2e/           Playwright browser tests
@@ -101,6 +103,7 @@ The domain layer is pure TypeScript with no browser dependencies, so the same in
 
 ## Further reading
 
+- [docs/PAYOUT_RECONCILIATION.md](docs/PAYOUT_RECONCILIATION.md) — eBay payout reconciliation: supported reports, matching, the calculation, sample reconciliations, statuses and limitations
 - [docs/BULK_LOTS.md](docs/BULK_LOTS.md) — bulk lot cost splitting: the formula, rounding, reconciliation examples, editing rules, data compatibility and limitations
 - [docs/TESTING.md](docs/TESTING.md) — how each functional requirement is tested
 - [docs/MANUAL_TESTS_IOS.md](docs/MANUAL_TESTS_IOS.md) — checks that need a real iPhone (storage, Home Screen app, zoom, VoiceOver)

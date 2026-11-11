@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Download, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Download, Landmark, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
 import { deleteSale } from '../domain/actions';
 import { computeSale, inventoryTotals, nameKey, platformLabel, projectUnsold, salesByPlatform, salesInRange, totalSales } from '../domain/calc';
 import { formatDate, periodRange, PERIOD_OPTIONS, todayISO, type PeriodKey } from '../domain/dates';
@@ -10,7 +11,7 @@ import { downloadText, fileStamp } from '../lib/download';
 import { useMoney } from '../lib/hooks';
 import { usePersistentState } from '../lib/usePersistentState';
 import { PageHeader, Card, SectionHeader } from '../ui/Card';
-import { Button, IconButton } from '../ui/Button';
+import { Button, IconButton, buttonClass } from '../ui/Button';
 import { StatTile, REALIZED, PROJECTED } from '../ui/Stat';
 import { PeriodPicker } from '../ui/PeriodPicker';
 import { EmptyState } from '../ui/EmptyState';
@@ -76,7 +77,14 @@ export function SalesPage() {
   if (data.sales.length === 0) {
     return (
       <>
-        <PageHeader title="Sales & Profit" />
+        <PageHeader
+          title="Sales & Profit"
+          actions={
+            <Link to="/sales/payouts" className={buttonClass('secondary', 'md')} data-testid="payouts-link">
+              <Landmark className="size-4" aria-hidden /> Payout reconciliation
+            </Link>
+          }
+        />
         <Card>
           <EmptyState
             icon={<Receipt className="size-6" />}
@@ -108,6 +116,9 @@ export function SalesPage() {
             <Button icon={<Download className="size-4" />} onClick={() => downloadText(`${prefix}profit-summary-${fileStamp()}.csv`, profitSummaryCsv(data.sales, todayISO()))} className="hidden sm:inline-flex">
               Profit summary
             </Button>
+            <Link to="/sales/payouts" className={buttonClass('secondary', 'md')} data-testid="payouts-link">
+              <Landmark className="size-4" aria-hidden /> Payouts
+            </Link>
             <Button variant="primary" icon={<Receipt className="size-4" />} onClick={() => dialogs.recordSale()}>
               Record sale
             </Button>
