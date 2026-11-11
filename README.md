@@ -11,6 +11,7 @@ StockPilot is an inventory and profit assistant for resellers, collectors and sm
 | **Onboarding & modes** | First-run question “How will you be using StockPilot?” → Reseller, Collector or Small business. Switch modes any time (sidebar/top-bar switcher or Settings); the dashboard changes, the data never does. |
 | **Overview** | A dashboard per mode with a period filter (this month, 30/90 days, this year, all time): realized profit, revenue, items sold, inventory cost, selling value, projected profit, slow movers, recent sales, collection value over time, stock levels to watch, discrepancies and more. |
 | **Inventory** | Add, edit and delete (with confirmation) items with photos (resized on-device), SKU (auto-generated if blank), category, quantity, unit cost, asking price, estimated value, purchase date, condition, location, low-stock alert and notes. Search, filter (status, category, location, condition), sort and grid/list views. Restock (weighted-average cost) and manual quantity adjustments with reasons. |
+| **Bulk lots** | **Add bulk lot** in Inventory: record several items bought for one price (plus freight, buyer's premium and other acquisition costs) and split the cost by each item's estimated resale value, or equally per unit. Exact to the cent, with a review step, a lot page that reconciles every cent (sold, written off, in stock), realized vs projected profit, and edits that need confirmation, keep a history and never change completed sales. See [docs/BULK_LOTS.md](docs/BULK_LOTS.md). |
 | **Sales & Profit** | Record a sale against an item; stock goes down automatically and can never go below zero. Price per item or total, fees as an amount or %, seller-paid shipping and other expenses, with a live profit preview. Edit or cancel sales without double-counting stock. Realized and projected figures are always shown separately. |
 | **AI Inventory Scanner (private beta, off by default)** | “Scan with AI” in Add Item: take or upload a photo and Claude suggests the name, brand, model, category, condition and a description. Suggestions are marked “AI” and must be checked; cost, quantity and prices are never filled in. Needs a build with the scanner enabled, the Cloudflare Worker in `worker/` and an invite code. See [docs/AI_SCANNER.md](docs/AI_SCANNER.md). |
 | **Smart Insights** | Rule-based alerts (low stock, slow movers, low/negative margins, prices that may not be profitable, top earners, category performance, discrepancies) and a question box that answers questions like “How much profit have I made this month?” from your own data. Clearly labeled as rule-based — no AI model is used yet. |
@@ -70,7 +71,8 @@ All money is calculated at cent precision so totals always add up. The same name
 - **Realized profit** (net profit) = revenue − cost of goods sold − marketplace fees − seller-paid shipping − other expenses, from completed sales.
 - **Projected profit** (never mixed with realized profit) = unsold units × asking price − estimated selling costs − their cost. Selling costs are learned from your recorded sales (fees + shipping + other as a % of revenue) or set manually in Settings.
 - **Revenue** = sale price × quantity (when the price is per item), or the entered total.
-- **Cost of goods sold** = unit acquisition cost × quantity. The cost is captured when the sale is recorded so later edits don't silently rewrite history (the edit form offers to apply a corrected cost to past sales).
+- **Cost of goods sold** = the cost leaving inventory: unit acquisition cost × quantity, or, when the unit cost isn't whole cents (a lot share like $3.3333), inventory cost before the sale minus after it, so selling units one by one never loses or creates a cent. The cost is captured when the sale is recorded so later edits don't silently rewrite history (the edit form offers to apply a corrected cost to past sales).
+- **Bulk lot split** = total allocable cost (purchase price + additional costs) × (item's estimated resale value × quantity ÷ total estimated resale value), in whole cents with the largest-remainder method so the items always add up to the total exactly. See [docs/BULK_LOTS.md](docs/BULK_LOTS.md).
 - **Profit margin** = realized profit ÷ revenue × 100, for the same period (shown as “—” when revenue is 0).
 - **ROI** = realized profit ÷ cost of goods sold × 100 (shown as “—” when cost is 0).
 - **Restocking** averages the unit cost of existing and new stock.
@@ -99,6 +101,7 @@ The domain layer is pure TypeScript with no browser dependencies, so the same in
 
 ## Further reading
 
+- [docs/BULK_LOTS.md](docs/BULK_LOTS.md) — bulk lot cost splitting: the formula, rounding, reconciliation examples, editing rules, data compatibility and limitations
 - [docs/TESTING.md](docs/TESTING.md) — how each functional requirement is tested
 - [docs/MANUAL_TESTS_IOS.md](docs/MANUAL_TESTS_IOS.md) — checks that need a real iPhone (storage, Home Screen app, zoom, VoiceOver)
 - [docs/AI_SCANNER.md](docs/AI_SCANNER.md) — the AI Inventory Scanner: how it works, costs, safeguards and how to switch on the private beta

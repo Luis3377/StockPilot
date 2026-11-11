@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import { addItem, itemInputErrors, updateItem, type ItemInput } from '../../domain/actions';
+import { lotForItem } from '../../domain/lots';
 import { isDomainError } from '../../domain/errors';
 import { checkPrice, knownCategories, knownLocations } from '../../domain/calc';
 import { todayISO } from '../../domain/dates';
@@ -46,7 +47,8 @@ type FormState = {
 
 const MORE_DETAIL_FIELDS = ['sku', 'purchaseDate', 'lowStockThreshold', 'condition', 'location', 'notes', 'estimatedValue', 'askingPrice'];
 
-const moneyText = (n: number | null) => (n === null ? '' : String(n));
+// Never in exponent form (a tiny lot share like 0.0000333 would otherwise read "3.33e-5").
+const moneyText = (n: number | null) => (n === null ? '' : String(n).includes('e') ? n.toFixed(8).replace(/\.?0+$/, '') : String(n));
 
 function initialState(item: Item | undefined, defaultThreshold: number | null): FormState {
   if (item) {
@@ -176,6 +178,7 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
   const categories = useMemo(() => knownCategories(data), [data]);
   const locations = useMemo(() => knownLocations(data), [data]);
   const salesCount = item ? data.sales.filter((s) => s.itemId === item.id).length : 0;
+  const fromLot = item ? lotForItem(data, item.id) : null;
 
   const qty = Number(form.quantity);
   const cost = parseMoneyInput(form.unitCost);
@@ -352,9 +355,15 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
             label="Cost per item"
             required
             hint={
-              cost !== null && !Number.isNaN(cost) && Number.isInteger(qty) && qty > 1
-                ? `${money(multiplyMoney(cost, qty))} total for ${qty}`
-                : 'What you paid for one'
+              fromLot ? (
+                <span data-testid="item-cost-lot-hint">
+                  This item’s share of the lot “{fromLot.lot.name}”. To change it and keep the lot balanced, use Edit lot on the lot’s page.
+                </span>
+              ) : cost !== null && !Number.isNaN(cost) && Number.isInteger(qty) && qty > 1 ? (
+                `${money(multiplyMoney(cost, qty))} total for ${qty}`
+              ) : (
+                'What you paid for one'
+              )
             }
             currency={currency}
             value={form.unitCost}
