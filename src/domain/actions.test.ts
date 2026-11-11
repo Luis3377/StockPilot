@@ -118,6 +118,31 @@ describe('items', () => {
     expect(r.data.adjustments[0]).toMatchObject({ source: 'restock', difference: 1 });
   });
 
+  it('cost of goods sold is the cost leaving inventory, so an uneven average never gains or loses a cent', () => {
+    // $20.00 over 3 units = 6.6667 each; 3 × 6.67 would be $20.01.
+    let { data, item } = withItem({ quantity: 2, unitCost: 10 });
+    data = restockItem(data, item.id, 1, 0, clock()).data;
+    const costs: number[] = [];
+    for (let n = 0; n < 3; n++) {
+      const r = recordSale(data, sale(item.id, 1), clock());
+      data = r.data;
+      costs.push(totalSales([r.sale]).costOfGoods);
+    }
+    expect(costs).toEqual([6.67, 6.66, 6.67]);
+    expect(totalSales(data.sales).costOfGoods).toBe(20);
+    // Whole-cent costs are unchanged: the sale records the item's own unit cost.
+    ({ data, item } = withItem({ quantity: 5, unitCost: 12.5 }));
+    expect(recordSale(data, sale(item.id, 2), clock()).sale.unitCost).toBe(12.5);
+  });
+
+  it('a loss is valued by the cost leaving inventory too', () => {
+    let { data, item } = withItem({ quantity: 2, unitCost: 10 });
+    data = restockItem(data, item.id, 1, 0, clock()).data;
+    const lost = adjustQuantity(data, item.id, 2, 'Broken', clock());
+    expect(lost.adjustment.valueDifference).toBe(-6.67);
+    expect(adjustQuantity(lost.data, item.id, 0, 'Broken', clock()).adjustment.valueDifference).toBe(-13.33);
+  });
+
   it('adjusts quantity manually with a required reason', () => {
     const { data, item } = withItem({ quantity: 5, unitCost: 2 });
     expect(() => adjustQuantity(data, item.id, 4, '')).toThrow('Reason is required');

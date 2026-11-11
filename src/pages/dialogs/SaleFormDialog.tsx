@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { recordSale, saleInputErrors, updateSale, type SaleInput } from '../../domain/actions';
+import { recordSale, saleInputErrors, saleUnitCost, updateSale, type SaleInput } from '../../domain/actions';
 import { computeSale, convertSalePrice, knownPlatforms, uniqueSorted } from '../../domain/calc';
 import { isDomainError } from '../../domain/errors';
 import { todayISO } from '../../domain/dates';
-import { formatPercent, parseMoneyInput, roundMoney } from '../../domain/money';
+import { formatPercent, multiplyMoney, parseMoneyInput, roundMoney } from '../../domain/money';
 import type { PriceMode, Sale } from '../../domain/types';
 import { store, useAppState } from '../../data/store';
 import { PLATFORM_SUGGESTIONS } from '../../lib/modes';
@@ -112,7 +112,8 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
   const itemDeleted = sale && !data.items.some((i) => i.id === sale.itemId) && form.itemId === sale.itemId;
   const available = (item?.quantity ?? 0) + (sale && sale.itemId === form.itemId ? sale.quantity : 0);
   const qty = Number(form.quantity) || 0;
-  const unitCost = sale && sale.itemId === form.itemId ? sale.unitCost : (item?.unitCost ?? 0);
+  // Same rule as saving: a sale records the cost leaving inventory (exact to the cent).
+  const unitCost = sale && sale.itemId === form.itemId ? sale.unitCost : item ? saleUnitCost(item, qty) : 0;
   const revenueForFees = form.priceMode === 'per_unit' ? num(form.salePrice) * qty : num(form.salePrice);
   const feeAmount = form.feeMode === 'percent' ? roundMoney((revenueForFees * num(form.fees)) / 100) : num(form.fees);
   const preview = computeSale({
@@ -342,7 +343,7 @@ export function SaleFormDialog({ open, itemId, saleId, onClose, onAddItem }: Pro
             <div className="mb-3 text-sm font-semibold text-ink">Profit on this sale</div>
             <dl className="tabular space-y-1.5 text-sm">
               <Row label="Revenue" value={money(preview.revenue)} />
-              <Row label="Cost of goods" value={`− ${money(preview.costOfGoods)}`} hint={`${qty} × ${money(unitCost)}`} />
+              <Row label="Cost of goods" value={`− ${money(preview.costOfGoods)}`} hint={multiplyMoney(roundMoney(unitCost), qty) === preview.costOfGoods ? `${qty} × ${money(unitCost)}` : `${qty} units, cost split to the cent`} />
               <Row label="Fees" value={`− ${money(preview.fees)}`} />
               <Row label="Shipping" value={`− ${money(preview.shipping)}`} />
               <Row label="Other" value={`− ${money(preview.otherExpenses)}`} />
