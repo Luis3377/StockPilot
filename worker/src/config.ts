@@ -2,6 +2,7 @@
 // docs/AI_SCANNER.md). Everything has a safe default; a missing secret disables scanning.
 
 import { SCAN_JSON_SCHEMA, SCAN_SYSTEM_PROMPT, SCAN_USER_PROMPT } from '../../src/ai/scanSchema';
+import { EXPLAIN_JSON_SCHEMA, EXPLAIN_SYSTEM_PROMPT, INTERPRET_JSON_SCHEMA, INTERPRET_SYSTEM_PROMPT } from '../../src/ai/explainSchema';
 
 export interface ModelInfo {
   label: string;
@@ -180,6 +181,32 @@ export function pricingProblem(model: string, table: Record<string, ModelInfo> =
 export function costMicros(model: ScanModel, inputTokens: number, outputTokens: number, cacheWriteTokens = 0): number {
   const info = MODELS[model];
   return Math.ceil((inputTokens + 2 * cacheWriteTokens) * info.inputMicrosPerToken + outputTokens * info.outputMicrosPerToken);
+}
+
+// ---------------------------------------------------------------------------
+// Assistant requests (text only). They share the scanner's invite codes, daily and per-minute
+// limits and monthly budget: there is one AI budget, not two.
+// ---------------------------------------------------------------------------
+
+export type AssistantMode = 'interpret' | 'explain';
+
+/** Largest accepted assistant request body: a question and a capped set of calculation facts. */
+export const MAX_ASSISTANT_BODY_BYTES = 16 * 1024;
+/** Output caps (thinking included). Explanations are a few sentences; routing is one word. */
+export const ASSISTANT_OUTPUT_TOKENS: Record<AssistantMode, number> = { interpret: 1024, explain: 2048 };
+/** Instructions sent with each mode, bounded at 1 token per 2 characters like the scanner's. */
+export const ASSISTANT_PROMPT_TOKENS_BOUND: Record<AssistantMode, number> = {
+  interpret: Math.ceil((INTERPRET_SYSTEM_PROMPT.length + JSON.stringify(INTERPRET_JSON_SCHEMA).length) / 2),
+  explain: Math.ceil((EXPLAIN_SYSTEM_PROMPT.length + JSON.stringify(EXPLAIN_JSON_SCHEMA).length) / 2),
+};
+/** Most input tokens one assistant request can use: instructions + the whole body (at 1 token per 2 bytes) + framing. */
+export function maxAssistantInputTokens(mode: AssistantMode): number {
+  return ASSISTANT_PROMPT_TOKENS_BOUND[mode] + Math.ceil(MAX_ASSISTANT_BODY_BYTES / 2) + REQUEST_OVERHEAD_TOKENS;
+}
+
+/** Worst-case cost of one assistant request, reserved against the shared budget. */
+export function worstCaseAssistantMicros(model: ScanModel, mode: AssistantMode): number {
+  return costMicros(model, maxAssistantInputTokens(mode), ASSISTANT_OUTPUT_TOKENS[mode]);
 }
 
 /** Worst-case cost of one scan, reserved against the budget before calling the model. */

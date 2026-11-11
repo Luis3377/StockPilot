@@ -4,16 +4,44 @@
 //   GET  /health                   — is scanning configured (no secrets)
 //   GET  /v1/status                — invite code check + scans left today
 //   POST /v1/scan                  — analyze one photo
+//   POST /v1/assistant             — interpret a question / explain a verified calculation
 //   GET  /admin/codes              — list invite codes          (ADMIN_TOKEN)
 //   POST /admin/codes              — create an invite code      (ADMIN_TOKEN)
 //   POST /admin/codes/:id/revoke   — revoke an invite code      (ADMIN_TOKEN)
 //   GET  /admin/usage              — today's scans, month spend (ADMIN_TOKEN)
 
 import { toWire } from '../../src/ai/scanSchema';
-import { analyzeImage, type MessagesClient } from './claude';
+import {
+  EXPLAIN_JSON_SCHEMA,
+  EXPLAIN_SYSTEM_PROMPT,
+  explainUserMessage,
+  INTERPRET_JSON_SCHEMA,
+  INTERPRET_SYSTEM_PROMPT,
+  interpretUserMessage,
+  MAX_QUESTION_CHARS,
+  parseExplainFacts,
+  parseExplainResult,
+  parseInterpretResult,
+  unverifiedNumbers,
+  type ExplainFacts,
+} from '../../src/ai/explainSchema';
+import { analyzeImage, callStructured, type MessagesClient } from './claude';
 import { clientKey, generateCode, hashCode, newId, normalizeCode, secretsMatch } from './codes';
 import { precheckLength, readTextLimited, type BodyRead } from './body';
-import { MAX_ADMIN_BODY_BYTES, MAX_BODY_BYTES, MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, MODELS, worstCaseMicros, type Config, type Limits } from './config';
+import {
+  ASSISTANT_OUTPUT_TOKENS,
+  MAX_ADMIN_BODY_BYTES,
+  MAX_ASSISTANT_BODY_BYTES,
+  MAX_BODY_BYTES,
+  MAX_INPUT_TOKENS,
+  MAX_OUTPUT_TOKENS,
+  MODELS,
+  worstCaseAssistantMicros,
+  worstCaseMicros,
+  type AssistantMode,
+  type Config,
+  type Limits,
+} from './config';
 import { checkImage } from './image';
 import type { BeginResult, CodeSummary, FinishResult, StatusResult } from './ledgerCore';
 
@@ -59,6 +87,18 @@ const MESSAGES: Record<string, string> = {
   invalid_request: 'The request wasn’t valid.',
   image_too_large: 'That photo is too large. Try a smaller photo.',
   bad_length: 'The upload was incomplete or its size didn’t match. Try again.',
+};
+
+/** Wording for the assistant, where "scans" would be confusing. Limits and budget are shared with the scanner. */
+const ASSISTANT_MESSAGES: Record<string, string> = {
+  scanner_unavailable: 'AI answers aren’t available right now. The verified calculation is unchanged.',
+  rate_limited: 'You’re asking very quickly. Wait a minute and try again.',
+  code_daily_limit: 'You’ve used all of today’s AI requests (scans and AI answers share one daily limit). They reset at midnight UTC.',
+  global_daily_limit: 'The beta has reached today’s AI limit. Try again tomorrow.',
+  budget_exhausted: 'AI features are paused for the rest of this month: the shared monthly AI budget is used up.',
+  ai_bad_response: 'The AI’s answer couldn’t be used. The verified calculation is unchanged.',
+  ai_error: 'The AI service had a problem. The verified calculation is unchanged.',
+  invalid_request: 'The request wasn’t valid.',
 };
 
 const STATUS_FOR: Record<string, number> = {
@@ -143,6 +183,7 @@ export async function handleRequest(request: Request, deps: HandlerDeps): Promis
     }
     if (path === '/v1/status' && request.method === 'GET') return await status(request, deps, cors);
     if (path === '/v1/scan' && request.method === 'POST') return await scan(request, deps, cors);
+    if (path === '/v1/assistant' && request.method === 'POST') return await assistant(request, deps, cors);
     if (path.startsWith('/admin/')) return await admin(request, path, deps);
     return errorResponse('not_found', cors, { status: 404 });
   } catch (e) {
@@ -263,6 +304,126 @@ async function scan(request: Request, deps: HandlerDeps, cors: Cors): Promise<Re
   } as const;
   const [code, statusCode] = map[outcome.error];
   return errorResponse(code, cors, { status: statusCode });
+}
+
+type AssistantBody = { mode: 'interpret'; question: string } | { mode: 'explain'; question: string; facts: ExplainFacts };
+
+function readAssistantBody(raw: unknown): AssistantBody | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const question = typeof o.question === 'string' ? o.question.trim() : '';
+  if (!question || question.length > MAX_QUESTION_CHARS) return null;
+  if (o.mode === 'interpret') return { mode: 'interpret', question };
+  if (o.mode === 'explain') {
+    try {
+      return { mode: 'explain', question, facts: parseExplainFacts(o.facts) };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * The assistant's AI layer. It never sees the user's records: "interpret" gets only the
+ * question; "explain" gets the question and the figures of a calculation the app has already
+ * verified. Every number in an explanation is checked against those figures, and an
+ * explanation with any other number is not returned. Same invite codes, limits and monthly
+ * budget as scanning (one shared ledger).
+ */
+async function assistant(request: Request, deps: HandlerDeps, cors: Cors): Promise<Response> {
+  const { config, ledger, now, log } = deps;
+  const fail = (code: string, opts: { status?: number; retryAfterSeconds?: number } = {}) => errorResponse(code, cors, { ...opts, message: ASSISTANT_MESSAGES[code] ?? MESSAGES[code] });
+  if (!config.enabled || !config.codePepper || !deps.ai) return fail('scanner_unavailable');
+  const early = precheckLength(request.headers, MAX_ASSISTANT_BODY_BYTES);
+  if (early) return fail('invalid_request', { status: early.reason === 'too_large' ? 413 : 400 });
+  const codeHash = await codeHashFrom(request, config.codePepper);
+  if (codeHash === undefined) return fail('missing_code');
+
+  // The body is small and bounded, and its mode decides the reservation, so it's read first.
+  const read = await readTextLimited(request, MAX_ASSISTANT_BODY_BYTES);
+  if (!read.ok) return fail('invalid_request', { status: read.reason === 'too_large' ? 413 : 400 });
+  let body: AssistantBody | null = null;
+  try {
+    body = readAssistantBody(JSON.parse(read.text));
+  } catch {
+    body = null;
+  }
+  if (!body) return fail('invalid_request', { status: 400 });
+  const mode: AssistantMode = body.mode;
+
+  const key = await clientKey(config.codePepper, request.headers.get('CF-Connecting-IP'));
+  const begin = await ledger.beginScan({
+    codeHash,
+    clientKey: key,
+    reservationId: newId('rsv'),
+    estimateMicros: worstCaseAssistantMicros(config.model, mode),
+    limits: config.limits,
+    now: now(),
+  });
+  if (!begin.ok) {
+    log({ evt: 'assistant_denied', mode, reason: begin.error });
+    return fail(begin.error, { retryAfterSeconds: begin.retryAfterSeconds });
+  }
+  const settle = async (chargeMicros: number, succeeded: boolean) => {
+    const result = await ledger.finishScan({ reservationId: begin.reservationId, actualMicros: chargeMicros, refundScan: !succeeded && chargeMicros === 0 });
+    if (result.overrunMicros > 0) log({ evt: 'budget_overrun', kind: 'assistant', mode, code: begin.codeId, reservedMicros: begin.reservedMicros, chargedMicros: result.chargedMicros });
+  };
+
+  const started = Date.now();
+  const outcome =
+    body.mode === 'interpret'
+      ? await callStructured(
+          deps.ai,
+          {
+            model: config.model,
+            effort: config.effort,
+            system: INTERPRET_SYSTEM_PROMPT,
+            user: interpretUserMessage(body.question),
+            schema: INTERPRET_JSON_SCHEMA as unknown as Record<string, unknown>,
+            maxTokens: ASSISTANT_OUTPUT_TOKENS.interpret,
+          },
+          parseInterpretResult,
+        )
+      : await callStructured(
+          deps.ai,
+          {
+            model: config.model,
+            effort: config.effort,
+            system: EXPLAIN_SYSTEM_PROMPT,
+            user: explainUserMessage(body.question, body.facts),
+            schema: EXPLAIN_JSON_SCHEMA as unknown as Record<string, unknown>,
+            maxTokens: ASSISTANT_OUTPUT_TOKENS.explain,
+          },
+          parseExplainResult,
+        );
+  const ms = Date.now() - started;
+  const model = { id: config.model, label: MODELS[config.model].label };
+
+  if (outcome.kind === 'error') {
+    const charge = outcome.mayBeBilled ? begin.reservedMicros : outcome.costMicros;
+    await settle(charge, false);
+    log({ evt: 'assistant_failed', mode, code: begin.codeId, error: outcome.error, detail: outcome.detail, micros: charge, ms });
+    const map = { timeout: ['ai_timeout', 504], busy: ['ai_busy', 503], upstream: ['ai_error', 502], bad_response: ['ai_bad_response', 502], config: ['scanner_unavailable', 503] } as const;
+    const [code, status] = map[outcome.error];
+    return fail(code, { status });
+  }
+
+  await settle(outcome.costMicros, true);
+  if (body.mode === 'interpret') {
+    const value = outcome.value as ReturnType<typeof parseInterpretResult>;
+    log({ evt: 'assistant', mode, code: begin.codeId, intent: value.intent, inTok: outcome.usage.inputTokens, outTok: outcome.usage.outputTokens, micros: outcome.costMicros, ms });
+    return json(200, { ok: true, mode, intent: value.intent, period: value.period, model, requestsLeftToday: begin.scansLeftToday }, cors);
+  }
+  const { explanation } = outcome.value as ReturnType<typeof parseExplainResult>;
+  // Any number not in the verified figures means the explanation can't be trusted: drop it.
+  const unverified = unverifiedNumbers(explanation, body.facts);
+  log({ evt: 'assistant', mode, code: begin.codeId, verified: unverified.length === 0, inTok: outcome.usage.inputTokens, outTok: outcome.usage.outputTokens, micros: outcome.costMicros, ms });
+  return json(
+    200,
+    { ok: true, mode, explanation: unverified.length ? null : explanation, verified: unverified.length === 0, unverified, model, requestsLeftToday: begin.scansLeftToday },
+    cors,
+  );
 }
 
 async function admin(request: Request, path: string, deps: HandlerDeps): Promise<Response> {
