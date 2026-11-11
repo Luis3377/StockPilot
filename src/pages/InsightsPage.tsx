@@ -1,7 +1,7 @@
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertOctagon, AlertTriangle, ArrowUp, Bot, CheckCircle2, ChevronDown, Info, Lightbulb, Settings2, TrendingUp, User } from 'lucide-react';
-import { ruleBasedProvider, SUGGESTED_QUESTIONS, type AssistantAnswer } from '../insights/assistant';
+import { AlertOctagon, AlertTriangle, CheckCircle2, ChevronDown, Info, Lightbulb, Settings2, TrendingUp } from 'lucide-react';
+import { AssistantPanel } from './assistant/AssistantPanel';
 import type { InsightSection, Severity } from '../insights/rules';
 import { formatDate } from '../domain/dates';
 import { useAppState } from '../data/store';
@@ -11,13 +11,6 @@ import { salesEnabled } from '../lib/modes';
 import { PageHeader, Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { cn } from '../ui/cn';
-import { inputClass } from '../ui/Fields';
-
-interface Turn {
-  id: number;
-  question: string;
-  answer: AssistantAnswer;
-}
 
 export function InsightsPage() {
   const [period, setPeriod] = useReportingPeriod();
@@ -69,7 +62,7 @@ export function InsightsPage() {
       />
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-3 xl:order-2">
-          <Assistant />
+          <AssistantPanel />
         </div>
         <div className="space-y-3 xl:order-1">
           {selling && (
@@ -159,147 +152,4 @@ function FindingRow({ title, detail, to }: { title: string; detail: string; to?:
     </>
   );
   return <li className="py-2.5">{to ? <Link to={to} className="block hover:opacity-80">{body}</Link> : body}</li>;
-}
-
-function Assistant() {
-  const data = useAppState((s) => s.data);
-  const settings = useAppState((s) => s.settings);
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const [question, setQuestion] = useState('');
-  const nextId = useRef(1);
-  const endRef = useRef<HTMLDivElement>(null);
-
-  const ask = async (q: string) => {
-    const text = q.trim();
-    if (!text) return;
-    const answer = await ruleBasedProvider.ask(text, { data, settings });
-    setTurns((t) => [...t, { id: nextId.current++, question: text, answer }].slice(-20));
-    setQuestion('');
-    requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
-  };
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    void ask(question);
-  };
-
-  return (
-    <Card className="flex flex-col p-4 sm:p-5 xl:sticky xl:top-6" data-testid="assistant">
-      <div className="flex items-center gap-2">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-accent-soft text-accent-text">
-          <Bot className="size-5" />
-        </span>
-        <div>
-          <h2 className="text-base font-semibold text-ink">Ask about your inventory</h2>
-          <p className="text-xs text-ink-2">Answers use fixed rules over your records — not a live AI model.</p>
-        </div>
-      </div>
-
-      <div className="mt-4 max-h-[60vh] space-y-4 overflow-y-auto" aria-live="polite">
-        {turns.length === 0 && <p className="text-sm text-ink-2">Try one of these questions, or type your own:</p>}
-        {turns.map((t) => (
-          <div key={t.id} className="space-y-2">
-            <div className="flex justify-end gap-2">
-              <p className="max-w-[85%] rounded-2xl rounded-tr-md bg-accent px-3 py-2 text-sm text-white">{t.question}</p>
-              <User className="mt-1 size-5 shrink-0 text-muted" aria-hidden />
-            </div>
-            <AnswerCard answer={t.answer} onAsk={(q) => void ask(q)} />
-          </div>
-        ))}
-        <div ref={endRef} />
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {(turns.length ? (turns[turns.length - 1].answer.followUps.length ? turns[turns.length - 1].answer.followUps : SUGGESTED_QUESTIONS.slice(0, 3)) : SUGGESTED_QUESTIONS).map((q) => (
-          <button key={q} type="button" onClick={() => void ask(q)} className="rounded-full border border-line-strong bg-surface px-3 py-1.5 text-left text-xs font-medium text-ink-2 hover:border-accent hover:text-accent-text">
-            {q}
-          </button>
-        ))}
-      </div>
-
-      <form onSubmit={submit} className="mt-3 flex gap-2">
-        <input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="e.g. How much profit did I make last month?"
-          aria-label="Ask a question"
-          className={cn(inputClass, 'border-line-strong')}
-          enterKeyHint="send"
-        />
-        <button type="submit" disabled={!question.trim()} aria-label="Ask" className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white hover:bg-accent-hover disabled:opacity-40">
-          <ArrowUp className="size-5" />
-        </button>
-      </form>
-    </Card>
-  );
-}
-
-function AnswerCard({ answer, onAsk }: { answer: AssistantAnswer; onAsk: (q: string) => void }) {
-  return (
-    <div className="flex gap-2" data-testid="assistant-answer">
-      <Bot className="mt-1 size-5 shrink-0 text-accent" aria-hidden />
-      <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-surface-2 px-3 py-2.5 text-sm">
-        <p className="text-ink">{answer.text}</p>
-        {answer.details.length > 0 && (
-          <ul className="mt-2 space-y-1 text-xs text-ink-2">
-            {answer.details.map((d) => (
-              <li key={d} className="flex gap-1.5">
-                <span aria-hidden>•</span>
-                <span>{d}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {answer.table && (
-          <div className="mt-2 overflow-x-auto rounded-lg border border-line bg-surface">
-            <table className="w-full text-xs">
-              <thead className="bg-surface-2 text-left text-ink-2">
-                <tr>
-                  {answer.table.columns.map((c, i) => (
-                    <th key={c} className={cn('px-2 py-1.5 font-medium whitespace-nowrap', i > 0 && 'text-right')}>
-                      {c}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="tabular">
-                {answer.table.rows.map((r, ri) => (
-                  <tr key={ri} className="border-t border-line">
-                    {r.map((c, ci) => (
-                      <td key={ci} className={cn('px-2 py-1.5 text-ink', ci > 0 ? 'text-right whitespace-nowrap' : 'min-w-[8rem] break-words')}>
-                        {ci === 0 && answer.items?.some((i) => i.name === c) ? (
-                          <Link to={`/inventory/${answer.items.find((i) => i.name === c)!.id}`} className="text-accent-text hover:underline">
-                            {c}
-                          </Link>
-                        ) : (
-                          c
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {answer.items && !answer.table && answer.items.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {answer.items.map((i) => (
-              <Link key={i.id} to={`/inventory/${i.id}`} className="text-xs font-medium text-accent-text hover:underline">
-                Open {i.name} →
-              </Link>
-            ))}
-          </div>
-        )}
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-[10px] tracking-wide text-muted uppercase">Rule-based answer</span>
-          {answer.intent === 'unknown' && (
-            <button type="button" onClick={() => onAsk('help')} className="text-xs font-medium text-accent-text hover:underline">
-              What can I ask?
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }

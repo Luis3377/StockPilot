@@ -135,7 +135,7 @@ export function Onboarding() {
                   Only on this device, in {context === 'ios-home-screen' ? 'this Home Screen app' : 'this browser'}
                 </h2>
                 <p className="mt-1">
-                  Your inventory, photos and sales aren’t uploaded and there’s no account or cloud copy{scannerEnabled ? ' (only photos you choose to scan with AI are sent for analysis, and they aren’t stored)' : ''}.
+                  Your inventory, photos and sales aren’t uploaded and there’s no account or cloud copy{scannerEnabled ? ' (only photos you choose to scan with AI, and figures you choose to have AI explain, are sent for analysis, and they aren’t stored)' : ''}.
                 </p>
               </div>
             </section>

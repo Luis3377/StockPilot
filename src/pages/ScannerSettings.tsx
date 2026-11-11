@@ -70,7 +70,15 @@ export function ScannerSettings() {
           <p className="mb-1 font-medium text-ink">How scanned photos are handled</p>
           <ScanPrivacyDetails />
         </div>
-        <p className="text-xs text-muted">Invite codes only unlock the beta scanner; they aren’t an account. Each code has a daily scan limit and an expiry date.</p>
+        <div className="text-sm text-ink-2" data-testid="assistant-ai-privacy">
+          <p className="mb-1 font-medium text-ink">AI explanations in Smart Insights</p>
+          <p>
+            The same code lets you ask AI to explain an assistant answer, or to understand a question it didn’t recognize. Nothing is sent until you confirm: only your question and, to explain an
+            answer, that answer’s figures and up to 8 record names. Never your notes, photos or the rest of your records. The AI doesn’t calculate anything: if its wording contains a number that isn’t
+            in StockPilot’s calculation, it isn’t shown.
+          </p>
+        </div>
+        <p className="text-xs text-muted">Invite codes only unlock the beta AI features; they aren’t an account. Each code has a daily limit, shared by scans and AI answers, and an expiry date.</p>
       </div>
     </Card>
   );
