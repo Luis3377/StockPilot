@@ -86,3 +86,28 @@ The AI scanner's backend has its own tests: `cd worker && npm ci && npm test && 
 | Scanner integration (identifies, never prices) | `e2e/lots.spec.ts` — “a scan identifies an item in the lot but never sets its price” (mocked API that wrongly returns prices), “the standard build offers no AI scanner in a lot” |
 | Phones and accessibility | every `e2e/lots.spec.ts` test runs on desktop and an iPhone-sized viewport with no sideways scrolling; axe check of the review step, lot page and edit dialog |
 
+## Marketplace payout reconciliation → tests
+
+All tests use sanitized eBay reports in `src/marketplace/fixtures/` (documented column names, made-up sellers, buyers and orders).
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Supported formats, header detection, site variants, dates, "--" cells | `src/marketplace/ebay.test.ts` — transaction and payout reports, UK column names, day-first dates, summary check |
+| Validation and understandable errors | `src/marketplace/ebay.test.ts` — unsupported file, missing required columns, unreadable rows refuse the whole file; `e2e/payouts.spec.ts` — the same in the import dialog |
+| Duplicate imports | `src/marketplace/ebay.test.ts` — same file refused; overlapping rows skipped; later reports only fill in payout details; first amounts kept |
+| Original references preserved, no buyer data stored, sales never changed | `src/marketplace/ebay.test.ts`, `src/domain/reconcile.test.ts` — “import never changes sales…” |
+| Exact payout match | `src/domain/reconcile.test.ts` — payout 5000000001; `e2e/payouts.spec.ts` — “…reconciles an exact payout to the cent” |
+| Missing transactions, incorrect fees, shipping adjustments | `src/domain/reconcile.test.ts` — payout 5000000002 (findings add up to the difference); label void in a later payout |
+| Refunds and returns | `src/domain/reconcile.test.ts` — refund as outstanding adjustment; sale recorded net of a refund |
+| Multiple sales in one payout; multi-item orders | `src/domain/reconcile.test.ts` — fixture payouts; SKU pairing |
+| Payouts crossing reporting periods, held funds, pending payouts | `src/domain/reconcile.test.ts` — March report, gap finding, not paid out, initiated payout; `e2e/payouts.spec.ts` |
+| Unmatched or ambiguous transactions | `src/domain/reconcile.test.ts` — suggestions never auto-match; same order + SKU is ambiguous; possible duplicate sale; `e2e/payouts.spec.ts` — confirming a suggestion |
+| Tax collected by the seller or by eBay | `src/domain/reconcile.test.ts` — “tax the seller collected…” |
+| Timing differences | `src/domain/reconcile.test.ts` — fee charged in a later payout |
+| Penny accuracy and tie-out | `src/domain/reconcile.test.ts` — every payout checks lines = expected, rows = reported, findings = difference; 40 random multi-payout scenarios |
+| Decisions with reasons, audit trail, reopening | `src/domain/reconcile.test.ts` — accept, change, undo; `e2e/payouts.spec.ts` — reason required, history, withdraw |
+| Bulk lot costs and profit | `src/domain/reconcile.test.ts` — lot item sold on eBay: payout ignores cost, profit uses the exact share |
+| Assistant explanations from exact figures | `src/domain/reconcile.test.ts` — `explainPayout`, `payoutFacts`, “why doesn't my eBay payout match?” |
+| Backup/restore compatibility and persistence | `src/domain/reconcile.test.ts` — round trip, older backups, broken data; `e2e/payouts.spec.ts` — backup and restore, reload |
+| Phones and accessibility | every `e2e/payouts.spec.ts` test runs on desktop and an iPhone-sized viewport with no sideways scrolling; axe on the dashboard, payout page and empty state |
+
