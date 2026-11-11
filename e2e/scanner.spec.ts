@@ -658,8 +658,10 @@ test.describe('standard build (scanner off)', () => {
     await expect(page.getByTestId('scan-panel')).toHaveCount(0);
     await page.getByTestId('item-form').getByRole('button', { name: 'Cancel' }).click();
     await nav(page, 'Settings');
+    // Wait for Settings to render, so the "nothing here" checks can't pass on the previous page.
+    await expect(page.getByRole('heading', { name: 'Your data' })).toBeVisible();
     await expect(page.getByTestId('scanner-settings')).toHaveCount(0);
-    await expect(page.getByRole('main')).not.toContainText('AI scanner');
+    await expect(page.getByRole('main')).not.toContainText(/AI scanner|invite code/i);
     expect(requests).toBe(0);
   });
 });

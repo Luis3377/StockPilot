@@ -300,7 +300,8 @@ export function SettingsPage() {
                 Restore from backup
               </Button>
               <p className="w-full text-xs text-muted">
-                A backup is one .json file with your items, photos, sales, counts and settings. Restoring it replaces the data here. Your invite code for the AI scanner isn’t included.
+                A backup is one .json file with your items, photos, sales, counts and settings. Restoring it replaces the data here.
+                {scannerEnabled && ' Your invite code for the AI scanner isn’t included.'}
               </p>
             </ActionGroup>
             <ActionGroup title="Import" icon={<FileUp className="size-4" />}>
