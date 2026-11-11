@@ -12,6 +12,8 @@ Resellers often buy many items for one price: an auction lot, an estate-sale box
 2. **Items.** Each kind of item in the lot: name, quantity, and your estimated resale value **per item**. Category, condition and notes are optional. In builds with the AI scanner, **Scan with AI** on an item fills its name, category, condition and notes from a photo. It never sets a price.
 3. **Review split.** Choose **By estimated resale value** (recommended) or **Equally per unit**. Every item shows its share (%), its allocated cost and its cost per item, and estimates can still be changed here with the split updating live. A green check confirms the whole cost is split: *"$100.00 of $100.00 split: every cent is assigned to an item."* It also shows the potential gross profit before selling expenses.
 
+**From a Max Bid plan.** A plan made with the [Max Bid Calculator](MAX_BID.md) can open this same form, filled in from the plan, with **I bought this lot**. Saving creates the lot and marks the plan purchased at once; a plan can only be turned into a lot once.
+
 **Save lot & add N items** creates one ordinary inventory item per line, with its share as its cost per item, and opens the lot's page. Lots are listed under **Inventory → Lots**. Each lot item's page says which lot it came from.
 
 ## The formula

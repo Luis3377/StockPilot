@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, AlertTriangle, Layers, PackagePlus } from 'lucide-react';
+import { ArrowLeft, Calculator, CheckCircle2, AlertTriangle, Layers, PackagePlus } from 'lucide-react';
 import { lotSummary } from '../domain/lots';
 import { formatDate } from '../domain/dates';
 import { plural } from '../domain/format';
 import { useAppState } from '../data/store';
 import { useMoney } from '../lib/hooks';
 import { Card, PageHeader } from '../ui/Card';
-import { Button } from '../ui/Button';
+import { Button, buttonClass } from '../ui/Button';
 import { EmptyState } from '../ui/EmptyState';
 import { useDialogs } from './dialogs/DialogHub';
 
@@ -26,9 +26,14 @@ export function LotsPage() {
         title="Bulk lots"
         description="Items bought together for one price, with the cost split across them."
         actions={
-          <Button variant="primary" icon={<Layers className="size-4" />} onClick={dialogs.addLot}>
-            Add bulk lot
-          </Button>
+          <>
+            <Link to="/inventory/bids" className={buttonClass('secondary', 'md')}>
+              <Calculator className="size-4" /> Plan a purchase: max bid
+            </Link>
+            <Button variant="primary" icon={<Layers className="size-4" />} onClick={dialogs.addLot}>
+              Add bulk lot
+            </Button>
+          </>
         }
       />
       {lots.length === 0 ? (

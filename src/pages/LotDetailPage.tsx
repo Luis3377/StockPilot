@@ -2,8 +2,9 @@
 // off, still in stock), realized vs projected profit, and the history of changes.
 
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CheckCircle2, History, Layers, Pencil } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Calculator, CheckCircle2, History, Layers, Pencil } from 'lucide-react';
 import { lotSummary, lotTotal, METHOD_LABELS } from '../domain/lots';
+import { bidPlanForLot } from '../domain/bids';
 import { formatDate, formatDateTime } from '../domain/dates';
 import { plural } from '../domain/format';
 import { multiplyMoney, toCents } from '../domain/money';
@@ -93,6 +94,8 @@ export function LotDetailPage() {
           testId="lot-stat-potential"
         />
       </div>
+
+      <PlannedWith lotId={lot.id} totalCost={s.total} />
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card className="p-4 sm:p-5" data-testid="lot-realized">
@@ -282,3 +285,36 @@ function HistoryEntry({ entry }: { entry: LotChange }) {
     </li>
   );
 }
+
+/** The Max Bid plan this lot was bought with: what was predicted, kept for comparison. */
+function PlannedWith({ lotId, totalCost }: { lotId: string; totalCost: number }) {
+  const data = useAppState((st) => st.data);
+  const { money } = useMoney();
+  const plan = bidPlanForLot(data, lotId);
+  if (!plan?.purchase) return null;
+  const expected = plan.snapshot?.results.expected ?? null;
+  return (
+    <Card className="mt-4 p-4 sm:p-5" data-testid="lot-bid-plan">
+      <SectionHeader
+        title={
+          <span className="flex items-center gap-2">
+            <Calculator className="size-4 text-accent" aria-hidden /> Planned with the Max Bid Calculator
+          </span>
+        }
+        description="The estimate you made before buying, kept unchanged so you can compare it with how the lot does."
+        action={
+          <Link to={`/inventory/bids/${plan.id}`} className="text-sm font-medium text-accent-text hover:underline">
+            Open plan →
+          </Link>
+        }
+      />
+      <div className="mt-3 grid gap-x-6 text-sm sm:grid-cols-2">
+        <Row label="Max bid estimate (expected)" value={expected?.maxBid != null ? money(expected.maxBid) : 'None'} />
+        <Row label="Paid" value={money(plan.purchase.pricePaid)} />
+        <Row label="Expected net proceeds (estimate)" value={expected ? money(expected.netProceeds) : '—'} />
+        <Row label="Total cost of the lot" value={money(totalCost)} />
+      </div>
+    </Card>
+  );
+}
+

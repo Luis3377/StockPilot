@@ -391,6 +391,137 @@ export function emptyMarketplace(): MarketplaceData {
   return { imports: [], transactions: [], payouts: [], matches: [], reviews: [], log: [] };
 }
 
+// ---------------------------------------------------------------------------
+// Max bid plans: estimates made BEFORE buying a lot. Planning data only: they never count as
+// inventory, revenue, expenses or purchases. A plan becomes linked to a real bulk lot only
+// when the user records the purchase, and its assumptions are then kept unchanged so a
+// later "predicted vs actual" comparison has the original estimate.
+// Added without a schema bump; data and backups without bid plans load with none.
+// ---------------------------------------------------------------------------
+
+export type BidPlanStatus = 'draft' | 'purchased' | 'passed' | 'lost';
+export type BidLotKind = 'storage_unit' | 'pallet' | 'estate_sale' | 'garage_sale' | 'collectibles' | 'retail_lot' | 'other';
+export type BidScenarioKey = 'conservative' | 'expected' | 'optimistic';
+export type BidShippingMode = 'per_item' | 'percent';
+
+/** One item the user expects in the lot. The resale estimate is always the user's own. */
+export interface BidItem {
+  id: string;
+  name: string;
+  quantity: number;
+  /** User's estimate of what ONE sells for. null = not estimated yet. */
+  unitValue: number | null;
+  category: string;
+  condition: string;
+  notes: string;
+  /** Fields last filled by the AI scanner and not edited since (name, category, condition, notes). */
+  aiFields: string[];
+}
+
+export interface BidScenarioInputs {
+  /** Resale values as a % of the user's estimate (100 = as estimated). */
+  resalePct: number | null;
+  /** % of the resale value expected not to sell (unsellable, damaged, unsold). */
+  unsoldPct: number | null;
+  /** Marketplace/selling fees as a % of what sells. */
+  sellingFeePct: number | null;
+}
+
+export interface BidFixedCost {
+  id: string;
+  label: string;
+  amount: number | null;
+}
+
+/** Everything the max bid is calculated from. Amounts in currency units, percentages as 0–100. */
+export interface BidAssumptions {
+  /** One estimate for the whole lot, or a list of items. */
+  valueMode: 'total' | 'items';
+  totalResaleValue: number | null;
+  /** Number of items in the lot when estimating a total (used for per-item shipping). */
+  itemCount: number | null;
+  items: BidItem[];
+  /** Outbound shipping you pay: $ per item sold, or % of what sells. */
+  shippingMode: BidShippingMode;
+  shippingValue: number | null;
+  /** Buying costs that don't depend on the bid: transport, cleanout, storage, entry fees. */
+  fixedCosts: BidFixedCost[];
+  /** Buyer's premium as a % of the bid. */
+  buyerPremiumPct: number | null;
+  /** Sales tax on the purchase as a %. */
+  salesTaxPct: number | null;
+  /** Whether sales tax is also charged on the buyer's premium. */
+  taxOnPremium: boolean;
+  targetRoiPct: number | null;
+  /** Most the user can spend in total (bid + premium + tax + fixed costs). */
+  budget: number | null;
+  /** A bid the user is considering, to check against the maximum. */
+  plannedBid: number | null;
+  scenarios: Record<BidScenarioKey, BidScenarioInputs>;
+}
+
+/** The headline figures of one scenario, as shown when a decision was recorded. */
+export interface BidScenarioSnapshot {
+  maxBid: number | null;
+  maxAllIn: number;
+  expectedSales: number;
+  sellingFees: number;
+  shipping: number;
+  netProceeds: number;
+  allInAtMaxBid: number | null;
+  profitAtMaxBid: number | null;
+  roiAtMaxBidPct: number | null;
+}
+
+/** A frozen copy of the plan when the purchase was recorded: what was predicted. */
+export interface BidSnapshot {
+  takenAt: string;
+  assumptions: BidAssumptions;
+  /** null for a scenario that couldn't be calculated. */
+  results: Record<BidScenarioKey, BidScenarioSnapshot | null>;
+  /** The bid recommended at the time (expected scenario, limited by budget). */
+  recommendedBid: number | null;
+}
+
+export interface BidPurchase {
+  lotId: string;
+  lotName: string;
+  /** created: the lot was made from this plan; linked: an existing lot was attached. */
+  how: 'created' | 'linked';
+  recordedAt: string;
+  purchaseDate: string | null;
+  /** What was actually paid for the lot (the winning bid / price). */
+  pricePaid: number;
+  /** Buyer's premium, tax and other acquisition costs actually recorded on the lot. */
+  additionalCosts: number;
+  /** Bid items → the inventory items they became (for later predicted vs actual). */
+  itemLinks: { bidItemId: string; itemId: string }[];
+}
+
+export interface BidStatusChange {
+  id: string;
+  at: string;
+  from: BidPlanStatus;
+  to: BidPlanStatus;
+  note: string;
+}
+
+export interface BidPlan {
+  id: string;
+  name: string;
+  description: string;
+  kind: BidLotKind;
+  status: BidPlanStatus;
+  assumptions: BidAssumptions;
+  /** Set when the purchase is recorded; never changed afterwards. */
+  snapshot: BidSnapshot | null;
+  purchase: BidPurchase | null;
+  history: BidStatusChange[];
+  duplicatedFromId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppData {
   schemaVersion: 1;
   items: Item[];
@@ -403,6 +534,8 @@ export interface AppData {
   lots: Lot[];
   /** Imported marketplace reports and reconciliation decisions. Missing in older data (loads empty). */
   marketplace: MarketplaceData;
+  /** Max bid plans (planning data, never inventory or money). Missing in older data (loads as []). */
+  bidPlans: BidPlan[];
 }
 
 export interface Settings {
@@ -446,6 +579,7 @@ export function emptyData(): AppData {
     snapshots: [],
     lots: [],
     marketplace: emptyMarketplace(),
+    bidPlans: [],
   };
 }
 

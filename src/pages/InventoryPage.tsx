@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Boxes, Download, FileUp, Layers, LayoutGrid, List, PackagePlus, Search, SearchX, Sparkles, X } from 'lucide-react';
+import { Boxes, Calculator, Download, FileUp, Layers, LayoutGrid, List, PackagePlus, Search, SearchX, Sparkles, X } from 'lucide-react';
 import { acquiredDate, itemCostValue, knownCategories, knownLocations, stockStatus, uniqueSorted, daysWithoutSale } from '../domain/calc';
 import { todayISO } from '../domain/dates';
 import type { Item } from '../domain/types';
@@ -136,6 +136,9 @@ export function InventoryPage() {
                 <Button icon={<Layers className="size-4" />} onClick={dialogs.addLot}>
                   Add bulk lot
                 </Button>
+                <Link to="/inventory/bids" className={buttonClass('secondary', 'md')} data-testid="bids-link">
+                  <Calculator className="size-4" /> Max bid calculator
+                </Link>
                 <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv}>
                   Import CSV
                 </Button>
@@ -167,6 +170,9 @@ export function InventoryPage() {
                 <Layers className="size-4" /> Lots ({data.lots.length})
               </Link>
             )}
+            <Link to="/inventory/bids" className={buttonClass('secondary', 'md')} data-testid="bids-link">
+              <Calculator className="size-4" /> Max bid
+            </Link>
             {scannerEnabled && (
               <Button icon={<Sparkles className="size-4" />} onClick={dialogs.scanItem}>
                 Scan with AI

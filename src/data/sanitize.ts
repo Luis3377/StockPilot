@@ -10,6 +10,16 @@ import {
   type Adjustment,
   type AdjustmentSource,
   type AppData,
+  type BidAssumptions,
+  type BidItem,
+  type BidLotKind,
+  type BidPlan,
+  type BidPlanStatus,
+  type BidPurchase,
+  type BidScenarioKey,
+  type BidScenarioSnapshot,
+  type BidSnapshot,
+  type BidStatusChange,
   type CountDraft,
   type CountLine,
   type CountRecord,
@@ -308,6 +318,130 @@ function sanitizeLot(raw: unknown, n: number): Lot {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Max bid plans: planning data. A plan must have an id and a name; any assumption that can't be
+// read loads as empty (to be re-entered) rather than failing the restore.
+// ---------------------------------------------------------------------------
+
+const BID_STATUSES: BidPlanStatus[] = ['draft', 'purchased', 'passed', 'lost'];
+const BID_KINDS: BidLotKind[] = ['storage_unit', 'pallet', 'estate_sale', 'garage_sale', 'collectibles', 'retail_lot', 'other'];
+const BID_SCENARIOS: BidScenarioKey[] = ['conservative', 'expected', 'optimistic'];
+const finiteOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+const signedOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const text = (v: unknown, max = 5000) => (typeof v === 'string' ? v.slice(0, max) : '');
+
+function sanitizeBidItem(raw: unknown): BidItem | null {
+  if (!isObj(raw) || typeof raw.name !== 'string' || !raw.name.trim()) return null;
+  const q = raw.quantity;
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : newId(),
+    name: text(raw.name, 200),
+    quantity: typeof q === 'number' && Number.isInteger(q) && q >= 1 ? q : 1,
+    unitValue: finiteOrNull(raw.unitValue),
+    category: text(raw.category, 80),
+    condition: text(raw.condition, 80),
+    notes: text(raw.notes, 2000),
+    aiFields: strArr(raw.aiFields).filter((f) => ['name', 'category', 'condition', 'notes'].includes(f)),
+  };
+}
+
+function sanitizeBidAssumptions(raw: unknown): BidAssumptions {
+  const o = isObj(raw) ? raw : {};
+  const sc = isObj(o.scenarios) ? o.scenarios : {};
+  return {
+    valueMode: o.valueMode === 'items' ? 'items' : 'total',
+    totalResaleValue: finiteOrNull(o.totalResaleValue),
+    itemCount: typeof o.itemCount === 'number' && Number.isInteger(o.itemCount) && o.itemCount >= 1 ? o.itemCount : null,
+    items: (Array.isArray(o.items) ? o.items : []).map(sanitizeBidItem).filter((i): i is BidItem => i !== null),
+    shippingMode: o.shippingMode === 'percent' ? 'percent' : 'per_item',
+    shippingValue: finiteOrNull(o.shippingValue),
+    fixedCosts: (Array.isArray(o.fixedCosts) ? o.fixedCosts : []).filter(isObj).map((c) => ({ id: typeof c.id === 'string' && c.id ? c.id : newId(), label: text(c.label, 80), amount: finiteOrNull(c.amount) })),
+    buyerPremiumPct: finiteOrNull(o.buyerPremiumPct),
+    salesTaxPct: finiteOrNull(o.salesTaxPct),
+    taxOnPremium: o.taxOnPremium !== false,
+    targetRoiPct: finiteOrNull(o.targetRoiPct),
+    budget: finiteOrNull(o.budget),
+    plannedBid: finiteOrNull(o.plannedBid),
+    scenarios: Object.fromEntries(
+      BID_SCENARIOS.map((k) => {
+        const s = isObj(sc[k]) ? (sc[k] as Obj) : {};
+        return [k, { resalePct: finiteOrNull(s.resalePct), unsoldPct: finiteOrNull(s.unsoldPct), sellingFeePct: finiteOrNull(s.sellingFeePct) }];
+      }),
+    ) as BidAssumptions['scenarios'],
+  };
+}
+
+function sanitizeBidSnapshot(raw: unknown): BidSnapshot | null {
+  if (!isObj(raw) || typeof raw.takenAt !== 'string') return null;
+  const results = isObj(raw.results) ? raw.results : {};
+  return {
+    takenAt: raw.takenAt,
+    assumptions: sanitizeBidAssumptions(raw.assumptions),
+    results: Object.fromEntries(
+      BID_SCENARIOS.map((k) => {
+        const r = results[k];
+        if (!isObj(r)) return [k, null];
+        const n = (key: string) => signedOrNull(r[key]) ?? 0;
+        const snap: BidScenarioSnapshot = {
+          maxBid: finiteOrNull(r.maxBid),
+          maxAllIn: n('maxAllIn'),
+          expectedSales: n('expectedSales'),
+          sellingFees: n('sellingFees'),
+          shipping: n('shipping'),
+          netProceeds: n('netProceeds'),
+          allInAtMaxBid: finiteOrNull(r.allInAtMaxBid),
+          profitAtMaxBid: signedOrNull(r.profitAtMaxBid),
+          roiAtMaxBidPct: signedOrNull(r.roiAtMaxBidPct),
+        };
+        return [k, snap];
+      }),
+    ) as BidSnapshot['results'],
+    recommendedBid: finiteOrNull(raw.recommendedBid),
+  };
+}
+
+function sanitizeBidPurchase(raw: unknown): BidPurchase | null {
+  if (!isObj(raw) || typeof raw.lotId !== 'string' || !raw.lotId) return null;
+  return {
+    lotId: raw.lotId,
+    lotName: text(raw.lotName, 120),
+    how: raw.how === 'linked' ? 'linked' : 'created',
+    recordedAt: text(raw.recordedAt, 40),
+    purchaseDate: typeof raw.purchaseDate === 'string' && isValidISODate(raw.purchaseDate) ? raw.purchaseDate : null,
+    pricePaid: finiteOrNull(raw.pricePaid) ?? 0,
+    additionalCosts: finiteOrNull(raw.additionalCosts) ?? 0,
+    itemLinks: (Array.isArray(raw.itemLinks) ? raw.itemLinks : [])
+      .filter(isObj)
+      .filter((l) => typeof l.bidItemId === 'string' && typeof l.itemId === 'string')
+      .map((l) => ({ bidItemId: l.bidItemId as string, itemId: l.itemId as string })),
+  };
+}
+
+function sanitizeBidPlan(raw: unknown, n: number): BidPlan {
+  const where = `Bid plan ${n}`;
+  if (!isObj(raw)) fail(where, 'is not an object');
+  const status = BID_STATUSES.includes(raw.status as BidPlanStatus) ? (raw.status as BidPlanStatus) : 'draft';
+  const purchase = sanitizeBidPurchase(raw.purchase);
+  return {
+    id: str(raw, 'id', where, true),
+    name: str(raw, 'name', where, true),
+    description: text(raw.description, 2000),
+    kind: BID_KINDS.includes(raw.kind as BidLotKind) ? (raw.kind as BidLotKind) : 'other',
+    // "Purchased" always comes with its purchase record.
+    status: status === 'purchased' && !purchase ? 'draft' : status,
+    assumptions: sanitizeBidAssumptions(raw.assumptions),
+    snapshot: sanitizeBidSnapshot(raw.snapshot),
+    purchase,
+    history: (Array.isArray(raw.history) ? raw.history : [])
+      .filter(isObj)
+      .filter((h) => typeof h.at === 'string' && BID_STATUSES.includes(h.from as BidPlanStatus) && BID_STATUSES.includes(h.to as BidPlanStatus))
+      .map((h): BidStatusChange => ({ id: typeof h.id === 'string' ? h.id : newId(), at: h.at as string, from: h.from as BidPlanStatus, to: h.to as BidPlanStatus, note: text(h.note, 500) })),
+    duplicatedFromId: typeof raw.duplicatedFromId === 'string' ? raw.duplicatedFromId : null,
+    createdAt: str(raw, 'createdAt', where) || new Date().toISOString(),
+    updatedAt: str(raw, 'updatedAt', where) || new Date().toISOString(),
+  };
+}
+
 const TXN_KINDS: MarketplaceTxnKind[] = ['sale', 'refund', 'shipping_label', 'fee', 'claim', 'dispute', 'hold', 'charge', 'adjustment', 'credit', 'payout', 'other'];
 const strArr = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 
@@ -457,6 +591,8 @@ export function sanitizeAppData(raw: unknown): AppData {
     lots: arr(raw, 'lots', 'Data').map((r, i) => sanitizeLot(r, i + 1)),
     // Data and backups from before payout reconciliation have no "marketplace": it loads empty.
     marketplace: sanitizeMarketplace(raw.marketplace),
+    // Data and backups from before the Max Bid Calculator have no "bidPlans": they load with none.
+    bidPlans: arr(raw, 'bidPlans', 'Data').map((r, i) => sanitizeBidPlan(r, i + 1)),
   };
 }
 
