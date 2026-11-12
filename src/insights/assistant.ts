@@ -24,6 +24,7 @@ import { formatMoney, formatPercent, roundMoney } from '../domain/money';
 import type { AppData, Item, Settings } from '../domain/types';
 import { buildInsights, lowMarginSection } from './rules';
 import { performanceAnswer } from './performanceAnswers';
+import { sourcingAnswer } from './sourcingAnswers';
 import { explainPayout } from '../domain/reconcile';
 import { toCents } from '../domain/money';
 import {
@@ -91,6 +92,8 @@ export const SUGGESTED_QUESTIONS = [
   'Which products are running low?',
   'Which platform earns me the most?',
   'How accurate have my predictions been?',
+  'Where do I make the most money?',
+  'What is my profit per hour?',
 ];
 
 /** Period phrases offered when a question doesn't say which dates it means. */
@@ -143,7 +146,7 @@ const STOPWORDS = new Set(
  * to steer the assistant) mustn't turn "how much profit did I make?" into an item lookup.
  */
 const QUESTION_WORDS = new Set(
-  'profit profits revenue sales sale month months year years week weeks today yesterday total money inventory stock cost costs worth value price prices margin margins fees fee shipping expense expenses payout payouts ebay platform platforms category categories best worst most least selling sold lots lot bulk all time ever last much spent spend paid invested'.split(' '),
+  'profit profits revenue sales sale month months year years week weeks today yesterday total money inventory stock cost costs worth value price prices margin margins fees fee shipping expense expenses payout payouts ebay platform platforms category categories best worst most least selling sold lots lot bulk all time ever last much spent spend paid invested source sources sourcing hour hours trip trips tied store stores thrift'.split(' '),
 );
 
 function tokens(s: string): string[] {
@@ -230,6 +233,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
         'A summary of any item by name or SKU',
         'What a number means ("what does projected profit mean?")',
         'Why an eBay payout doesn’t match your records ("why doesn’t my eBay payout match?")',
+        'Where you make the most money, realized profit per logged hour, and your best sourcing trips ("which thrift store is most profitable?")',
       ],
       followUps: SUGGESTED_QUESTIONS.slice(0, 4),
     });
@@ -312,6 +316,10 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   // --- Predicted vs. actual (lots planned with the Max Bid Calculator) ----------------
   const perfAnswer = performanceAnswer(q, data, settings, today);
   if (perfAnswer) return b.answer(perfAnswer.intent, perfAnswer.text, { details: perfAnswer.details, calculation: perfAnswer.calculation, followUps: perfAnswer.followUps });
+
+  // --- Sourcing (where you buy, profit per logged hour, trips) ----------------------
+  const srcAnswer = sourcingAnswer(q, data, settings, today, parseTimeframe(q, today) ?? periodRange('all', today));
+  if (srcAnswer) return b.answer(srcAnswer.intent, srcAnswer.text, { details: srcAnswer.details, calculation: srcAnswer.calculation, followUps: srcAnswer.followUps });
 
   // --- Bulk lots ----------------------------------------------------------------
   if (/\b(bulk lots?|lot purchases?|my lots|from (my |the )?lots?)\b/.test(q)) {
