@@ -16,6 +16,9 @@ import { BidsPage } from './pages/BidsPage';
 import { BidPlanPage } from './pages/BidPlanPage';
 import { LotPerformancePage } from './pages/performance/LotPerformancePage';
 import { HistoryPage } from './pages/performance/HistoryPage';
+import { SourcingPage } from './pages/sourcing/SourcingPage';
+import { SourceDetailPage } from './pages/sourcing/SourceDetailPage';
+import { TripPage } from './pages/sourcing/TripPage';
 import { PayoutsPage } from './pages/payouts/PayoutsPage';
 import { PayoutDetailPage } from './pages/payouts/PayoutDetailPage';
 import { SalesPage } from './pages/SalesPage';
@@ -95,6 +98,9 @@ export function App() {
                   <Route path="sales/payouts" element={<PayoutsPage />} />
                   <Route path="sales/payouts/:ref" element={<PayoutDetailPage />} />
                   <Route path="insights" element={<InsightsPage />} />
+                  <Route path="insights/sourcing" element={<SourcingPage />} />
+                  <Route path="insights/sourcing/source/:key" element={<SourceDetailPage />} />
+                  <Route path="insights/sourcing/trips/:id" element={<TripPage />} />
                   <Route path="count" element={<CountCheckPage />} />
                   <Route path="settings" element={<SettingsPage />} />
                   <Route path="*" element={<NotFound />} />

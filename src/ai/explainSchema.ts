@@ -36,6 +36,13 @@ export const ASSISTANT_INTENTS = {
   prediction_accuracy: 'How accurate have my predictions been?',
   lot_outcomes: 'Which lots made more than expected?',
   lot_learning: 'How should my previous results affect my next maximum bid?',
+  source_profit: 'Where do I make the most money {period}?',
+  thrift_store_profit: 'Which thrift store is most profitable {period}?',
+  profit_per_hour: 'What is my profit per hour {period}?',
+  category_time_return: 'Which category gives me the best return for my time {period}?',
+  source_tied_up: 'How much inventory money is tied up at each source?',
+  best_trips: 'Which sourcing trips were most successful?',
+  source_recommend: 'Where should I consider sourcing more inventory?',
 } as const;
 
 export type AssistantIntent = keyof typeof ASSISTANT_INTENTS;

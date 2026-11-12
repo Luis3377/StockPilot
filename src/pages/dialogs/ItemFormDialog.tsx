@@ -20,6 +20,8 @@ import { scannerEnabled } from '../../ai/config';
 import { suggestionToFields, type ScanFillableField } from '../../ai/applySuggestion';
 import type { ScanResult } from '../../ai/scanSchema';
 import { ScanPanel } from './ScanPanel';
+import { assignSource, guessSourceType, linkToSession, recordedSourceId, resolveSource } from '../../domain/sourcing';
+import { SourceField, TripField, type SourceDraft } from '../sourcing/SourceField';
 
 interface Props {
   open: boolean;
@@ -115,9 +117,18 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
   const saved = useRef(false);
   const formRef = useRef(form);
   formRef.current = form;
+  // Where it was bought (kept apart from the storage location); items in a lot use the lot's.
+  const inLot = item ? lotForItem(data, item.id) : null;
+  const sourceDraft = (): SourceDraft => {
+    const id = item ? recordedSourceId(data, item, 'item') : null;
+    const name = id ? (data.sourcing.sources.find((x) => x.id === id)?.name ?? '') : '';
+    return { text: name, type: guessSourceType(name), sessionId: item?.sessionId ?? '' };
+  };
+  const [source, setSource] = useState<SourceDraft>(sourceDraft);
 
   useEffect(() => {
     if (open) {
+      setSource(sourceDraft());
       setForm(initialState(item, settings.defaultLowStockThreshold));
       setErrors({});
       setShowMore(Boolean(item));
@@ -234,9 +245,15 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
       return;
     }
     try {
-      const result = item
-        ? store.commit((d) => updateItem(d, item.id, input, { applyCostToSales: Boolean(costChanged && applyCostToSales) }))
-        : store.commit((d) => addItem(d, input));
+      const result = store.commit((d) => {
+        const r = item ? updateItem(d, item.id, input, { applyCostToSales: Boolean(costChanged && applyCostToSales) }) : addItem(d, input);
+        if (inLot) return r;
+        // One save: the item, its source (new ones are added) and its trip.
+        const src = resolveSource(r.data, source.text, source.type);
+        let next = assignSource(src.data, 'item', r.item.id, src.sourceId, undefined, { newRecord: !item });
+        next = linkToSession(next, 'item', r.item.id, source.sessionId || null);
+        return { ...r, data: next };
+      });
       saved.current = true;
       // Delete photos that were removed from the item.
       const before = new Set([...(item?.photoIds ?? []), ...createdPhotos.current]);
@@ -400,6 +417,16 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <TextField label={<AiLabel text="Condition" on={aiFilled.has('condition')} />} placeholder="e.g. New with box" value={form.condition} onChange={(v) => set('condition', v)} suggestions={CONDITION_SUGGESTIONS} error={errors.condition} />
             <TextField label="Storage location" placeholder="e.g. Closet shelf A" value={form.location} onChange={(v) => set('location', v)} suggestions={locations} error={errors.location} />
+            {inLot ? (
+              <p className="text-sm text-ink-2 sm:col-span-2" data-testid="item-lot-source">
+                Bought in the bulk lot “{inLot.lot.name}”{inLot.lot.source ? `, from ${inLot.lot.source}` : ''}. The lot’s source applies to its items.
+              </p>
+            ) : (
+              <>
+                <SourceField className="sm:col-span-2" value={source} onChange={(v) => setSource({ ...v, type: v.text !== source.text ? guessSourceType(v.text) : v.type })} />
+                <TripField value={source.sessionId} onChange={(id) => setSource({ ...source, sessionId: id })} />
+              </>
+            )}
             <TextField label="SKU / ID" placeholder="Leave blank to create one" value={form.sku} onChange={(v) => set('sku', v)} error={errors.sku} autoComplete="off" />
             <TextField label="Purchase date" type="date" value={form.purchaseDate} onChange={(v) => set('purchaseDate', v)} error={errors.purchaseDate} max={todayISO()} />
             {moreExtras}
