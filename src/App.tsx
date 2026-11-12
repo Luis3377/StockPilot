@@ -24,6 +24,7 @@ import { ReportPage } from './pages/close/ReportPage';
 import { CloseHistoryPage } from './pages/close/CloseHistoryPage';
 import { YearEndPage } from './pages/yearEnd/YearEndPage';
 import { YearReportPage } from './pages/yearEnd/YearReportPage';
+import { PlanningPage } from './pages/planning/PlanningPage';
 import { PayoutsPage } from './pages/payouts/PayoutsPage';
 import { PayoutDetailPage } from './pages/payouts/PayoutDetailPage';
 import { SalesPage } from './pages/SalesPage';
@@ -105,6 +106,7 @@ export function App() {
                   <Route path="sales/close/:month/report" element={<ReportPage />} />
                   <Route path="sales/year-end" element={<YearEndPage />} />
                   <Route path="sales/year-end/:year/report" element={<YearReportPage />} />
+                  <Route path="sales/planning" element={<PlanningPage />} />
                   <Route path="sales/payouts" element={<PayoutsPage />} />
                   <Route path="sales/payouts/:ref" element={<PayoutDetailPage />} />
                   <Route path="insights" element={<InsightsPage />} />
