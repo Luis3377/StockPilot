@@ -25,6 +25,7 @@ import type { AppData, Item, Settings } from '../domain/types';
 import { buildInsights, lowMarginSection } from './rules';
 import { performanceAnswer } from './performanceAnswers';
 import { sourcingAnswer } from './sourcingAnswers';
+import { monthAnswer } from './closeAnswers';
 import { explainPayout } from '../domain/reconcile';
 import { toCents } from '../domain/money';
 import {
@@ -94,6 +95,7 @@ export const SUGGESTED_QUESTIONS = [
   'How accurate have my predictions been?',
   'Where do I make the most money?',
   'What is my profit per hour?',
+  'How did my business perform this month?',
 ];
 
 /** Period phrases offered when a question doesn't say which dates it means. */
@@ -234,6 +236,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
         'What a number means ("what does projected profit mean?")',
         'Why an eBay payout doesn’t match your records ("why doesn’t my eBay payout match?")',
         'Where you make the most money, realized profit per logged hour, and your best sourcing trips ("which thrift store is most profitable?")',
+        'How a month went and why profit changed, what to review before closing, and unexplained inventory differences ("why did my profit decline?")',
       ],
       followUps: SUGGESTED_QUESTIONS.slice(0, 4),
     });
@@ -262,6 +265,10 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
       followUps: ['How much money do I have invested in unsold inventory?', 'What is my inventory worth?'],
     });
   }
+
+  // --- Monthly close (a month's results, changes, checklist, payouts, roll-forward) -------
+  const monthly = monthAnswer(q, data, settings, today, parseTimeframe(q, today));
+  if (monthly) return b.answer(monthly.intent, monthly.text, { details: monthly.details, calculation: monthly.calculation, items: monthly.items, followUps: monthly.followUps });
 
   // --- Marketplace payouts ------------------------------------------------------
   // Answers come from the reconciliation engine's own figures and findings, word for word:
