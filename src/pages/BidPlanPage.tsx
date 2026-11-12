@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calculator, Copy, Layers, PackageCheck, RotateCcw, Save, ThumbsDown, Trash2, Trophy } from 'lucide-react';
+import { ArrowLeft, Calculator, Copy, Layers, PackageCheck, RotateCcw, Save, ThumbsDown, Trash2, TrendingUp, Trophy } from 'lucide-react';
 import {
   bidPlanErrors,
   calculateBid,
@@ -20,7 +20,7 @@ import {
 import { knownCategories } from '../domain/calc';
 import { formatDate, formatDateTime } from '../domain/dates';
 import { isDomainError } from '../domain/errors';
-import type { BidPlan, BidPlanStatus } from '../domain/types';
+import type { BidAdjustment, BidPlan, BidPlanStatus, BidScenarioInputs } from '../domain/types';
 import { store, useAppState } from '../data/store';
 import { useMoney } from '../lib/hooks';
 import { useAction } from '../lib/useAction';
@@ -35,6 +35,7 @@ import { useToast } from '../ui/Toast';
 import { BidForm } from './bids/BidForm';
 import { BidResults } from './bids/BidResults';
 import { BidPurchaseDialog } from './bids/BidPurchaseDialog';
+import { LearnCard } from './bids/LearnCard';
 import { draftFromPlan, isDirty, toBidInput, type BidDraft } from './bids/bidDraft';
 
 export const STATUS_TONES: Record<BidPlanStatus, Tone> = { draft: 'accent', purchased: 'good', passed: 'neutral', lost: 'warn' };
@@ -118,6 +119,16 @@ function PlanEditor({ plan }: { plan: BidPlan | null }) {
       setSubmitErrors(Object.keys(e.fields).length ? e.fields : {});
       toast.error(e.message);
     }
+  };
+
+  // History-based suggestions change only the expected scenario, and keep the original values.
+  const scenarioText = (v: BidScenarioInputs) => ({ resalePct: v.resalePct === null ? '' : String(v.resalePct), unsoldPct: v.unsoldPct === null ? '' : String(v.unsoldPct), sellingFeePct: v.sellingFeePct === null ? '' : String(v.sellingFeePct) });
+  const applyLearning = (record: BidAdjustment) => {
+    onChange((d) => ({ ...d, scenarios: { ...d.scenarios, expected: scenarioText(record.after) }, adjustments: [...d.adjustments, record] }), ['scenario.expected.resalePct', 'scenario.expected.unsoldPct', 'scenario.expected.sellingFeePct']);
+    toast.success('Applied to the expected scenario. Save to keep it; Undo restores the original values.');
+  };
+  const undoLearning = (record: BidAdjustment) => {
+    onChange((d) => ({ ...d, scenarios: { ...d.scenarios, expected: scenarioText(record.before) }, adjustments: d.adjustments.filter((a) => a.id !== record.id) }));
   };
 
   const duplicate = () => {
@@ -210,9 +221,14 @@ function PlanEditor({ plan }: { plan: BidPlan | null }) {
             </div>
           </div>
           {lot ? (
-            <Link to={`/inventory/lots/${lot.id}`} className={buttonClass('secondary', 'md', 'mt-3')} data-testid="bid-open-lot">
-              <Layers className="size-4" /> Open lot “{lot.name}”
-            </Link>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link to={`/inventory/lots/${lot.id}`} className={buttonClass('secondary', 'md')} data-testid="bid-open-lot">
+                <Layers className="size-4" /> Open lot “{lot.name}”
+              </Link>
+              <Link to={`/inventory/lots/${lot.id}/performance`} className={buttonClass('secondary', 'md')} data-testid="bid-performance">
+                <TrendingUp className="size-4" /> Predicted vs. actual
+              </Link>
+            </div>
           ) : (
             <p className="mt-3 text-sm text-warn-text">The lot “{plan.purchase.lotName}” is no longer in your records.</p>
           )}
@@ -244,6 +260,7 @@ function PlanEditor({ plan }: { plan: BidPlan | null }) {
               ) : undefined
             }
           />
+          <LearnCard draft={draft} locked={locked} onApply={applyLearning} onUndo={undoLearning} />
           {plan && (
             <Card className="p-4 sm:p-5" data-testid="bid-decision">
               <SectionHeader title="Decision" description="Plans stay planning data until you record a purchase." />

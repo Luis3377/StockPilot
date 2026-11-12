@@ -2,7 +2,7 @@
 // off, still in stock), realized vs projected profit, and the history of changes.
 
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Calculator, CheckCircle2, History, Layers, Pencil } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Calculator, CheckCircle2, History, Layers, Pencil, TrendingUp } from 'lucide-react';
 import { lotSummary, lotTotal, METHOD_LABELS } from '../domain/lots';
 import { bidPlanForLot } from '../domain/bids';
 import { formatDate, formatDateTime } from '../domain/dates';
@@ -12,7 +12,7 @@ import type { LotChange } from '../domain/types';
 import { useAppState } from '../data/store';
 import { useMoney } from '../lib/hooks';
 import { Card, PageHeader, SectionHeader } from '../ui/Card';
-import { Button } from '../ui/Button';
+import { Button, buttonClass } from '../ui/Button';
 import { EmptyState } from '../ui/EmptyState';
 import { CURRENT, PROJECTED, REALIZED, StatTile } from '../ui/Stat';
 import { cn } from '../ui/cn';
@@ -71,9 +71,14 @@ export function LotDetailPage() {
         title={<span className="break-words">{lot.name}</span>}
         description={[lot.purchaseDate && `Bought ${formatDate(lot.purchaseDate)}`, lot.source, `Split ${METHOD_LABELS[lot.method].toLowerCase()}`].filter(Boolean).join(' · ')}
         actions={
-          <Button icon={<Pencil className="size-4" />} onClick={() => dialogs.editLot(lot.id)} data-testid="lot-edit-open">
-            Edit lot
-          </Button>
+          <>
+            <Link to={`/inventory/lots/${lot.id}/performance`} className={buttonClass('secondary', 'md')} data-testid="lot-performance-link">
+              <TrendingUp className="size-4" /> Performance
+            </Link>
+            <Button icon={<Pencil className="size-4" />} onClick={() => dialogs.editLot(lot.id)} data-testid="lot-edit-open">
+              Edit lot
+            </Button>
+          </>
         }
       />
 
@@ -303,9 +308,14 @@ function PlannedWith({ lotId, totalCost }: { lotId: string; totalCost: number })
         }
         description="The estimate you made before buying, kept unchanged so you can compare it with how the lot does."
         action={
-          <Link to={`/inventory/bids/${plan.id}`} className="text-sm font-medium text-accent-text hover:underline">
-            Open plan →
-          </Link>
+          <span className="flex flex-col items-end gap-1 sm:flex-row sm:gap-3">
+            <Link to={`/inventory/lots/${lotId}/performance`} className="text-sm font-medium text-accent-text hover:underline" data-testid="lot-predicted-vs-actual">
+              Predicted vs. actual →
+            </Link>
+            <Link to={`/inventory/bids/${plan.id}`} className="text-sm font-medium text-accent-text hover:underline">
+              Open plan →
+            </Link>
+          </span>
         }
       />
       <div className="mt-3 grid gap-x-6 text-sm sm:grid-cols-2">
