@@ -3,7 +3,7 @@
 // they've planned. Planning only: nothing here changes profit, expenses or inventory, and no bank
 // account is connected. Figures are labelled recorded, estimated or user-entered.
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Archive, ArrowLeft, Bell, CheckCircle2, Info, Pencil, Plus } from 'lucide-react';
 import type { Obligation, ObligationCategory, ReserveCategory, ReserveKind } from '../../domain/types';
@@ -115,9 +115,14 @@ function SummaryCard({ s }: { s: PlanningSummary }) {
 function TaxCard({ s }: { s: PlanningSummary }) {
   const { money } = useMoney();
   const run = useAction();
-  const [value, setValue] = useState('');
   const current = s.tax?.category.percent ?? null;
-  useEffect(() => setValue(current === null ? '' : String(current)), [current]);
+  const [value, setValue] = useState(current === null ? '' : String(current));
+  // Follow the saved percentage when it changes (not on every render, so typing isn't overwritten).
+  const [shown, setShown] = useState(current);
+  if (shown !== current) {
+    setShown(current);
+    setValue(current === null ? '' : String(current));
+  }
   const save = () => run(() => store.update((d) => setTaxPercent(d, value.trim() === '' ? null : Number(value), clk())), 'Reserve percentage saved.');
   return (
     <Card className="mb-4 p-4 sm:p-5" data-testid="tax-card">
@@ -273,9 +278,10 @@ function ReservesCard({ s }: { s: PlanningSummary }) {
           </ul>
         </details>
       )}
-      <CategoryDialog category={editing === 'new' ? null : editing} open={editing !== null} onClose={() => setEditing(null)} />
-      <EntryDialog open={recording} onClose={() => setRecording(false)} />
-      <VoidDialog entryId={voiding} onClose={() => setVoiding(null)} />
+      {/* Each dialog mounts when it opens, so its fields start from the record at once (no reset after typing). */}
+      {editing !== null && <CategoryDialog category={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {recording && <EntryDialog onClose={() => setRecording(false)} />}
+      {voiding !== null && <VoidDialog entryId={voiding} onClose={() => setVoiding(null)} />}
     </Card>
   );
 }
@@ -324,7 +330,7 @@ function ObligationsCard() {
           ))}
         </ul>
       )}
-      <ObligationDialog obligation={editing === 'new' ? null : editing} open={editing !== null} onClose={() => setEditing(null)} />
+      {editing !== null && <ObligationDialog obligation={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </Card>
   );
 }
@@ -358,7 +364,7 @@ function useFormErrors() {
     if (!isDomainError(e)) throw e;
     setErrors(Object.keys(e.fields).length ? e.fields : { form: e.message });
   };
-  return { errors, setErrors, handle };
+  return { errors, handle };
 }
 
 function Footer({ onClose, onSave, label, testId }: { onClose: () => void; onSave: () => void; label: string; testId: string }) {
@@ -374,23 +380,14 @@ function Footer({ onClose, onSave, label, testId }: { onClose: () => void; onSav
   );
 }
 
-function CategoryDialog({ category, open, onClose }: { category: ReserveCategory | null; open: boolean; onClose: () => void }) {
+function CategoryDialog({ category, onClose }: { category: ReserveCategory | null; onClose: () => void }) {
   const toast = useToast();
-  const { errors, setErrors, handle } = useFormErrors();
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<ReserveKind>('emergency');
-  const [mode, setMode] = useState<'percent' | 'goal'>('goal');
-  const [percent, setPercent] = useState('');
-  const [goal, setGoal] = useState('');
-  useEffect(() => {
-    if (!open) return;
-    setName(category?.name ?? '');
-    setKind(category?.kind ?? 'emergency');
-    setMode(category?.mode ?? 'goal');
-    setPercent(category?.percent === null || category?.percent === undefined ? '' : String(category.percent));
-    setGoal(category?.goal === null || category?.goal === undefined ? '' : String(category.goal));
-    setErrors({});
-  }, [open, category, setErrors]);
+  const { errors, handle } = useFormErrors();
+  const [name, setName] = useState(category?.name ?? '');
+  const [kind, setKind] = useState<ReserveKind>(category?.kind ?? 'emergency');
+  const [mode, setMode] = useState<'percent' | 'goal'>(category?.mode ?? 'goal');
+  const [percent, setPercent] = useState(category?.percent == null ? '' : String(category.percent));
+  const [goal, setGoal] = useState(category?.goal == null ? '' : String(category.goal));
   const save = () => {
     try {
       const input = { name, kind, mode, percent: percent.trim() === '' ? null : Number(percent), goal: goal.trim() === '' ? null : Number(goal) };
@@ -402,7 +399,7 @@ function CategoryDialog({ category, open, onClose }: { category: ReserveCategory
     }
   };
   return (
-    <Dialog open={open} onClose={onClose} title={category ? `Edit “${category.name}”` : 'Add a reserve'} testId="category-dialog" footer={<Footer onClose={onClose} onSave={save} label="Save" testId="category-save" />}>
+    <Dialog open onClose={onClose} title={category ? `Edit “${category.name}”` : 'Add a reserve'} testId="category-dialog" footer={<Footer onClose={onClose} onSave={save} label="Save" testId="category-save" />}>
       <div className="space-y-3">
         <TextField label="Name" required value={name} onChange={setName} error={errors.name} maxLength={80} placeholder="e.g. Equipment replacement" />
         {category?.kind !== 'tax' && (
@@ -427,26 +424,17 @@ function CategoryDialog({ category, open, onClose }: { category: ReserveCategory
   );
 }
 
-function EntryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function EntryDialog({ onClose }: { onClose: () => void }) {
   const data = useAppState((x) => x.data);
   const settings = useAppState((x) => x.settings);
   const toast = useToast();
-  const { errors, setErrors, handle } = useFormErrors();
+  const { errors, handle } = useFormErrors();
   const cats = data.planning.categories.filter((c) => !c.archived);
-  const [categoryId, setCategoryId] = useState('');
+  const [categoryId, setCategoryId] = useState(cats[0]?.id ?? '');
   const [date, setDate] = useState(todayISO());
   const [kind, setKind] = useState<'deposit' | 'withdrawal' | 'adjustment'>('deposit');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  useEffect(() => {
-    if (!open) return;
-    setCategoryId(cats[0]?.id ?? '');
-    setDate(todayISO());
-    setKind('deposit');
-    setAmount('');
-    setNote('');
-    setErrors({});
-  }, [open]);
   const save = (allowDuplicate = false) => {
     try {
       store.update((d) => addEntry(d, { categoryId, date, kind, amount: amount.trim() === '' ? null : Number(amount), note }, { allowDuplicate }, clk()).data);
@@ -457,7 +445,7 @@ function EntryDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
     }
   };
   return (
-    <Dialog open={open} onClose={onClose} title="Record money set aside" description="Record what you moved to (or took from) savings yourself. StockPilot doesn’t move money or see your bank." testId="entry-dialog" footer={<Footer onClose={onClose} onSave={() => save()} label="Record" testId="entry-save" />}>
+    <Dialog open onClose={onClose} title="Record money set aside" description="Record what you moved to (or took from) savings yourself. StockPilot doesn’t move money or see your bank." testId="entry-dialog" footer={<Footer onClose={onClose} onSave={() => save()} label="Record" testId="entry-save" />}>
       <div className="space-y-3">
         <SelectField label="Reserve" value={categoryId} onChange={setCategoryId} error={errors.categoryId}>
           {cats.map((c) => (
@@ -487,17 +475,13 @@ function EntryDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
   );
 }
 
-function VoidDialog({ entryId, onClose }: { entryId: string | null; onClose: () => void }) {
+function VoidDialog({ entryId, onClose }: { entryId: string; onClose: () => void }) {
   const toast = useToast();
-  const { errors, setErrors, handle } = useFormErrors();
+  const { errors, handle } = useFormErrors();
   const [reason, setReason] = useState('');
-  useEffect(() => {
-    setReason('');
-    setErrors({});
-  }, [entryId, setErrors]);
   const save = () => {
     try {
-      store.update((d) => voidEntry(d, entryId!, reason, clk()));
+      store.update((d) => voidEntry(d, entryId, reason, clk()));
       toast.success('Entry voided. It stays in the history.');
       onClose();
     } catch (e) {
@@ -505,36 +489,25 @@ function VoidDialog({ entryId, onClose }: { entryId: string | null; onClose: () 
     }
   };
   return (
-    <Dialog open={entryId !== null} onClose={onClose} title="Void this entry" description="It stays in the history, crossed out, and no longer counts." testId="void-dialog" footer={<Footer onClose={onClose} onSave={save} label="Void" testId="void-save" />}>
+    <Dialog open onClose={onClose} title="Void this entry" description="It stays in the history, crossed out, and no longer counts." testId="void-dialog" footer={<Footer onClose={onClose} onSave={save} label="Void" testId="void-save" />}>
       <TextAreaField label="Why?" value={reason} onChange={setReason} error={errors.reason ?? errors.form} rows={2} data-testid="void-reason" />
     </Dialog>
   );
 }
 
-function ObligationDialog({ obligation, open, onClose }: { obligation: Obligation | null; open: boolean; onClose: () => void }) {
+function ObligationDialog({ obligation, onClose }: { obligation: Obligation | null; onClose: () => void }) {
   const data = useAppState((x) => x.data);
   const settings = useAppState((x) => x.settings);
   const toast = useToast();
   const run = useAction();
-  const { errors, setErrors, handle } = useFormErrors();
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<ObligationCategory>('other');
-  const [dueDate, setDueDate] = useState('');
-  const [amount, setAmount] = useState('');
-  const [recurrence, setRecurrence] = useState<Obligation['recurrence']>('none');
-  const [endDate, setEndDate] = useState('');
-  const [reserve, setReserve] = useState('');
-  useEffect(() => {
-    if (!open) return;
-    setDescription(obligation?.description ?? '');
-    setCategory(obligation?.category ?? 'other');
-    setDueDate(obligation?.dueDate ?? '');
-    setAmount(obligation ? String(obligation.amount) : '');
-    setRecurrence(obligation?.recurrence ?? 'none');
-    setEndDate(obligation?.endDate ?? '');
-    setReserve(obligation?.reserveCategoryId ?? '');
-    setErrors({});
-  }, [open, obligation, setErrors]);
+  const { errors, handle } = useFormErrors();
+  const [description, setDescription] = useState(obligation?.description ?? '');
+  const [category, setCategory] = useState<ObligationCategory>(obligation?.category ?? 'other');
+  const [dueDate, setDueDate] = useState(obligation?.dueDate ?? '');
+  const [amount, setAmount] = useState(obligation ? String(obligation.amount) : '');
+  const [recurrence, setRecurrence] = useState<Obligation['recurrence']>(obligation?.recurrence ?? 'none');
+  const [endDate, setEndDate] = useState(obligation?.endDate ?? '');
+  const [reserve, setReserve] = useState(obligation?.reserveCategoryId ?? '');
   const save = () => {
     try {
       const input = { description, category, dueDate, amount: amount.trim() === '' ? null : Number(amount), recurrence, endDate: endDate || null, reserveCategoryId: reserve || null };
@@ -547,7 +520,7 @@ function ObligationDialog({ obligation, open, onClose }: { obligation: Obligatio
   };
   return (
     <Dialog
-      open={open}
+      open
       onClose={onClose}
       title={obligation ? `Edit “${obligation.description}”` : 'Plan an obligation'}
       description="A planning record: it doesn’t create an expense. Enter your own dates; StockPilot doesn’t assume any tax deadlines."
