@@ -158,3 +158,17 @@ The full map is in [PREDICTED_VS_ACTUAL.md](PREDICTED_VS_ACTUAL.md#tests). In sh
 | Assistant answers with re-checked calculations | `src/insights/performance.test.ts`; `e2e/performance.spec.ts` |
 | Backup and restore; phones; accessibility | `src/insights/performance.test.ts`; `e2e/performance.spec.ts` (desktop + iPhone-sized, axe) |
 
+## Profit by source + profit per hour → tests
+
+The full map is in [PROFIT_BY_SOURCE.md](PROFIT_BY_SOURCE.md#tests). In short:
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Item and lot attribution; partial and completed sales; multiple and missing sources | `src/insights/sourcing.test.ts`; `e2e/sourcing.spec.ts` |
+| Source totals reconcile with sales to the cent | `src/insights/sourcing.test.ts` |
+| Duplicate names, renames (history kept), merges, logged assignments | `src/insights/sourcing.test.ts`; `e2e/sourcing.spec.ts` |
+| Trips, shared time and expenses, completed trips | `src/insights/sourcing.test.ts`; `src/insights/sourcingAnswers.test.ts`; `e2e/sourcing.spec.ts` |
+| Timer persistence; profit per hour, zero hours, incomplete time, negative profit | `src/insights/sourcing.test.ts`; `e2e/sourcing.spec.ts` |
+| Categories, inventory cost, backup/restore, older data | `src/insights/sourcing.test.ts` |
+| Assistant answers with re-checked calculations | `src/insights/sourcingAnswers.test.ts`; `e2e/sourcing.spec.ts` |
+| Phones and accessibility | `e2e/sourcing.spec.ts` (desktop + iPhone-sized, axe) |

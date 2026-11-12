@@ -16,6 +16,8 @@ Resellers often buy many items for one price: an auction lot, an estate-sale box
 
 **Save lot & add N items** creates one ordinary inventory item per line, with its share as its cost per item, and opens the lot's page. Lots are listed under **Inventory → Lots**. Each lot item's page says which lot it came from.
 
+**Where it was bought.** The lot's "Where you bought it" is one of your sources (added if new, with its type). The lot's items use the lot's source, and their sales count toward it in **Smart Insights → Sourcing Performance** with their exact lot share as cost of goods sold. See [PROFIT_BY_SOURCE.md](PROFIT_BY_SOURCE.md).
+
 ## The formula
 
 ```
