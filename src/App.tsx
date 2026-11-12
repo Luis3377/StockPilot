@@ -19,6 +19,9 @@ import { HistoryPage } from './pages/performance/HistoryPage';
 import { SourcingPage } from './pages/sourcing/SourcingPage';
 import { SourceDetailPage } from './pages/sourcing/SourceDetailPage';
 import { TripPage } from './pages/sourcing/TripPage';
+import { MonthlyClosePage } from './pages/close/MonthlyClosePage';
+import { ReportPage } from './pages/close/ReportPage';
+import { CloseHistoryPage } from './pages/close/CloseHistoryPage';
 import { PayoutsPage } from './pages/payouts/PayoutsPage';
 import { PayoutDetailPage } from './pages/payouts/PayoutDetailPage';
 import { SalesPage } from './pages/SalesPage';
@@ -95,6 +98,9 @@ export function App() {
                   <Route path="inventory/bids/:id" element={<BidPlanPage />} />
                   <Route path="inventory/:id" element={<ItemDetailPage />} />
                   <Route path="sales" element={<SalesPage />} />
+                  <Route path="sales/close" element={<MonthlyClosePage />} />
+                  <Route path="sales/close/history" element={<CloseHistoryPage />} />
+                  <Route path="sales/close/:month/report" element={<ReportPage />} />
                   <Route path="sales/payouts" element={<PayoutsPage />} />
                   <Route path="sales/payouts/:ref" element={<PayoutDetailPage />} />
                   <Route path="insights" element={<InsightsPage />} />

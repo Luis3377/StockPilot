@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, Landmark, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
+import { Download, CalendarCheck, Landmark, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
 import { deleteSale } from '../domain/actions';
 import { computeSale, inventoryTotals, nameKey, platformLabel, projectUnsold, salesByPlatform, salesInRange, totalSales } from '../domain/calc';
 import { formatDate, periodRange, PERIOD_OPTIONS, todayISO, type PeriodKey } from '../domain/dates';
@@ -80,9 +80,14 @@ export function SalesPage() {
         <PageHeader
           title="Sales & Profit"
           actions={
-            <Link to="/sales/payouts" className={buttonClass('secondary', 'md')} data-testid="payouts-link">
-              <Landmark className="size-4" aria-hidden /> Payout reconciliation
-            </Link>
+            <>
+              <Link to="/sales/close" className={buttonClass('secondary', 'md')} data-testid="close-link">
+                <CalendarCheck className="size-4" aria-hidden /> Monthly Close
+              </Link>
+              <Link to="/sales/payouts" className={buttonClass('secondary', 'md')} data-testid="payouts-link">
+                <Landmark className="size-4" aria-hidden /> Payout reconciliation
+              </Link>
+            </>
           }
         />
         <Card>
@@ -116,6 +121,9 @@ export function SalesPage() {
             <Button icon={<Download className="size-4" />} onClick={() => downloadText(`${prefix}profit-summary-${fileStamp()}.csv`, profitSummaryCsv(data.sales, todayISO()))} className="hidden sm:inline-flex">
               Profit summary
             </Button>
+            <Link to="/sales/close" className={buttonClass('secondary', 'md')} data-testid="close-link">
+              <CalendarCheck className="size-4" aria-hidden /> Monthly Close
+            </Link>
             <Link to="/sales/payouts" className={buttonClass('secondary', 'md')} data-testid="payouts-link">
               <Landmark className="size-4" aria-hidden /> Payouts
             </Link>

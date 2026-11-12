@@ -172,3 +172,17 @@ The full map is in [PROFIT_BY_SOURCE.md](PROFIT_BY_SOURCE.md#tests). In short:
 | Categories, inventory cost, backup/restore, older data | `src/insights/sourcing.test.ts` |
 | Assistant answers with re-checked calculations | `src/insights/sourcingAnswers.test.ts`; `e2e/sourcing.spec.ts` |
 | Phones and accessibility | `e2e/sourcing.spec.ts` (desktop + iPhone-sized, axe) |
+
+## Monthly close + Controller's Report → tests
+
+The full map is in [MONTHLY_CLOSE.md](MONTHLY_CLOSE.md#tests). In short:
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Month selection, revenue and profit, month-over-month comparisons | `src/insights/monthly.test.ts`; `src/insights/close.test.ts`; `e2e/close.spec.ts` |
+| Inventory roll-forward (beginning/ending, bulk lots, partial sales, purchases, adjustments, write-offs, fractional costs); no false zero; missing history | `src/insights/monthly.test.ts`; `e2e/close.spec.ts` |
+| Checklist, finalizing, closed-month protection, reopening, snapshots, audit history | `src/insights/close.test.ts`; `e2e/close.spec.ts` |
+| Unreconciled payouts, refund warnings, missing costs | `src/insights/close.test.ts`; `src/insights/closeAnswers.test.ts` |
+| Exported report accuracy; backup and restore | `src/insights/close.test.ts`; `src/insights/monthly.test.ts`; `e2e/close.spec.ts` |
+| Assistant answers with re-checked calculations | `src/insights/closeAnswers.test.ts`; `e2e/close.spec.ts` |
+| Phones and accessibility | `e2e/close.spec.ts` (desktop + iPhone-sized, axe) |

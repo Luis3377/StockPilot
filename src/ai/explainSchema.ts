@@ -43,6 +43,14 @@ export const ASSISTANT_INTENTS = {
   source_tied_up: 'How much inventory money is tied up at each source?',
   best_trips: 'Which sourcing trips were most successful?',
   source_recommend: 'Where should I consider sourcing more inventory?',
+  month_performance: 'How did my business perform {period}?',
+  profit_decline: 'Why did my profit decline {period}?',
+  expenses_increase: 'Which expenses increased {period}?',
+  month_changes: 'What changed compared with last month?',
+  close_review: 'What should I review before closing {period}?',
+  products_hurt: 'Which products hurt my profitability {period}?',
+  payouts_reconciled: 'Are my payouts reconciled {period}?',
+  inventory_unexplained: 'What inventory differences remain unexplained?',
 } as const;
 
 export type AssistantIntent = keyof typeof ASSISTANT_INTENTS;

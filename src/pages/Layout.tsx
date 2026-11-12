@@ -169,7 +169,7 @@ export function Layout() {
   return (
     <div className="min-h-dvh">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface px-3 py-5 lg:flex" aria-label="Sidebar">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface px-3 py-5 lg:flex print:hidden" aria-label="Sidebar">
         <div className="px-2">
           <Logo />
         </div>
@@ -202,8 +202,8 @@ export function Layout() {
         </div>
       </aside>
 
-      <div className="lg:pl-64">
-        <div className="sticky top-0 z-20">
+      <div className="lg:pl-64 print:pl-0">
+        <div className="sticky top-0 z-20 print:hidden">
           <div className="pt-safe bg-canvas lg:hidden" />
           {demo && <DemoBanner />}
           <StorageWarnings />
@@ -213,7 +213,7 @@ export function Layout() {
             <ModeSwitcher compact />
           </header>
         </div>
-        <main className="min-w-0 px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-8 lg:pb-12">
+        <main className="min-w-0 px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-8 lg:pb-12 print:p-0">
           <div className="mx-auto max-w-6xl">
             <Outlet />
           </div>
@@ -221,7 +221,7 @@ export function Layout() {
       </div>
 
       {/* Mobile bottom tabs */}
-      <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur lg:hidden" aria-label="Main">
+      <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur lg:hidden print:hidden" aria-label="Main">
         <div className="mx-auto flex max-w-xl">
           {nav.map((n) => (
             <NavLink

@@ -672,6 +672,155 @@ export function emptySourcing(): SourcingData {
   return { sources: [], sessions: [], timeEntries: [], timer: null, changes: [] };
 }
 
+// ---------------------------------------------------------------------------
+// Inventory ledger: every change to inventory cost, dated, from the moment StockPilot began
+// keeping it. Sales (cost of goods sold) and quantity adjustments are their own records; the
+// ledger holds the rest (purchases, cost corrections, deletions, sale corrections), so the
+// month-end roll-forward can be checked against the item records. Append-only.
+// ---------------------------------------------------------------------------
+
+export type LedgerEventKind = 'opening' | 'acquired' | 'purchase_date' | 'cost_correction' | 'removed' | 'sale_correction';
+
+export interface LedgerEvent {
+  id: string;
+  /** When it was recorded (ISO timestamp). */
+  at: string;
+  /** The day it counts on (YYYY-MM-DD): the purchase date for purchases, otherwise the day it was recorded. */
+  date: string;
+  kind: LedgerEventKind;
+  /** Change in inventory cost, signed, in whole cents (currency units). */
+  amount: number;
+  itemId: string;
+  itemName: string;
+  lotId: string | null;
+  saleIds: string[];
+  note: string;
+}
+
+export interface InventoryLedger {
+  /** When StockPilot began recording every inventory cost change (null until it starts). */
+  startedAt: string | null;
+  events: LedgerEvent[];
+}
+
+export function emptyLedger(): InventoryLedger {
+  return { startedAt: null, events: [] };
+}
+
+// ---------------------------------------------------------------------------
+// Monthly close: checklist decisions, closing snapshots (kept unchanged after later edits;
+// reopening marks them superseded), and an audit log. Stored on this device like everything
+// else: a record of what was done, not a tamper-proof ledger.
+// ---------------------------------------------------------------------------
+
+export type CloseStepKey = 'sales' | 'purchases' | 'adjustments' | 'counts' | 'payouts' | 'refunds' | 'costs' | 'summary';
+export type CloseDecisionKind = 'reviewed' | 'na' | 'acknowledged';
+
+export interface CloseDecision {
+  step: CloseStepKey;
+  decision: CloseDecisionKind;
+  note: string;
+  at: string;
+  /** What the step showed when decided; a later change to its records makes the decision stale. */
+  fingerprint: string;
+}
+
+/** Figures as they stood when a month was closed. */
+export interface CloseFigures {
+  revenue: number;
+  costOfGoods: number;
+  grossProfit: number;
+  fees: number;
+  shipping: number;
+  otherExpenses: number;
+  realizedProfit: number;
+  salesCount: number;
+  unitsSold: number;
+  purchases: number;
+  tripExpenses: number;
+  beginningInventory: number | null;
+  endingInventory: number | null;
+}
+
+export interface RollForwardLineSnapshot {
+  key: string;
+  label: string;
+  amount: number;
+}
+
+export interface RollForwardSnapshot {
+  status: 'verified' | 'difference' | 'partial' | 'not_available';
+  statusText: string;
+  beginning: number | null;
+  beginningBasis: string;
+  lines: RollForwardLineSnapshot[];
+  expectedEnding: number | null;
+  recordsEnding: number | null;
+  recordsBasis: string;
+  difference: number | null;
+  notes: string[];
+}
+
+export interface ClosedStep {
+  step: CloseStepKey;
+  title: string;
+  state: 'completed' | 'na' | 'attention' | 'todo';
+  note: string;
+  issues: string[];
+}
+
+export interface ReportSection {
+  title: string;
+  lines: string[];
+}
+
+export interface ReportSnapshot {
+  title: string;
+  generatedAt: string;
+  sections: ReportSection[];
+}
+
+export interface MonthClose {
+  id: string;
+  /** YYYY-MM */
+  month: string;
+  /** 1 for the first close of the month, 2 after a reopen and close, … */
+  version: number;
+  closedAt: string;
+  status: 'closed' | 'superseded';
+  supersededAt: string | null;
+  /** Why it was reopened (set when superseded). */
+  reopenReason: string;
+  figures: CloseFigures;
+  rollForward: RollForwardSnapshot;
+  checklist: ClosedStep[];
+  /** Issues still open at closing, which the user acknowledged. */
+  unresolved: string[];
+  acknowledgement: string;
+  report: ReportSnapshot;
+}
+
+export interface CloseAuditEvent {
+  id: string;
+  at: string;
+  month: string;
+  kind: 'reviewed' | 'na' | 'acknowledged' | 'undone' | 'closed' | 'reopened';
+  step: CloseStepKey | null;
+  detail: string;
+  version: number | null;
+}
+
+export interface MonthlyCloseData {
+  closes: MonthClose[];
+  /** Checklist decisions for months not closed yet (cleared when a month is closed or reopened). */
+  decisions: Record<string, CloseDecision[]>;
+  audit: CloseAuditEvent[];
+}
+
+export function emptyMonthlyClose(): MonthlyCloseData {
+  return { closes: [], decisions: {}, audit: [] };
+}
+
 export interface AppData {
   schemaVersion: 1;
   items: Item[];
@@ -688,6 +837,10 @@ export interface AppData {
   bidPlans: BidPlan[];
   /** Sources, sourcing trips and time tracking. Missing in older data (loads empty). */
   sourcing: SourcingData;
+  /** Dated inventory cost changes. Missing in older data (starts when this version loads it). */
+  inventoryLedger: InventoryLedger;
+  /** Month-end closes, checklist decisions and their audit log. Missing in older data (loads empty). */
+  monthlyClose: MonthlyCloseData;
 }
 
 export interface Settings {
@@ -733,6 +886,8 @@ export function emptyData(): AppData {
     marketplace: emptyMarketplace(),
     bidPlans: [],
     sourcing: emptySourcing(),
+    inventoryLedger: emptyLedger(),
+    monthlyClose: emptyMonthlyClose(),
   };
 }
 

@@ -1,3 +1,4 @@
+import { isDomainError } from '../../domain/errors';
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, FileUp, AlertTriangle, Download } from 'lucide-react';
 import { applyInventoryImport, importTemplateCsv, previewInventoryImport, type DuplicateHandling, type ImportPreview } from '../../csv/inventoryImport';
@@ -50,7 +51,14 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
 
   const run = () => {
     if (!preview) return;
-    const result = store.commit((d) => applyInventoryImport(d, preview, handling));
+    let result: ReturnType<typeof applyInventoryImport>;
+    try {
+      result = store.commit((d) => applyInventoryImport(d, preview, handling));
+    } catch (e) {
+      // e.g. purchase dates in a closed month
+      toast.error(isDomainError(e) ? e.message : 'The import could not be applied. Your data was not changed.');
+      return;
+    }
     const parts = [`${result.added} added`];
     if (result.updated) parts.push(`${result.updated} updated`);
     if (result.skipped) parts.push(`${result.skipped} duplicates skipped`);

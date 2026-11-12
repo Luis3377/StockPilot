@@ -12,6 +12,21 @@ import {
   type AppData,
   type BidAdjustment,
   emptySourcing,
+  emptyLedger,
+  emptyMonthlyClose,
+  type CloseAuditEvent,
+  type CloseDecision,
+  type CloseDecisionKind,
+  type CloseFigures,
+  type CloseStepKey,
+  type ClosedStep,
+  type InventoryLedger,
+  type LedgerEvent,
+  type LedgerEventKind,
+  type MonthClose,
+  type MonthlyCloseData,
+  type ReportSnapshot,
+  type RollForwardSnapshot,
   type RunningTimer,
   type Source,
   type SourceChange,
@@ -640,6 +655,10 @@ export function sanitizeAppData(raw: unknown): AppData {
     bidPlans: arr(raw, 'bidPlans', 'Data').map((r, i) => sanitizeBidPlan(r, i + 1)),
     // Data and backups from before sourcing tracking have no "sourcing": it loads empty.
     sourcing: sanitizeSourcing(raw.sourcing),
+    // Data from before the inventory ledger has none: it starts when this version loads the data.
+    inventoryLedger: sanitizeLedger(raw.inventoryLedger),
+    // Data from before Monthly Close has no closes.
+    monthlyClose: sanitizeMonthlyClose(raw.monthlyClose),
   };
 }
 
@@ -759,5 +778,122 @@ export function sanitizeSettings(raw: unknown): Settings {
     demoActive: pick('demoActive', (v) => typeof v === 'boolean'),
     lastBackupAt: pick('lastBackupAt', (v) => v === null || typeof v === 'string'),
     inventoryView: pick('inventoryView', (v) => v === 'grid' || v === 'list'),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Inventory ledger and monthly close. An unreadable ledger event is dropped (the month-end
+// roll-forward then shows the difference it leaves); closing snapshots keep whatever is readable.
+// ---------------------------------------------------------------------------
+
+const LEDGER_KINDS: LedgerEventKind[] = ['opening', 'acquired', 'purchase_date', 'cost_correction', 'removed', 'sale_correction'];
+const STEP_KEYS: CloseStepKey[] = ['sales', 'purchases', 'adjustments', 'counts', 'payouts', 'refunds', 'costs', 'summary'];
+const DECISIONS: CloseDecisionKind[] = ['reviewed', 'na', 'acknowledged'];
+const AUDIT_KINDS: CloseAuditEvent['kind'][] = ['reviewed', 'na', 'acknowledged', 'undone', 'closed', 'reopened'];
+const STEP_STATES: ClosedStep['state'][] = ['completed', 'na', 'attention', 'todo'];
+const RF_STATUSES: RollForwardSnapshot['status'][] = ['verified', 'difference', 'partial', 'not_available'];
+const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+const signed = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const texts = (v: unknown, max = 2000) => strArr(v).map((x) => x.slice(0, max));
+
+function sanitizeLedger(raw: unknown): InventoryLedger {
+  if (!isObj(raw)) return emptyLedger();
+  const events: LedgerEvent[] = (Array.isArray(raw.events) ? raw.events : []).filter(isObj).flatMap((e): LedgerEvent[] => {
+    if (typeof e.id !== 'string' || typeof e.at !== 'string' || typeof e.date !== 'string' || !isValidISODate(e.date)) return [];
+    if (!LEDGER_KINDS.includes(e.kind as LedgerEventKind) || typeof e.amount !== 'number' || !Number.isFinite(e.amount) || typeof e.itemId !== 'string') return [];
+    return [{ id: e.id, at: e.at, date: e.date, kind: e.kind as LedgerEventKind, amount: e.amount, itemId: e.itemId, itemName: text(e.itemName, 200), lotId: typeof e.lotId === 'string' ? e.lotId : null, saleIds: strArr(e.saleIds), note: text(e.note, 500) }];
+  });
+  return { startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : null, events };
+}
+
+function sanitizeFigures(raw: unknown): CloseFigures {
+  const o = isObj(raw) ? raw : {};
+  return {
+    revenue: signed(o.revenue),
+    costOfGoods: signed(o.costOfGoods),
+    grossProfit: signed(o.grossProfit),
+    fees: signed(o.fees),
+    shipping: signed(o.shipping),
+    otherExpenses: signed(o.otherExpenses),
+    realizedProfit: signed(o.realizedProfit),
+    salesCount: signed(o.salesCount),
+    unitsSold: signed(o.unitsSold),
+    purchases: signed(o.purchases),
+    tripExpenses: signed(o.tripExpenses),
+    beginningInventory: signedOrNull(o.beginningInventory),
+    endingInventory: signedOrNull(o.endingInventory),
+  };
+}
+
+function sanitizeRollForward(raw: unknown): RollForwardSnapshot {
+  const o = isObj(raw) ? raw : {};
+  return {
+    status: RF_STATUSES.includes(o.status as RollForwardSnapshot['status']) ? (o.status as RollForwardSnapshot['status']) : 'not_available',
+    statusText: text(o.statusText, 500),
+    beginning: signedOrNull(o.beginning),
+    beginningBasis: text(o.beginningBasis, 500),
+    lines: (Array.isArray(o.lines) ? o.lines : []).filter(isObj).map((l) => ({ key: text(l.key, 40), label: text(l.label, 200), amount: signed(l.amount) })),
+    expectedEnding: signedOrNull(o.expectedEnding),
+    recordsEnding: signedOrNull(o.recordsEnding),
+    recordsBasis: text(o.recordsBasis, 500),
+    difference: signedOrNull(o.difference),
+    notes: texts(o.notes),
+  };
+}
+
+function sanitizeReport(raw: unknown): ReportSnapshot {
+  const o = isObj(raw) ? raw : {};
+  return {
+    title: text(o.title, 200),
+    generatedAt: text(o.generatedAt, 40),
+    sections: (Array.isArray(o.sections) ? o.sections : []).filter(isObj).map((sec) => ({ title: text(sec.title, 200), lines: texts(sec.lines) })),
+  };
+}
+
+function sanitizeClose(raw: unknown): MonthClose | null {
+  if (!isObj(raw) || typeof raw.id !== 'string' || typeof raw.month !== 'string' || !MONTH_KEY.test(raw.month)) return null;
+  if (typeof raw.version !== 'number' || !Number.isInteger(raw.version) || raw.version < 1 || typeof raw.closedAt !== 'string') return null;
+  return {
+    id: raw.id,
+    month: raw.month,
+    version: raw.version,
+    closedAt: raw.closedAt,
+    status: raw.status === 'superseded' ? 'superseded' : 'closed',
+    supersededAt: typeof raw.supersededAt === 'string' ? raw.supersededAt : null,
+    reopenReason: text(raw.reopenReason, 1000),
+    figures: sanitizeFigures(raw.figures),
+    rollForward: sanitizeRollForward(raw.rollForward),
+    checklist: (Array.isArray(raw.checklist) ? raw.checklist : []).filter(isObj).flatMap((c): ClosedStep[] =>
+      STEP_KEYS.includes(c.step as CloseStepKey)
+        ? [{ step: c.step as CloseStepKey, title: text(c.title, 200), state: STEP_STATES.includes(c.state as ClosedStep['state']) ? (c.state as ClosedStep['state']) : 'todo', note: text(c.note, 1000), issues: texts(c.issues) }]
+        : [],
+    ),
+    unresolved: texts(raw.unresolved),
+    acknowledgement: text(raw.acknowledgement, 1000),
+    report: sanitizeReport(raw.report),
+  };
+}
+
+function sanitizeMonthlyClose(raw: unknown): MonthlyCloseData {
+  if (!isObj(raw)) return emptyMonthlyClose();
+  const decisions: Record<string, CloseDecision[]> = {};
+  if (isObj(raw.decisions)) {
+    for (const [month, list] of Object.entries(raw.decisions)) {
+      if (!MONTH_KEY.test(month) || !Array.isArray(list)) continue;
+      decisions[month] = list.filter(isObj).flatMap((d): CloseDecision[] =>
+        STEP_KEYS.includes(d.step as CloseStepKey) && DECISIONS.includes(d.decision as CloseDecisionKind) && typeof d.at === 'string'
+          ? [{ step: d.step as CloseStepKey, decision: d.decision as CloseDecisionKind, note: text(d.note, 1000), at: d.at, fingerprint: text(d.fingerprint, 200) }]
+          : [],
+      );
+    }
+  }
+  return {
+    closes: (Array.isArray(raw.closes) ? raw.closes : []).map(sanitizeClose).filter((c): c is MonthClose => c !== null),
+    decisions,
+    audit: (Array.isArray(raw.audit) ? raw.audit : []).filter(isObj).flatMap((a): CloseAuditEvent[] =>
+      typeof a.id === 'string' && typeof a.at === 'string' && typeof a.month === 'string' && AUDIT_KINDS.includes(a.kind as CloseAuditEvent['kind'])
+        ? [{ id: a.id, at: a.at, month: a.month, kind: a.kind as CloseAuditEvent['kind'], step: STEP_KEYS.includes(a.step as CloseStepKey) ? (a.step as CloseStepKey) : null, detail: text(a.detail, 1000), version: typeof a.version === 'number' ? a.version : null }]
+        : [],
+    ),
   };
 }
