@@ -15,6 +15,14 @@ import {
   emptyLedger,
   emptyMonthlyClose,
   emptyYearEnd,
+  emptyPlanning,
+  type Obligation,
+  type ObligationCategory,
+  type PlanningAuditEvent,
+  type PlanningData,
+  type ReserveCategory,
+  type ReserveEntry,
+  type ReserveKind,
   type YearAuditEvent,
   type YearClosedStep,
   type YearCountRef,
@@ -670,6 +678,8 @@ export function sanitizeAppData(raw: unknown): AppData {
     monthlyClose: sanitizeMonthlyClose(raw.monthlyClose),
     // Data from before Year-End Review has no reviews.
     yearEnd: sanitizeYearEnd(raw.yearEnd),
+    // Data from before Financial Planning has no reserves or obligations.
+    planning: sanitizePlanning(raw.planning),
   };
 }
 
@@ -992,4 +1002,62 @@ function sanitizeYearEnd(raw: unknown): YearEndData {
         : [],
     ),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Financial planning. Records that can't be read are dropped (planning data, not accounting).
+// ---------------------------------------------------------------------------
+
+const RESERVE_KINDS: ReserveKind[] = ['tax', 'equipment', 'inventory_fund', 'emergency', 'upcoming', 'other'];
+const OBLIGATION_CATEGORIES: ObligationCategory[] = ['tax_payment', 'equipment', 'insurance', 'software', 'inventory_purchase', 'rent', 'other'];
+const RECURRENCES: Obligation['recurrence'][] = ['none', 'monthly', 'quarterly', 'yearly'];
+const PLANNING_AUDIT: PlanningAuditEvent['kind'][] = ['category', 'percent', 'entry', 'void', 'obligation', 'completed'];
+const isDate = (v: unknown): v is string => typeof v === 'string' && isValidISODate(v);
+
+function sanitizePlanning(raw: unknown): PlanningData {
+  if (!isObj(raw)) return emptyPlanning();
+  const list = (v: unknown) => (Array.isArray(v) ? v : []).filter(isObj);
+  const categories = list(raw.categories).flatMap((c): ReserveCategory[] =>
+    typeof c.id === 'string' && typeof c.name === 'string' && c.name.trim()
+      ? [{
+          id: c.id,
+          name: text(c.name, 80),
+          kind: RESERVE_KINDS.includes(c.kind as ReserveKind) ? (c.kind as ReserveKind) : 'other',
+          mode: c.mode === 'goal' ? 'goal' : 'percent',
+          percent: typeof c.percent === 'number' && c.percent >= 0 && c.percent <= 100 ? c.percent : null,
+          goal: finiteOrNull(c.goal),
+          archived: c.archived === true,
+          createdAt: text(c.createdAt, 40),
+          updatedAt: text(c.updatedAt, 40),
+        }]
+      : [],
+  );
+  const entries = list(raw.entries).flatMap((e): ReserveEntry[] =>
+    typeof e.id === 'string' && typeof e.categoryId === 'string' && isDate(e.date) && typeof e.amount === 'number' && Number.isFinite(e.amount) && (e.kind === 'deposit' || e.kind === 'withdrawal' || e.kind === 'adjustment')
+      ? [{ id: e.id, categoryId: e.categoryId, date: e.date, kind: e.kind, amount: e.amount, note: text(e.note, 500), createdAt: text(e.createdAt, 40), voidedAt: typeof e.voidedAt === 'string' ? e.voidedAt : null, voidReason: text(e.voidReason, 500) }]
+      : [],
+  );
+  const obligations = list(raw.obligations).flatMap((o): Obligation[] =>
+    typeof o.id === 'string' && typeof o.description === 'string' && isDate(o.dueDate) && typeof o.amount === 'number' && Number.isFinite(o.amount) && o.amount >= 0
+      ? [{
+          id: o.id,
+          description: text(o.description, 200),
+          category: OBLIGATION_CATEGORIES.includes(o.category as ObligationCategory) ? (o.category as ObligationCategory) : 'other',
+          dueDate: o.dueDate,
+          amount: o.amount,
+          recurrence: RECURRENCES.includes(o.recurrence as Obligation['recurrence']) ? (o.recurrence as Obligation['recurrence']) : 'none',
+          endDate: isDate(o.endDate) ? o.endDate : null,
+          completed: strArr(o.completed).filter((d) => isValidISODate(d)),
+          cancelled: o.cancelled === true,
+          reserveCategoryId: typeof o.reserveCategoryId === 'string' ? o.reserveCategoryId : null,
+          note: text(o.note, 500),
+          createdAt: text(o.createdAt, 40),
+          updatedAt: text(o.updatedAt, 40),
+        }]
+      : [],
+  );
+  const audit = list(raw.audit).flatMap((a): PlanningAuditEvent[] =>
+    typeof a.id === 'string' && typeof a.at === 'string' && PLANNING_AUDIT.includes(a.kind as PlanningAuditEvent['kind']) ? [{ id: a.id, at: a.at, kind: a.kind as PlanningAuditEvent['kind'], detail: text(a.detail, 1000) }] : [],
+  );
+  return { categories, entries, obligations, audit };
 }
