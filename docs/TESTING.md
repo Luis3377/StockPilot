@@ -145,3 +145,16 @@ The full map is in [MAX_BID.md](MAX_BID.md#tests). In short:
 | AI scanner identifies, never prices | `e2e/maxbid.spec.ts` (mocked) |
 | Phones and accessibility | `e2e/maxbid.spec.ts` (desktop + iPhone-sized, axe) |
 
+## Predicted vs. actual → tests
+
+The full map is in [PREDICTED_VS_ACTUAL.md](PREDICTED_VS_ACTUAL.md#tests). In short:
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Lot stages; fully/partially sold, unsold, written off, closed, unprofitable, zero revenue | `src/insights/performance.test.ts`; `e2e/performance.spec.ts` |
+| Forecast errors, ROI, zero predictions, factors that add up to the cent | `src/insights/performance.test.ts`; `e2e/performance.spec.ts` |
+| Refunds and adjustments; multiple items; original prediction preserved | `src/insights/performance.test.ts` |
+| History, small samples, suggested adjustments (apply/undo/save) | `src/insights/performance.test.ts`; `e2e/performance.spec.ts` |
+| Assistant answers with re-checked calculations | `src/insights/performance.test.ts`; `e2e/performance.spec.ts` |
+| Backup and restore; phones; accessibility | `src/insights/performance.test.ts`; `e2e/performance.spec.ts` (desktop + iPhone-sized, axe) |
+

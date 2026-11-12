@@ -10,6 +10,7 @@ import {
   type Adjustment,
   type AdjustmentSource,
   type AppData,
+  type BidAdjustment,
   type BidAssumptions,
   type BidItem,
   type BidLotKind,
@@ -313,6 +314,17 @@ function sanitizeLot(raw: unknown, n: number): Lot {
     history: arr(raw, 'history', where)
       .map(sanitizeLotChange)
       .filter((c): c is LotChange => c !== null),
+    // Lots from before performance tracking have no closure: they're open.
+    ...(isObj(raw.closure) && typeof raw.closure.at === 'string'
+      ? {
+          closure: {
+            at: raw.closure.at,
+            note: typeof raw.closure.note === 'string' ? raw.closure.note.slice(0, 500) : '',
+            unitsOnHand: typeof raw.closure.unitsOnHand === 'number' && Number.isInteger(raw.closure.unitsOnHand) && raw.closure.unitsOnHand >= 0 ? raw.closure.unitsOnHand : 0,
+            remainingCost: typeof raw.closure.remainingCost === 'number' && Number.isFinite(raw.closure.remainingCost) && raw.closure.remainingCost >= 0 ? raw.closure.remainingCost : 0,
+          },
+        }
+      : {}),
     createdAt: str(raw, 'createdAt', where) || new Date().toISOString(),
     updatedAt: str(raw, 'updatedAt', where) || new Date().toISOString(),
   };
@@ -436,6 +448,24 @@ function sanitizeBidPlan(raw: unknown, n: number): BidPlan {
       .filter(isObj)
       .filter((h) => typeof h.at === 'string' && BID_STATUSES.includes(h.from as BidPlanStatus) && BID_STATUSES.includes(h.to as BidPlanStatus))
       .map((h): BidStatusChange => ({ id: typeof h.id === 'string' ? h.id : newId(), at: h.at as string, from: h.from as BidPlanStatus, to: h.to as BidPlanStatus, note: text(h.note, 500) })),
+    adjustments: (Array.isArray(raw.adjustments) ? raw.adjustments : [])
+      .filter(isObj)
+      .filter((a) => typeof a.at === 'string')
+      .map((a): BidAdjustment => {
+        const inputs = (v: unknown) => {
+          const o = isObj(v) ? v : {};
+          return { resalePct: finiteOrNull(o.resalePct), unsoldPct: finiteOrNull(o.unsoldPct), sellingFeePct: finiteOrNull(o.sellingFeePct) };
+        };
+        return {
+          id: typeof a.id === 'string' && a.id ? a.id : newId(),
+          at: a.at as string,
+          basis: text(a.basis, 200),
+          sampleSize: typeof a.sampleSize === 'number' && Number.isInteger(a.sampleSize) && a.sampleSize >= 0 ? a.sampleSize : 0,
+          lotIds: strArr(a.lotIds),
+          before: inputs(a.before),
+          after: inputs(a.after),
+        };
+      }),
     duplicatedFromId: typeof raw.duplicatedFromId === 'string' ? raw.duplicatedFromId : null,
     createdAt: str(raw, 'createdAt', where) || new Date().toISOString(),
     updatedAt: str(raw, 'updatedAt', where) || new Date().toISOString(),

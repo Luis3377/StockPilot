@@ -227,8 +227,22 @@ export interface Lot {
   method: LotAllocationMethod;
   lines: LotLine[];
   history: LotChange[];
+  /**
+   * Set when the user closes the lot for performance tracking ("I'm done selling it"): its result
+   * is then final. Units still on hand stay in inventory at cost (never written off by closing)
+   * and count as unsold. Missing in older data (= open).
+   */
+  closure?: LotClosure | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LotClosure {
+  at: string;
+  note: string;
+  /** What was still on hand when the lot was closed (kept in inventory, at cost). */
+  unitsOnHand: number;
+  remainingCost: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -506,6 +520,21 @@ export interface BidStatusChange {
   note: string;
 }
 
+/**
+ * A change to a plan's expected scenario suggested from the user's completed lots and accepted
+ * by the user. Kept with the plan so the original values and the evidence stay visible.
+ */
+export interface BidAdjustment {
+  id: string;
+  at: string;
+  /** e.g. "4 completed estate-sale lots" */
+  basis: string;
+  sampleSize: number;
+  lotIds: string[];
+  before: BidScenarioInputs;
+  after: BidScenarioInputs;
+}
+
 export interface BidPlan {
   id: string;
   name: string;
@@ -517,6 +546,8 @@ export interface BidPlan {
   snapshot: BidSnapshot | null;
   purchase: BidPurchase | null;
   history: BidStatusChange[];
+  /** History-based adjustments the user accepted (newest last). Missing in older data (= none). */
+  adjustments: BidAdjustment[];
   duplicatedFromId: string | null;
   createdAt: string;
   updatedAt: string;

@@ -14,6 +14,8 @@ import { LotsPage } from './pages/LotsPage';
 import { LotDetailPage } from './pages/LotDetailPage';
 import { BidsPage } from './pages/BidsPage';
 import { BidPlanPage } from './pages/BidPlanPage';
+import { LotPerformancePage } from './pages/performance/LotPerformancePage';
+import { HistoryPage } from './pages/performance/HistoryPage';
 import { PayoutsPage } from './pages/payouts/PayoutsPage';
 import { PayoutDetailPage } from './pages/payouts/PayoutDetailPage';
 import { SalesPage } from './pages/SalesPage';
@@ -83,7 +85,9 @@ export function App() {
                   <Route index element={<OverviewPage />} />
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="inventory/lots" element={<LotsPage />} />
+                  <Route path="inventory/lots/performance" element={<HistoryPage />} />
                   <Route path="inventory/lots/:id" element={<LotDetailPage />} />
+                  <Route path="inventory/lots/:id/performance" element={<LotPerformancePage />} />
                   <Route path="inventory/bids" element={<BidsPage />} />
                   <Route path="inventory/bids/:id" element={<BidPlanPage />} />
                   <Route path="inventory/:id" element={<ItemDetailPage />} />

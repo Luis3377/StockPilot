@@ -22,6 +22,7 @@
 
 import type {
   AppData,
+  BidAdjustment,
   BidAssumptions,
   BidFixedCost,
   BidItem,
@@ -151,6 +152,8 @@ export interface BidPlanInput {
   description: string;
   kind: BidLotKind;
   assumptions: BidAssumptions;
+  /** History-based adjustments accepted in the form (kept with the plan). */
+  adjustments?: BidAdjustment[];
 }
 
 const AI_FIELDS = ['name', 'category', 'condition', 'notes'];
@@ -252,7 +255,7 @@ function checkPlan(input: BidPlanInput): BidPlanInput {
   const description = v.check(() => optionalText(input.description, 'description', 'Description', 2000));
   const assumptions = checkAssumptions(input.assumptions, v);
   v.throwIfAny();
-  return { name: name!, description: description!, kind: KINDS.includes(input.kind) ? input.kind : 'other', assumptions };
+  return { name: name!, description: description!, kind: KINDS.includes(input.kind) ? input.kind : 'other', assumptions, adjustments: [...(input.adjustments ?? [])].slice(-20) };
 }
 
 /** Every format/range problem at once ({} when the plan can be saved as a draft). */
@@ -550,7 +553,7 @@ const replacePlan = (data: AppData, plan: BidPlan): AppData => ({ ...data, bidPl
 export function createBidPlan(data: AppData, input: BidPlanInput, clock?: Clock): { data: AppData; plan: BidPlan } {
   const { iso } = nowParts(clock);
   const checked = checkPlan(input);
-  const plan: BidPlan = { id: newId(), ...checked, status: 'draft', snapshot: null, purchase: null, history: [], duplicatedFromId: null, createdAt: iso, updatedAt: iso };
+  const plan: BidPlan = { id: newId(), ...checked, adjustments: checked.adjustments ?? [], status: 'draft', snapshot: null, purchase: null, history: [], duplicatedFromId: null, createdAt: iso, updatedAt: iso };
   return { data: { ...data, bidPlans: [plan, ...data.bidPlans] }, plan };
 }
 
@@ -566,7 +569,7 @@ export function updateBidPlan(data: AppData, id: string, input: BidPlanInput, cl
     );
   }
   const checked = checkPlan(input);
-  const next: BidPlan = { ...plan, ...checked, updatedAt: iso };
+  const next: BidPlan = { ...plan, ...checked, adjustments: input.adjustments === undefined ? plan.adjustments : (checked.adjustments ?? []), updatedAt: iso };
   return { data: replacePlan(data, next), plan: next };
 }
 
@@ -588,6 +591,7 @@ export function duplicateBidPlan(data: AppData, id: string, clock?: Clock): { da
     snapshot: null,
     purchase: null,
     history: [],
+    adjustments: structuredClone(source.adjustments),
     duplicatedFromId: source.id,
     createdAt: iso,
     updatedAt: iso,

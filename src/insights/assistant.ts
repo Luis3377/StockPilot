@@ -23,6 +23,7 @@ import { addDays, formatDate, periodRange, todayISO, type DateRange } from '../d
 import { formatMoney, formatPercent, roundMoney } from '../domain/money';
 import type { AppData, Item, Settings } from '../domain/types';
 import { buildInsights, lowMarginSection } from './rules';
+import { performanceAnswer } from './performanceAnswers';
 import { explainPayout } from '../domain/reconcile';
 import { toCents } from '../domain/money';
 import {
@@ -89,6 +90,7 @@ export const SUGGESTED_QUESTIONS = [
   'What items should I consider discounting?',
   'Which products are running low?',
   'Which platform earns me the most?',
+  'How accurate have my predictions been?',
 ];
 
 /** Period phrases offered when a question doesn't say which dates it means. */
@@ -306,6 +308,10 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
       details: ['Add your first item from the Inventory screen, or import a CSV file from Settings.'],
     });
   }
+
+  // --- Predicted vs. actual (lots planned with the Max Bid Calculator) ----------------
+  const perfAnswer = performanceAnswer(q, data, settings, today);
+  if (perfAnswer) return b.answer(perfAnswer.intent, perfAnswer.text, { details: perfAnswer.details, calculation: perfAnswer.calculation, followUps: perfAnswer.followUps });
 
   // --- Bulk lots ----------------------------------------------------------------
   if (/\b(bulk lots?|lot purchases?|my lots|from (my |the )?lots?)\b/.test(q)) {

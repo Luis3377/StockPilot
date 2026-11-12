@@ -136,7 +136,7 @@ export function calculationAmounts(calc: Calculation): number[] {
 // Records
 // ---------------------------------------------------------------------------
 
-function saleRecord(ctx: CalcContext, sale: Sale): SourceRecord {
+export function saleRecord(ctx: CalcContext, sale: Sale): SourceRecord {
   const money = (n: number) => formatMoney(n, ctx.settings.currency);
   const f = computeSale(sale);
   const item = ctx.data.items.find((i) => i.id === sale.itemId);
@@ -173,7 +173,7 @@ function itemLinks(ctx: CalcContext, item: Item): RecordLink[] {
 }
 
 /** Warnings that apply to any figure built from recorded sales. */
-function saleWarnings(ctx: CalcContext, sales: Sale[]): string[] {
+export function saleWarnings(ctx: CalcContext, sales: Sale[]): string[] {
   const money = (n: number) => formatMoney(n, ctx.settings.currency);
   const warnings: string[] = [];
   // Possible duplicates: same item, day, quantity, amount and order number.

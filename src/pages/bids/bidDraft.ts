@@ -3,7 +3,7 @@
 
 import { defaultAssumptions, SCENARIO_KEYS, type BidPlanInput } from '../../domain/bids';
 import { newId } from '../../domain/ids';
-import type { BidLotKind, BidPlan, BidScenarioKey, BidShippingMode } from '../../domain/types';
+import type { BidAdjustment, BidLotKind, BidPlan, BidScenarioKey, BidShippingMode } from '../../domain/types';
 import { moneyInputText, readMoney, readWhole } from '../lots/LotParts';
 
 export interface BidItemDraft {
@@ -43,6 +43,8 @@ export interface BidDraft {
   budget: string;
   plannedBid: string;
   scenarios: Record<BidScenarioKey, ScenarioDraft>;
+  /** History-based adjustments applied to this plan (kept with it). */
+  adjustments: BidAdjustment[];
 }
 
 const num = (n: number | null) => (n === null ? '' : moneyInputText(n));
@@ -53,7 +55,7 @@ export function scenarioDrafts(s: BidPlan['assumptions']['scenarios']): Record<B
   return Object.fromEntries(SCENARIO_KEYS.map((k) => [k, { resalePct: num(s[k].resalePct), unsoldPct: num(s[k].unsoldPct), sellingFeePct: num(s[k].sellingFeePct) }])) as Record<BidScenarioKey, ScenarioDraft>;
 }
 
-export function draftFromPlan(plan: Pick<BidPlan, 'name' | 'description' | 'kind' | 'assumptions'> | null): BidDraft {
+export function draftFromPlan(plan: (Pick<BidPlan, 'name' | 'description' | 'kind' | 'assumptions'> & { adjustments?: BidAdjustment[] }) | null): BidDraft {
   const a = plan?.assumptions ?? defaultAssumptions();
   return {
     name: plan?.name ?? '',
@@ -84,6 +86,7 @@ export function draftFromPlan(plan: Pick<BidPlan, 'name' | 'description' | 'kind
     budget: num(a.budget),
     plannedBid: num(a.plannedBid),
     scenarios: scenarioDrafts(a.scenarios),
+    adjustments: plan?.adjustments ?? [],
   };
 }
 
@@ -118,6 +121,7 @@ export function toBidInput(d: BidDraft): { input: BidPlanInput; typing: Record<s
       name: d.name,
       description: d.description,
       kind: d.kind,
+      adjustments: d.adjustments,
       assumptions: {
         valueMode: d.valueMode,
         totalResaleValue: money(d.totalResaleValue, 'totalResaleValue'),

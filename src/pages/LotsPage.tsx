@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Calculator, CheckCircle2, AlertTriangle, Layers, PackagePlus } from 'lucide-react';
+import { ArrowLeft, Calculator, CheckCircle2, AlertTriangle, Layers, PackagePlus, TrendingUp } from 'lucide-react';
 import { lotSummary } from '../domain/lots';
 import { formatDate } from '../domain/dates';
 import { plural } from '../domain/format';
@@ -27,6 +27,11 @@ export function LotsPage() {
         description="Items bought together for one price, with the cost split across them."
         actions={
           <>
+            {lots.length > 0 && (
+              <Link to="/inventory/lots/performance" className={buttonClass('secondary', 'md')} data-testid="lots-performance-link">
+                <TrendingUp className="size-4" /> Performance
+              </Link>
+            )}
             <Link to="/inventory/bids" className={buttonClass('secondary', 'md')}>
               <Calculator className="size-4" /> Plan a purchase: max bid
             </Link>
