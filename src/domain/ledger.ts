@@ -44,7 +44,7 @@ export function startLedger(data: AppData, clock?: Clock): AppData {
   const { iso, today } = nowParts(clock);
   const events = data.items
     .filter((i) => valueCents(i) !== 0)
-    .map((i) => event(iso, today, 'opening', valueCents(i), i, { lotId: lotOf(data.lots, i.id)?.id ?? null, note: `Opening balance: ${plural(i.quantity, 'unit')} on hand` }));
+    .map((i) => event(iso, today, 'opening', valueCents(i), i, { units: i.quantity, lotId: lotOf(data.lots, i.id)?.id ?? null, note: `Opening balance: ${plural(i.quantity, 'unit')} on hand` }));
   return { ...data, inventoryLedger: { startedAt: iso, events: [...data.inventoryLedger.events, ...events] } };
 }
 
@@ -99,9 +99,9 @@ export function trackChanges(before: AppData, after: AppData, clock?: Clock): Ap
     const saleIds = [...(touchedSales.get(id) ?? [])];
     if (rest !== 0) {
       if (!b) {
-        events.push(event(iso, acquisitionDate(a!, after.lots, today), 'acquired', rest, item, { lotId: lot?.id ?? null, note: lot ? `Bought in bulk lot “${lot.name}”` : `Added with ${plural(a!.quantity, 'unit')}` }));
+        events.push(event(iso, acquisitionDate(a!, after.lots, today), 'acquired', rest, item, { units: a!.quantity, lotId: lot?.id ?? null, note: lot ? `Bought in bulk lot “${lot.name}”` : `Added with ${plural(a!.quantity, 'unit')}` }));
       } else if (!a) {
-        events.push(event(iso, today, 'removed', rest, item, { lotId: lot?.id ?? null, saleIds, note: `Deleted with ${plural(b.quantity, 'unit')} in stock` }));
+        events.push(event(iso, today, 'removed', rest, item, { units: -b.quantity, lotId: lot?.id ?? null, saleIds, note: `Deleted with ${plural(b.quantity, 'unit')} in stock` }));
       } else if (a.unitCost !== b.unitCost && !saleIds.length) {
         const lotChanged = lot && before.lots !== after.lots && lotOf(before.lots, id)?.history.length !== lot.history.length;
         events.push(

@@ -81,7 +81,7 @@ export const STEP_TITLES: Record<CloseStepKey, string> = {
 };
 
 /** FNV-1a: a short, stable fingerprint of what a step showed. */
-function hash(s: string): string {
+export function hash(s: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
