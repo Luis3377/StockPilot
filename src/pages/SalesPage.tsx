@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, CalendarCheck, Landmark, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
+import { Download, CalendarCheck, CalendarRange, Landmark, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
 import { deleteSale } from '../domain/actions';
 import { computeSale, inventoryTotals, nameKey, platformLabel, projectUnsold, salesByPlatform, salesInRange, totalSales } from '../domain/calc';
 import { formatDate, periodRange, PERIOD_OPTIONS, todayISO, type PeriodKey } from '../domain/dates';
@@ -84,6 +84,9 @@ export function SalesPage() {
               <Link to="/sales/close" className={buttonClass('secondary', 'md')} data-testid="close-link">
                 <CalendarCheck className="size-4" aria-hidden /> Monthly Close
               </Link>
+              <Link to="/sales/year-end" className={buttonClass('secondary', 'md')} data-testid="yearend-link">
+                <CalendarRange className="size-4" aria-hidden /> Year-End Review
+              </Link>
               <Link to="/sales/payouts" className={buttonClass('secondary', 'md')} data-testid="payouts-link">
                 <Landmark className="size-4" aria-hidden /> Payout reconciliation
               </Link>
@@ -123,6 +126,9 @@ export function SalesPage() {
             </Button>
             <Link to="/sales/close" className={buttonClass('secondary', 'md')} data-testid="close-link">
               <CalendarCheck className="size-4" aria-hidden /> Monthly Close
+            </Link>
+            <Link to="/sales/year-end" className={buttonClass('secondary', 'md')} data-testid="yearend-link">
+              <CalendarRange className="size-4" aria-hidden /> Year-End Review
             </Link>
             <Link to="/sales/payouts" className={buttonClass('secondary', 'md')} data-testid="payouts-link">
               <Landmark className="size-4" aria-hidden /> Payouts
