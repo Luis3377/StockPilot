@@ -6,6 +6,9 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, ChevronDown, Info, Plus, Sparkles, Trash2, X } from 'lucide-react';
 import { createLot, lotInputErrors, METHOD_LABELS, previewLot, type Allocation, type LotInput } from '../../domain/lots';
 import { recordBidPurchase } from '../../domain/bids';
+import { assignSource, guessSourceType, linkToSession, resolveSource } from '../../domain/sourcing';
+import type { SourceType } from '../../domain/types';
+import { SourceField, TripField } from '../sourcing/SourceField';
 import { knownCategories } from '../../domain/calc';
 import { todayISO } from '../../domain/dates';
 import { formatPercent, fromCents, toCents } from '../../domain/money';
@@ -51,6 +54,9 @@ interface Draft {
   extraCosts: { key: string; label: string; amount: string }[];
   purchaseDate: string;
   source: string;
+  /** Type for a new source (the name isn't registered yet). */
+  sourceType: SourceType;
+  sessionId: string;
   notes: string;
   method: LotAllocationMethod;
   lines: LineDraft[];
@@ -87,6 +93,8 @@ function draftFromPrefill(p: BidLotPrefill): Draft {
     extraCosts: input.extraCosts.map((c) => ({ key: newId(), label: c.label, amount: moneyInputText(c.amount) })),
     purchaseDate: input.purchaseDate ?? todayISO(),
     source: input.source,
+    sourceType: guessSourceType(input.source),
+    sessionId: '',
     notes: input.notes,
     method: input.method,
     lines: input.lines.length
@@ -111,6 +119,8 @@ const emptyDraft = (): Draft => ({
   extraCosts: [],
   purchaseDate: todayISO(),
   source: '',
+  sourceType: 'other',
+  sessionId: '',
   notes: '',
   method: 'relative_value',
   lines: [newLine()],
@@ -180,7 +190,6 @@ export function LotFormDialog({ open, onClose, fromBid = null }: { open: boolean
   }, [open, fromBid]);
 
   const categories = useMemo(() => knownCategories(data), [data]);
-  const sources = useMemo(() => [...new Set(data.lots.map((l) => l.source).filter(Boolean))].sort(), [data.lots]);
 
   const { input, typing } = toInput(draft);
   const totalCents = toCents(input.purchasePrice ?? 0) + input.extraCosts.reduce((c, x) => c + toCents(x.amount ?? 0), 0);
@@ -306,10 +315,15 @@ export function LotFormDialog({ open, onClose, fromBid = null }: { open: boolean
     }
     try {
       // From a Max Bid plan, the lot and the plan's "purchased" record are saved together, and
-      // a plan that was already recorded is refused, so the purchase can't be added twice.
-      const r = fromBid
-        ? store.commit((d) => recordBidPurchase(d, fromBid.planId, input, draft.lines.map((l) => l.bidItemId)))
-        : store.commit((d) => createLot(d, input));
+      // a plan that was already recorded is refused, so the purchase can't be added twice. The
+      // lot's source (added if new) and trip are recorded in the same save.
+      const r = store.commit((d) => {
+        const made = fromBid ? recordBidPurchase(d, fromBid.planId, input, draft.lines.map((l) => l.bidItemId)) : createLot(d, input);
+        const src = resolveSource(made.data, draft.source, draft.sourceType);
+        let next = src.sourceId ? assignSource(src.data, 'lot', made.lot.id, src.sourceId, undefined, { newRecord: true }) : src.data;
+        next = linkToSession(next, 'lot', made.lot.id, draft.sessionId || null);
+        return { ...made, data: next };
+      });
       saved.current = true;
       toast.success(`Saved “${r.lot.name}” and added ${plural(r.items.length, 'item')} to inventory.${fromBid ? ' The plan’s original estimate is kept for comparison.' : ''}`);
       onClose();
@@ -439,8 +453,13 @@ export function LotFormDialog({ open, onClose, fromBid = null }: { open: boolean
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField label="Purchase date" type="date" value={draft.purchaseDate} onChange={(v) => set('purchaseDate', v)} error={errors.purchaseDate} />
-            <TextField label="Where you bought it" value={draft.source} onChange={(v) => set('source', v)} error={errors.source} placeholder="Auction, estate sale…" suggestions={sources} maxLength={120} />
+            <TripField value={draft.sessionId} onChange={(id) => set('sessionId', id)} />
           </div>
+          <SourceField
+            value={{ text: draft.source, type: draft.sourceType, sessionId: draft.sessionId }}
+            onChange={(v) => setDraft((d) => ({ ...d, source: v.text, sourceType: v.text !== d.source ? guessSourceType(v.text) : v.type }))}
+            error={errors.source}
+          />
           <TextAreaField label="Notes (optional)" value={draft.notes} onChange={(v) => set('notes', v)} error={errors.notes} rows={2} />
         </div>
       )}

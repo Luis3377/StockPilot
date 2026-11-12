@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertOctagon, AlertTriangle, CheckCircle2, ChevronDown, Info, Lightbulb, Settings2, TrendingUp } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, CheckCircle2, ChevronDown, Info, Lightbulb, Settings2, Store, TrendingUp } from 'lucide-react';
 import { AssistantPanel } from './assistant/AssistantPanel';
 import type { InsightSection, Severity } from '../insights/rules';
 import { formatDate } from '../domain/dates';
@@ -55,9 +55,14 @@ export function InsightsPage() {
           </Badge>
         }
         actions={
-          <Link to="/settings#alerts" className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-text hover:underline">
-            <Settings2 className="size-4" /> Adjust thresholds
-          </Link>
+          <>
+            <Link to="/insights/sourcing" className="inline-flex items-center gap-1.5 rounded-xl border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-ink hover:bg-surface-2" data-testid="sourcing-link">
+              <Store className="size-4" /> Sourcing Performance
+            </Link>
+            <Link to="/settings#alerts" className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-text hover:underline">
+              <Settings2 className="size-4" /> Adjust thresholds
+            </Link>
+          </>
         }
       />
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
