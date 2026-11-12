@@ -186,3 +186,17 @@ The full map is in [MONTHLY_CLOSE.md](MONTHLY_CLOSE.md#tests). In short:
 | Exported report accuracy; backup and restore | `src/insights/close.test.ts`; `src/insights/monthly.test.ts`; `e2e/close.spec.ts` |
 | Assistant answers with re-checked calculations | `src/insights/closeAnswers.test.ts`; `e2e/close.spec.ts` |
 | Phones and accessibility | `e2e/close.spec.ts` (desktop + iPhone-sized, axe) |
+
+## Year-end review → tests
+
+The full map is in [YEAR_END.md](YEAR_END.md#tests). In short:
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Annual reconciliation: beginning/ending, purchases and bulk acquisition costs, partial sales, cost of goods sold, write-offs, returns, restocks, deletions, corrections, fractional costs, Dec/Jan boundary, multiple years | `src/insights/yearEnd.test.ts` |
+| Missing opening balances and pre-ledger years (never a zero difference); discrepancy detection | `src/insights/yearEnd.test.ts`; `src/insights/yearAnswers.test.ts`; `e2e/yearend.spec.ts` |
+| Year-end counts; monthly coverage, missing and reopened months, monthly sums | `src/insights/yearEnd.test.ts`; `e2e/yearend.spec.ts` |
+| Finalizing, year and month locks, flags, reopening, versions; backup and restore | `src/insights/yearEnd.test.ts`; `e2e/yearend.spec.ts` |
+| Summary, worksheet, HTML and CSV accuracy | `src/insights/yearEnd.test.ts`; `e2e/yearend.spec.ts` |
+| Assistant answers with verified calculations | `src/insights/yearAnswers.test.ts`; `e2e/yearend.spec.ts` |
+| Phones and accessibility | `e2e/yearend.spec.ts` (desktop + iPhone-sized, axe) |
