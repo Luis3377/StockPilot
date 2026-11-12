@@ -33,6 +33,9 @@ export const ASSISTANT_INTENTS = {
   categories: 'Which categories are performing best {period}?',
   platforms: 'Which platform earns me the most {period}?',
   discounts: 'What items should I consider discounting?',
+  prediction_accuracy: 'How accurate have my predictions been?',
+  lot_outcomes: 'Which lots made more than expected?',
+  lot_learning: 'How should my previous results affect my next maximum bid?',
 } as const;
 
 export type AssistantIntent = keyof typeof ASSISTANT_INTENTS;

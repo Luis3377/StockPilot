@@ -693,3 +693,42 @@ export function lotSummary(data: AppData, lot: Lot): LotSummary {
     lines,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Closing a lot for performance tracking
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks a lot as done ("I've finished selling it"), so its performance result is final. Nothing
+ * is written off: units still on hand stay in inventory at cost and count as unsold. The user
+ * must acknowledge them (`keepRemaining`) when there are any.
+ */
+export function closeLot(data: AppData, lotId: string, note: string, keepRemaining: boolean, clock?: Clock): { data: AppData; lot: Lot } {
+  const { iso } = nowParts(clock);
+  const lot = data.lots.find((l) => l.id === lotId);
+  if (!lot) throw new DomainError('That lot no longer exists.');
+  if (lot.closure) throw new DomainError('This lot is already closed.');
+  const s = lotSummary(data, lot);
+  if (s.unitsOnHand > 0 && !keepRemaining) {
+    throw new DomainError(
+      `${s.unitsOnHand} unit${s.unitsOnHand === 1 ? ' is' : 's are'} still in stock. Sell or write them off first, or confirm they stay in your inventory at cost and count as unsold.`,
+      'keepRemaining',
+    );
+  }
+  const next: Lot = {
+    ...lot,
+    closure: { at: iso, note: optionalText(note, 'note', 'Note', 500), unitsOnHand: s.unitsOnHand, remainingCost: s.remainingCost },
+    updatedAt: iso,
+  };
+  return { data: { ...data, lots: data.lots.map((l) => (l.id === lotId ? next : l)) }, lot: next };
+}
+
+/** Reopens a closed lot: its result is no longer final. */
+export function reopenLot(data: AppData, lotId: string, clock?: Clock): { data: AppData; lot: Lot } {
+  const { iso } = nowParts(clock);
+  const lot = data.lots.find((l) => l.id === lotId);
+  if (!lot) throw new DomainError('That lot no longer exists.');
+  const next: Lot = { ...lot, closure: null, updatedAt: iso };
+  return { data: { ...data, lots: data.lots.map((l) => (l.id === lotId ? next : l)) }, lot: next };
+}
+
