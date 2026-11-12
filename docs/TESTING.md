@@ -200,3 +200,17 @@ The full map is in [YEAR_END.md](YEAR_END.md#tests). In short:
 | Summary, worksheet, HTML and CSV accuracy | `src/insights/yearEnd.test.ts`; `e2e/yearend.spec.ts` |
 | Assistant answers with verified calculations | `src/insights/yearAnswers.test.ts`; `e2e/yearend.spec.ts` |
 | Phones and accessibility | `e2e/yearend.spec.ts` (desktop + iPhone-sized, axe) |
+
+## Financial planning → tests
+
+The full map is in [FINANCIAL_PLANNING.md](FINANCIAL_PLANNING.md#tests). In short:
+
+| Requirement | Where it's tested |
+| --- | --- |
+| Reserve math at different percentages, cent rounding, zero and negative profit, scenarios | `src/insights/planning.test.ts` |
+| Same recorded profit as Sales & Profit and Monthly Close (month, quarter, year); missing records and refund warnings | `src/insights/planning.test.ts` |
+| Planned vs set aside, multiple reserves, withdrawals, adjustments, voids, duplicates | `src/insights/planning.test.ts`; `e2e/planning.spec.ts` |
+| Obligations, recurrence, categories, reminders, duplicates | `src/insights/planning.test.ts`; `e2e/planning.spec.ts` |
+| Never an expense: sales, ledger and closed months untouched; backup and restore | `src/insights/planning.test.ts` |
+| Assistant answers with verified calculations, no assumed rate | `src/insights/planningAnswers.test.ts`; `e2e/planning.spec.ts` |
+| Phones and accessibility | `e2e/planning.spec.ts` (desktop + iPhone-sized, axe) |
