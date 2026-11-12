@@ -5,6 +5,8 @@
 
 import { useSyncExternalStore } from 'react';
 import { upsertSnapshot } from '../domain/actions';
+import { startLedger, trackChanges } from '../domain/ledger';
+import { assertClosedMonthsUnchanged } from '../domain/close';
 import { newId } from '../domain/ids';
 import { emptyData, defaultSettings, type AppData, type DatasetId, type PhotoRecord, type Settings } from '../domain/types';
 import { sanitizeAppData, sanitizeSettings } from './sanitize';
@@ -81,13 +83,14 @@ export class AppStore {
     const raw = await this.storage.getData(dataset);
     if (raw === undefined || raw === null) {
       if (dataset === 'demo') {
-        const demo = buildDemoData();
+        const demo = startLedger(buildDemoData());
         await this.storage.putData('demo', demo);
         return demo;
       }
-      return emptyData();
+      return startLedger(emptyData());
     }
-    return sanitizeAppData(raw);
+    // The inventory ledger starts the first time this version loads the data (saved with the next change).
+    return startLedger(sanitizeAppData(raw));
   }
 
   private listenToOtherTabs() {
@@ -140,8 +143,12 @@ export class AppStore {
 
   /** Applies a change to the active dataset. Throws (without saving) if the action throws. */
   commit<R>(action: (data: AppData) => { data: AppData } & R): R {
-    const result = action(this.state.data);
-    const data = upsertSnapshot(result.data);
+    const before = this.state.data;
+    const result = action(before);
+    // Every change to inventory cost is dated in the ledger; a closed month's figures can't change.
+    const tracked = trackChanges(before, result.data);
+    assertClosedMonthsUnchanged(before, tracked);
+    const data = upsertSnapshot(tracked);
     const dataset = this.state.dataset;
     this.set({ data });
     void this.persist(() => this.storage.putData(dataset, data), 'data');
@@ -193,7 +200,7 @@ export class AppStore {
   async clearRealData(): Promise<void> {
     await this.flush();
     await this.storage.clearDataset('real');
-    if (this.state.dataset === 'real') this.set({ data: emptyData() });
+    if (this.state.dataset === 'real') this.set({ data: startLedger(emptyData()) });
     this.notifyOtherTabs('data');
   }
 
@@ -208,10 +215,10 @@ export class AppStore {
     const now = new Date().toISOString();
     const idMap = new Map(backup.photos.map((p) => [p.id, newId()]));
     const photos: PhotoRecord[] = backup.photos.map((p) => ({ id: idMap.get(p.id)!, full: p.full, thumb: p.thumb, dataset, createdAt: now }));
-    const data: AppData = {
+    const data: AppData = startLedger({
       ...backup.data,
       items: backup.data.items.map((i) => ({ ...i, photoIds: i.photoIds.flatMap((id) => (idMap.has(id) ? [idMap.get(id)!] : [])) })),
-    };
+    });
     const oldPhotoIds = (await this.storage.listPhotos(dataset)).map((p) => p.id);
     await this.storage.putPhotos(photos);
     await this.storage.putData(dataset, data);
