@@ -150,7 +150,7 @@ There is no second budget. Before each call the Worker reserves the worst case, 
 | --- | --- | --- | --- |
 | Scan (for comparison) | 2,048 tokens | $0.0017 / $0.0348 / $0.0695 | ~$0.009–0.015 |
 | Explain an answer | 2,048 tokens | $0.0020 / $0.0400 / $0.0800 | ~$0.005–0.01 |
-| Interpret a question | 1,024 tokens | $0.0016 / $0.0319 / $0.0637 | ~$0.003–0.005 |
+| Interpret a question | 1,024 tokens | $0.0016 / $0.0324 / $0.0649 | ~$0.003–0.005 |
 
 With Sonnet, $10 covers roughly 1,000–2,000 explanations, minus whatever scans use. When the budget or a daily limit is reached, the user sees a clear message (e.g. "You've used all of today's AI requests (scans and AI answers share one daily limit). They reset at midnight UTC.") and the calculation stays on screen. In `node scripts/admin.mjs usage`, the "scans" counts and the month's spend include AI answers. The Worker's logs tell them apart (`evt: "scan"` vs `evt: "assistant"`).
 
