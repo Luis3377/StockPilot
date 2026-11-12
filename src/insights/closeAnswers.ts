@@ -94,9 +94,9 @@ export function rollForwardCalculation(ctx: CalcContext, rf: RollForward): Calcu
   ];
   return {
     metric: 'inventory_roll_forward',
-    title: `Inventory roll-forward: ${monthLabel(rf.month)}`,
+    title: `Inventory roll-forward: ${rf.period.label}`,
     value: rf.expectedEnding,
-    period: { ...monthRange(rf.month), label: monthLabel(rf.month) },
+    period: { start: rf.period.start, end: rf.period.end, label: rf.period.label },
     asOf: ctx.today,
     formula: 'Expected ending inventory cost = beginning inventory cost + purchases ± cost corrections − cost of goods sold − write-offs + units found − items deleted ± sale corrections. The difference is the item records minus that.',
     lines,

@@ -4,7 +4,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CheckCircle2, FileText, History, Info, Lock, RotateCcw, Undo2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarRange, CheckCircle2, FileText, History, Info, Lock, RotateCcw, Undo2 } from 'lucide-react';
 import type { MonthClose } from '../../domain/types';
 import { undoDecision, decideStep } from '../../domain/close';
 import { formatDate, formatDateTime, todayISO } from '../../domain/dates';
@@ -18,7 +18,7 @@ import { Card, PageHeader, SectionHeader } from '../../ui/Card';
 import { Badge, type Tone } from '../../ui/Badge';
 import { Button, buttonClass } from '../../ui/Button';
 import { cn } from '../../ui/cn';
-import { DecisionDialog, defaultMonth, FinalizeDialog, MonthPicker, monthOptions, ReopenDialog, StateBadge, STATE_LABEL } from './parts';
+import { DecisionDialog, defaultMonth, FinalizeDialog, MonthPicker, monthOptions, ReopenDialog, StateBadge, STATE_LABEL, type StepView } from './parts';
 
 export function MonthlyClosePage() {
   const data = useAppState((s) => s.data);
@@ -44,9 +44,14 @@ export function MonthlyClosePage() {
         title="Monthly Close"
         description="Review a month’s records step by step, check that inventory adds up, and finalize the month. Finalized months are protected from accidental changes."
         actions={
-          <Link to="/sales/close/history" className={buttonClass('secondary', 'md')} data-testid="close-history-link">
-            <History className="size-4" aria-hidden /> History
-          </Link>
+          <>
+            <Link to="/sales/year-end" className={buttonClass('secondary', 'md')}>
+              <CalendarRange className="size-4" aria-hidden /> Year-End Review
+            </Link>
+            <Link to="/sales/close/history" className={buttonClass('secondary', 'md')} data-testid="close-history-link">
+              <History className="size-4" aria-hidden /> History
+            </Link>
+          </>
         }
       />
       <Card className="mb-4 flex flex-wrap items-end justify-between gap-3 p-4">
@@ -192,13 +197,20 @@ function OpenView({ list, onFinalize }: { list: Checklist; onFinalize: () => voi
 }
 
 function ChecklistCard({ list, onFinalize }: { list: Checklist; onFinalize: () => void }) {
+  const settings = useAppState((x) => x.settings);
   const [dialog, setDialog] = useState<{ step: CloseStep; kind: 'na' | 'acknowledged' } | null>(null);
   return (
     <Card className="mb-4 p-4 sm:p-5" data-testid="close-checklist">
       <SectionHeader title="Closing checklist" description="Work through each step. A step is done only when you mark it: nothing is ticked just because there are no records." />
       <ol className="mt-3 space-y-3">
         {list.steps.map((s) => (
-          <StepItem key={s.step} month={list.month} step={s} onDialog={(kind) => setDialog({ step: s, kind })} />
+          <StepItem
+            key={s.step}
+            step={s}
+            onDialog={(kind) => setDialog({ step: s, kind })}
+            onReview={() => store.update((d) => decideStep(d, settings, list.month, s.step, 'reviewed', '', todayISO()))}
+            onUndo={() => store.update((d) => undoDecision(d, list.month, s.step))}
+          />
         ))}
         <li className="rounded-xl border border-line p-3" data-testid="close-step" data-step="finalize">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -226,8 +238,8 @@ function ChecklistCard({ list, onFinalize }: { list: Checklist; onFinalize: () =
   );
 }
 
-function StepItem({ month, step: s, onDialog }: { month: string; step: CloseStep; onDialog: (kind: 'na' | 'acknowledged') => void }) {
-  const settings = useAppState((x) => x.settings);
+/** One checklist step: what it shows, its issues and records (linked), and the decision buttons. */
+export function StepItem({ step: s, onDialog, onReview, onUndo }: { step: StepView; onDialog: (kind: 'na' | 'acknowledged') => void; onReview: () => void; onUndo: () => void }) {
   const run = useAction();
   const { money } = useMoney();
   const attention = s.issues.filter((i) => i.severity === 'attention');
@@ -289,13 +301,13 @@ function StepItem({ month, step: s, onDialog }: { month: string; step: CloseStep
       )}
       <div className="mt-2 flex flex-wrap gap-2 print:hidden">
         {decided ? (
-          <Button size="sm" variant="ghost" icon={<Undo2 className="size-4" />} onClick={() => run(() => store.update((d) => undoDecision(d, month, s.step)), 'Decision undone.')} data-testid="step-undo">
+          <Button size="sm" variant="ghost" icon={<Undo2 className="size-4" />} onClick={() => run(onUndo, 'Decision undone.')} data-testid="step-undo">
             Undo
           </Button>
         ) : (
           <>
             {s.canReview && !attention.length && (
-              <Button size="sm" icon={<CheckCircle2 className="size-4" />} onClick={() => run(() => store.update((d) => decideStep(d, settings, month, s.step, 'reviewed', '', todayISO())), 'Marked reviewed.')} data-testid="step-review">
+              <Button size="sm" icon={<CheckCircle2 className="size-4" />} onClick={() => run(onReview, 'Marked reviewed.')} data-testid="step-review">
                 Mark reviewed
               </Button>
             )}
@@ -316,13 +328,13 @@ function StepItem({ month, step: s, onDialog }: { month: string; step: CloseStep
   );
 }
 
-function RollForwardCard({ rf }: { rf: RollForward }) {
+export function RollForwardCard({ rf, title = 'Inventory roll-forward', description = 'Beginning inventory cost plus the month’s recorded movements, compared with the cost on hand from your item records.' }: { rf: RollForward; title?: string; description?: string }) {
   const { money } = useMoney();
   const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${money(Math.abs(n))}`;
   const tone: Tone = rf.status === 'verified' ? 'good' : rf.status === 'difference' ? 'bad' : rf.status === 'partial' ? 'warn' : 'neutral';
   return (
     <Card className="mb-4 p-4 sm:p-5" data-testid="rollforward">
-      <SectionHeader title="Inventory roll-forward" description="Beginning inventory cost plus the month’s recorded movements, compared with the cost on hand from your item records." />
+      <SectionHeader title={title} description={description} />
       <p className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="rf-status">
         <Badge tone={tone}>{rf.status === 'verified' ? 'Verified' : rf.status === 'difference' ? 'Difference' : rf.status === 'partial' ? 'Partly verified' : 'Not available'}</Badge>
         <span className="text-ink-2">{rf.statusText}</span>

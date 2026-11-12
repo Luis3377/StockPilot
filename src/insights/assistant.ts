@@ -26,6 +26,7 @@ import { buildInsights, lowMarginSection } from './rules';
 import { performanceAnswer } from './performanceAnswers';
 import { sourcingAnswer } from './sourcingAnswers';
 import { monthAnswer } from './closeAnswers';
+import { yearAnswer } from './yearAnswers';
 import { explainPayout } from '../domain/reconcile';
 import { toCents } from '../domain/money';
 import {
@@ -237,6 +238,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
         'Why an eBay payout doesn’t match your records ("why doesn’t my eBay payout match?")',
         'Where you make the most money, realized profit per logged hour, and your best sourcing trips ("which thrift store is most profitable?")',
         'How a month went and why profit changed, what to review before closing, and unexplained inventory differences ("why did my profit decline?")',
+        'Year-end inventory: what you started with, bought, sold at cost and wrote off, and whether it reconciles ("is my year-end report ready for my accountant?")',
       ],
       followUps: SUGGESTED_QUESTIONS.slice(0, 4),
     });
@@ -269,6 +271,10 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   // --- Monthly close (a month's results, changes, checklist, payouts, roll-forward) -------
   const monthly = monthAnswer(q, data, settings, today, parseTimeframe(q, today));
   if (monthly) return b.answer(monthly.intent, monthly.text, { details: monthly.details, calculation: monthly.calculation, items: monthly.items, followUps: monthly.followUps });
+
+  // --- Year-end inventory (beginning, purchases, cost of goods sold, reconciliation, write-offs) --
+  const yearly = yearAnswer(q, data, settings, today, parseTimeframe(q, today));
+  if (yearly) return b.answer(yearly.intent, yearly.text, { details: yearly.details, calculation: yearly.calculation, followUps: yearly.followUps });
 
   // --- Marketplace payouts ------------------------------------------------------
   // Answers come from the reconciliation engine's own figures and findings, word for word:

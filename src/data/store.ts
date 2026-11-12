@@ -7,6 +7,7 @@ import { useSyncExternalStore } from 'react';
 import { upsertSnapshot } from '../domain/actions';
 import { startLedger, trackChanges } from '../domain/ledger';
 import { assertClosedMonthsUnchanged } from '../domain/close';
+import { assertFinalizedYearsUnchanged } from '../domain/yearEnd';
 import { newId } from '../domain/ids';
 import { emptyData, defaultSettings, type AppData, type DatasetId, type PhotoRecord, type Settings } from '../domain/types';
 import { sanitizeAppData, sanitizeSettings } from './sanitize';
@@ -148,6 +149,7 @@ export class AppStore {
     // Every change to inventory cost is dated in the ledger; a closed month's figures can't change.
     const tracked = trackChanges(before, result.data);
     assertClosedMonthsUnchanged(before, tracked);
+    assertFinalizedYearsUnchanged(before, tracked);
     const data = upsertSnapshot(tracked);
     const dataset = this.state.dataset;
     this.set({ data });

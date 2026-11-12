@@ -255,7 +255,11 @@ The audit behind this feature found these records can change after they're creat
 | Trip | Expenses | Part of a closed month's protected figures |
 | Marketplace reports | New imports | Never change sales; the closed report is kept, and today's recalculation is shown separately |
 
-## Prepared for year-end
+## Year-end
+
+Year-End Review builds on these closes: see [YEAR_END.md](YEAR_END.md). A finalized year also refuses changes to its months, and reopening a closed month inside a finalized year flags that year for re-review.
+
+## Prepared for year-end (as designed for Monthly Close)
 
 Each close keeps the month's figures and full roll-forward. Twelve closed months therefore give year-end reporting:
 - monthly beginning and ending inventory cost;

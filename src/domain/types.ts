@@ -690,6 +690,8 @@ export interface LedgerEvent {
   kind: LedgerEventKind;
   /** Change in inventory cost, signed, in whole cents (currency units). */
   amount: number;
+  /** Change in units on hand (purchases, deletions, opening balances); missing on cost-only changes and older events. */
+  units?: number;
   itemId: string;
   itemName: string;
   lotId: string | null;
@@ -821,6 +823,106 @@ export function emptyMonthlyClose(): MonthlyCloseData {
   return { closes: [], decisions: {}, audit: [] };
 }
 
+// ---------------------------------------------------------------------------
+// Year-end review: an annual inventory roll-forward built on the ledger and the monthly closes,
+// a designated year-end count, checklist decisions, finalized versions and an audit log. Keyed
+// by period ("2026" for a calendar year), so fiscal years can be added without a migration.
+// ---------------------------------------------------------------------------
+
+export type YearStepKey = 'months' | 'beginning' | 'movements' | 'reconciliation' | 'count' | 'report';
+
+export interface YearDecision {
+  step: YearStepKey;
+  decision: CloseDecisionKind;
+  note: string;
+  at: string;
+  fingerprint: string;
+}
+
+export interface YearFiguresSnapshot {
+  beginning: number | null;
+  beginningBasis: string;
+  purchases: number | null;
+  capitalizedCosts: number;
+  costOfGoodsSold: number;
+  expectedEnding: number | null;
+  recordsEnding: number | null;
+  countedEnding: number | null;
+  independentEnding: number | null;
+  independentBasis: string;
+  difference: number | null;
+  revenue: number;
+  realizedProfit: number;
+}
+
+export interface YearCoverageSnapshot {
+  month: string;
+  status: 'verified' | 'exceptions' | 'open' | 'missing' | 'not_verifiable' | 'future';
+  statusText: string;
+  closeVersion: number | null;
+}
+
+export interface YearCountRef {
+  countId: string;
+  completedAt: string;
+  timing: 'on' | 'before' | 'after';
+  full: boolean;
+  countedEnding: number;
+  differenceFromRecords: number;
+}
+
+export interface YearClosedStep {
+  step: YearStepKey;
+  title: string;
+  state: 'completed' | 'na' | 'attention' | 'todo';
+  note: string;
+  issues: string[];
+}
+
+export interface YearReview {
+  id: string;
+  /** "2026" for a calendar year. */
+  periodKey: string;
+  start: string;
+  end: string;
+  label: string;
+  version: number;
+  finalizedAt: string;
+  status: 'finalized' | 'superseded';
+  supersededAt: string | null;
+  reopenReason: string;
+  figures: YearFiguresSnapshot;
+  rollForward: RollForwardSnapshot;
+  coverage: YearCoverageSnapshot[];
+  count: YearCountRef | null;
+  checklist: YearClosedStep[];
+  unresolved: string[];
+  acknowledgement: string;
+  report: ReportSnapshot;
+}
+
+export interface YearAuditEvent {
+  id: string;
+  at: string;
+  periodKey: string;
+  kind: 'reviewed' | 'na' | 'acknowledged' | 'undone' | 'count' | 'finalized' | 'reopened' | 'flagged';
+  detail: string;
+  version: number | null;
+}
+
+export interface YearEndData {
+  reviews: YearReview[];
+  /** Checklist decisions for years not finalized yet. */
+  decisions: Record<string, YearDecision[]>;
+  /** The count chosen as each year's physical year-end count (period → count id). */
+  counts: Record<string, string>;
+  audit: YearAuditEvent[];
+}
+
+export function emptyYearEnd(): YearEndData {
+  return { reviews: [], decisions: {}, counts: {}, audit: [] };
+}
+
 export interface AppData {
   schemaVersion: 1;
   items: Item[];
@@ -841,6 +943,8 @@ export interface AppData {
   inventoryLedger: InventoryLedger;
   /** Month-end closes, checklist decisions and their audit log. Missing in older data (loads empty). */
   monthlyClose: MonthlyCloseData;
+  /** Year-end reviews, decisions, designated counts and their audit log. Missing in older data (loads empty). */
+  yearEnd: YearEndData;
 }
 
 export interface Settings {
@@ -888,6 +992,7 @@ export function emptyData(): AppData {
     sourcing: emptySourcing(),
     inventoryLedger: emptyLedger(),
     monthlyClose: emptyMonthlyClose(),
+    yearEnd: emptyYearEnd(),
   };
 }
 

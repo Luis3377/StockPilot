@@ -12,6 +12,7 @@ import { nowParts, type Clock } from './actions';
 import { closeChecklist, STEP_TITLES } from '../insights/closeChecklist';
 import { controllerReport, reportSnapshot } from '../insights/controllerReport';
 import { currentClose, ledgerInfo, MONTH_KEY, monthFingerprint, monthLabel } from '../insights/monthly';
+import { flagYearForMonth } from './yearEnd';
 
 export const CLOSE_LIMITS = { note: 1000, reason: 1000, audit: 5000 } as const;
 
@@ -154,14 +155,15 @@ export function reopenMonth(data: AppData, month: string, reason: string, clock?
   if (why.length < 5) throw new DomainError('Say why you’re reopening the month (at least a few words).');
   const decisions = { ...data.monthlyClose.decisions };
   delete decisions[month];
-  return {
+  // A finalized year containing this month is flagged for re-review (its figures aren't changed).
+  return flagYearForMonth({
     ...data,
     monthlyClose: {
       closes: data.monthlyClose.closes.map((c) => (c.id === close.id ? { ...c, status: 'superseded' as const, supersededAt: iso, reopenReason: why } : c)),
       decisions,
       audit: audit(data, { at: iso, month, kind: 'reopened', step: null, detail: `Reopened ${monthLabel(month)} (version ${close.version} superseded) — ${why}`, version: close.version }),
     },
-  };
+  }, month, why, iso);
 }
 
 /**

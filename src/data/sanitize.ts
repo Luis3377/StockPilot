@@ -14,6 +14,15 @@ import {
   emptySourcing,
   emptyLedger,
   emptyMonthlyClose,
+  emptyYearEnd,
+  type YearAuditEvent,
+  type YearClosedStep,
+  type YearCountRef,
+  type YearCoverageSnapshot,
+  type YearDecision,
+  type YearEndData,
+  type YearReview,
+  type YearStepKey,
   type CloseAuditEvent,
   type CloseDecision,
   type CloseDecisionKind,
@@ -659,6 +668,8 @@ export function sanitizeAppData(raw: unknown): AppData {
     inventoryLedger: sanitizeLedger(raw.inventoryLedger),
     // Data from before Monthly Close has no closes.
     monthlyClose: sanitizeMonthlyClose(raw.monthlyClose),
+    // Data from before Year-End Review has no reviews.
+    yearEnd: sanitizeYearEnd(raw.yearEnd),
   };
 }
 
@@ -801,7 +812,7 @@ function sanitizeLedger(raw: unknown): InventoryLedger {
   const events: LedgerEvent[] = (Array.isArray(raw.events) ? raw.events : []).filter(isObj).flatMap((e): LedgerEvent[] => {
     if (typeof e.id !== 'string' || typeof e.at !== 'string' || typeof e.date !== 'string' || !isValidISODate(e.date)) return [];
     if (!LEDGER_KINDS.includes(e.kind as LedgerEventKind) || typeof e.amount !== 'number' || !Number.isFinite(e.amount) || typeof e.itemId !== 'string') return [];
-    return [{ id: e.id, at: e.at, date: e.date, kind: e.kind as LedgerEventKind, amount: e.amount, itemId: e.itemId, itemName: text(e.itemName, 200), lotId: typeof e.lotId === 'string' ? e.lotId : null, saleIds: strArr(e.saleIds), note: text(e.note, 500) }];
+    return [{ id: e.id, at: e.at, date: e.date, kind: e.kind as LedgerEventKind, amount: e.amount, ...(typeof e.units === 'number' && Number.isInteger(e.units) ? { units: e.units } : {}), itemId: e.itemId, itemName: text(e.itemName, 200), lotId: typeof e.lotId === 'string' ? e.lotId : null, saleIds: strArr(e.saleIds), note: text(e.note, 500) }];
   });
   return { startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : null, events };
 }
@@ -893,6 +904,91 @@ function sanitizeMonthlyClose(raw: unknown): MonthlyCloseData {
     audit: (Array.isArray(raw.audit) ? raw.audit : []).filter(isObj).flatMap((a): CloseAuditEvent[] =>
       typeof a.id === 'string' && typeof a.at === 'string' && typeof a.month === 'string' && AUDIT_KINDS.includes(a.kind as CloseAuditEvent['kind'])
         ? [{ id: a.id, at: a.at, month: a.month, kind: a.kind as CloseAuditEvent['kind'], step: STEP_KEYS.includes(a.step as CloseStepKey) ? (a.step as CloseStepKey) : null, detail: text(a.detail, 1000), version: typeof a.version === 'number' ? a.version : null }]
+        : [],
+    ),
+  };
+}
+
+const YEAR_STEPS: YearStepKey[] = ['months', 'beginning', 'movements', 'reconciliation', 'count', 'report'];
+const COVERAGE: YearCoverageSnapshot['status'][] = ['verified', 'exceptions', 'open', 'missing', 'not_verifiable', 'future'];
+const YEAR_AUDIT: YearAuditEvent['kind'][] = ['reviewed', 'na', 'acknowledged', 'undone', 'count', 'finalized', 'reopened', 'flagged'];
+const PERIOD_KEY = /^\d{4}$/;
+
+function sanitizeYearReview(raw: unknown): YearReview | null {
+  if (!isObj(raw) || typeof raw.id !== 'string' || typeof raw.periodKey !== 'string' || !PERIOD_KEY.test(raw.periodKey)) return null;
+  if (typeof raw.version !== 'number' || !Number.isInteger(raw.version) || raw.version < 1 || typeof raw.finalizedAt !== 'string') return null;
+  if (typeof raw.start !== 'string' || !isValidISODate(raw.start) || typeof raw.end !== 'string' || !isValidISODate(raw.end)) return null;
+  const f = isObj(raw.figures) ? raw.figures : {};
+  const c = isObj(raw.count) ? raw.count : null;
+  return {
+    id: raw.id,
+    periodKey: raw.periodKey,
+    start: raw.start,
+    end: raw.end,
+    label: text(raw.label, 100),
+    version: raw.version,
+    finalizedAt: raw.finalizedAt,
+    status: raw.status === 'superseded' ? 'superseded' : 'finalized',
+    supersededAt: typeof raw.supersededAt === 'string' ? raw.supersededAt : null,
+    reopenReason: text(raw.reopenReason, 1000),
+    figures: {
+      beginning: signedOrNull(f.beginning),
+      beginningBasis: text(f.beginningBasis, 500),
+      purchases: signedOrNull(f.purchases),
+      capitalizedCosts: signed(f.capitalizedCosts),
+      costOfGoodsSold: signed(f.costOfGoodsSold),
+      expectedEnding: signedOrNull(f.expectedEnding),
+      recordsEnding: signedOrNull(f.recordsEnding),
+      countedEnding: signedOrNull(f.countedEnding),
+      independentEnding: signedOrNull(f.independentEnding),
+      independentBasis: text(f.independentBasis, 500),
+      difference: signedOrNull(f.difference),
+      revenue: signed(f.revenue),
+      realizedProfit: signed(f.realizedProfit),
+    },
+    rollForward: sanitizeRollForward(raw.rollForward),
+    coverage: (Array.isArray(raw.coverage) ? raw.coverage : []).filter(isObj).flatMap((m): YearCoverageSnapshot[] =>
+      typeof m.month === 'string' && MONTH_KEY.test(m.month)
+        ? [{ month: m.month, status: COVERAGE.includes(m.status as YearCoverageSnapshot['status']) ? (m.status as YearCoverageSnapshot['status']) : 'missing', statusText: text(m.statusText, 500), closeVersion: typeof m.closeVersion === 'number' ? m.closeVersion : null }]
+        : [],
+    ),
+    count:
+      c && typeof c.countId === 'string' && typeof c.completedAt === 'string'
+        ? ({ countId: c.countId, completedAt: c.completedAt, timing: c.timing === 'before' || c.timing === 'after' ? c.timing : 'on', full: c.full === true, countedEnding: signed(c.countedEnding), differenceFromRecords: signed(c.differenceFromRecords) } satisfies YearCountRef)
+        : null,
+    checklist: (Array.isArray(raw.checklist) ? raw.checklist : []).filter(isObj).flatMap((x): YearClosedStep[] =>
+      YEAR_STEPS.includes(x.step as YearStepKey)
+        ? [{ step: x.step as YearStepKey, title: text(x.title, 200), state: STEP_STATES.includes(x.state as YearClosedStep['state']) ? (x.state as YearClosedStep['state']) : 'todo', note: text(x.note, 1000), issues: texts(x.issues) }]
+        : [],
+    ),
+    unresolved: texts(raw.unresolved),
+    acknowledgement: text(raw.acknowledgement, 1000),
+    report: sanitizeReport(raw.report),
+  };
+}
+
+function sanitizeYearEnd(raw: unknown): YearEndData {
+  if (!isObj(raw)) return emptyYearEnd();
+  const decisions: Record<string, YearDecision[]> = {};
+  if (isObj(raw.decisions)) {
+    for (const [key, list] of Object.entries(raw.decisions)) {
+      if (!PERIOD_KEY.test(key) || !Array.isArray(list)) continue;
+      decisions[key] = list.filter(isObj).flatMap((d): YearDecision[] =>
+        YEAR_STEPS.includes(d.step as YearStepKey) && DECISIONS.includes(d.decision as CloseDecisionKind) && typeof d.at === 'string'
+          ? [{ step: d.step as YearStepKey, decision: d.decision as CloseDecisionKind, note: text(d.note, 1000), at: d.at, fingerprint: text(d.fingerprint, 200) }]
+          : [],
+      );
+    }
+  }
+  const counts: Record<string, string> = {};
+  if (isObj(raw.counts)) for (const [key, id] of Object.entries(raw.counts)) if (PERIOD_KEY.test(key) && typeof id === 'string') counts[key] = id;
+  return {
+    reviews: (Array.isArray(raw.reviews) ? raw.reviews : []).map(sanitizeYearReview).filter((r): r is YearReview => r !== null),
+    decisions,
+    counts,
+    audit: (Array.isArray(raw.audit) ? raw.audit : []).filter(isObj).flatMap((a): YearAuditEvent[] =>
+      typeof a.id === 'string' && typeof a.at === 'string' && typeof a.periodKey === 'string' && YEAR_AUDIT.includes(a.kind as YearAuditEvent['kind'])
+        ? [{ id: a.id, at: a.at, periodKey: a.periodKey, kind: a.kind as YearAuditEvent['kind'], detail: text(a.detail, 1000), version: typeof a.version === 'number' ? a.version : null }]
         : [],
     ),
   };

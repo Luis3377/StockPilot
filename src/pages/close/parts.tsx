@@ -8,6 +8,7 @@ import { isDomainError } from '../../domain/errors';
 import { localDate } from '../../domain/ledger';
 import { todayISO } from '../../domain/dates';
 import { currentClose, monthEnded, monthLabel, monthOf, shiftMonth } from '../../insights/monthly';
+import { currentReview } from '../../insights/yearEnd';
 import type { Checklist, CloseStep, StepState } from '../../insights/closeChecklist';
 import { store, useAppState } from '../../data/store';
 import { useMoney } from '../../lib/hooks';
@@ -70,7 +71,10 @@ export function MonthPicker({ value, onChange, months }: { value: string; onChan
 }
 
 /** "Not applicable" (with an explanation) or "Acknowledge" (with a note) for one step. */
-export function DecisionDialog({ month, step, kind, onClose }: { month: string; step: CloseStep | null; kind: 'na' | 'acknowledged'; onClose: () => void }) {
+/** What a checklist step shows (monthly and year-end steps share it). */
+export type StepView = Pick<CloseStep, 'number' | 'title' | 'description' | 'facts' | 'records' | 'issues' | 'canReview' | 'canNA' | 'naExplanation' | 'state' | 'stateText'> & { step: string; decision: { decision: string } | null };
+
+export function DecisionDialog({ month, step, kind, onClose, onSave }: { month: string; step: StepView | null; kind: 'na' | 'acknowledged'; onClose: () => void; onSave?: (note: string) => void }) {
   const settings = useAppState((s) => s.settings);
   const toast = useToast();
   const [note, setNote] = useState('');
@@ -83,7 +87,8 @@ export function DecisionDialog({ month, step, kind, onClose }: { month: string; 
   const attention = step.issues.filter((i) => i.severity === 'attention');
   const save = () => {
     try {
-      store.update((d) => decideStep(d, settings, month, step.step as CloseStepKey, kind, note, todayISO()));
+      if (onSave) onSave(note);
+      else store.update((d) => decideStep(d, settings, month, step.step as CloseStepKey, kind, note, todayISO()));
       toast.success(kind === 'na' ? 'Marked not applicable.' : 'Issues acknowledged.');
       onClose();
     } catch (e) {
@@ -197,6 +202,7 @@ export function FinalizeDialog({ list, open, onClose }: { list: Checklist; open:
 
 export function ReopenDialog({ month, open, onClose }: { month: string; open: boolean; onClose: () => void }) {
   const toast = useToast();
+  const finalizedYear = useAppState((s) => currentReview(s.data, month.slice(0, 4)));
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
@@ -233,6 +239,11 @@ export function ReopenDialog({ month, open, onClose }: { month: string; open: bo
         </div>
       }
     >
+      {finalizedYear && (
+        <p className="mb-3 rounded-lg bg-warn-soft p-2 text-sm text-warn-text" data-testid="reopen-year-warning">
+          {monthLabel(month)} is part of the finalized {finalizedYear.periodKey} year-end review (version {finalizedYear.version}). Reopening it flags that review as needing re-review; the review itself stays as it was until you reopen the year.
+        </p>
+      )}
       <TextAreaField label="Why are you reopening it?" required value={reason} onChange={setReason} rows={3} error={error} maxLength={1000} data-testid="reopen-reason" />
     </Dialog>
   );

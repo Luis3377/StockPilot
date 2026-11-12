@@ -57,7 +57,7 @@ const inMonth = (date: string, month: string) => date.slice(0, 7) === month;
 // Movements of inventory cost (from records made after the ledger began)
 // ---------------------------------------------------------------------------
 
-export type MovementKey = 'items' | 'lots' | 'restocks' | 'corrections' | 'cogs' | 'decreases' | 'increases' | 'removed' | 'sale_corrections';
+export type MovementKey = 'items' | 'lots' | 'restocks' | 'corrections' | 'cogs' | 'decreases' | 'withdrawals' | 'increases' | 'returns' | 'removed' | 'sale_corrections';
 
 export const MOVEMENT_LABELS: Record<MovementKey, string> = {
   items: 'Items bought',
@@ -66,12 +66,18 @@ export const MOVEMENT_LABELS: Record<MovementKey, string> = {
   corrections: 'Cost corrections',
   cogs: 'Cost of goods sold',
   decreases: 'Write-offs and other documented decreases',
+  withdrawals: 'Withdrawn for personal use',
   increases: 'Units found and other documented increases',
+  returns: 'Returns added back to stock',
   removed: 'Items deleted with stock',
   sale_corrections: 'Sale edits and cancellations',
 };
 
-export const MOVEMENT_ORDER: MovementKey[] = ['items', 'lots', 'restocks', 'corrections', 'cogs', 'decreases', 'increases', 'removed', 'sale_corrections'];
+export const MOVEMENT_ORDER: MovementKey[] = ['items', 'lots', 'restocks', 'corrections', 'cogs', 'decreases', 'withdrawals', 'increases', 'returns', 'removed', 'sale_corrections'];
+
+/** Adjustment reasons that mean merchandise taken for personal use, or returned by a customer. */
+export const WITHDRAWAL_REASON = /\b(used personally|personal use|own use|withdr[ae]wn?|for myself)\b/i;
+export const RETURN_REASON = /\breturn(ed|s)?\b/i;
 
 export interface MovementRecord {
   kind: 'sale' | 'item' | 'lot' | 'adjustment';
@@ -88,6 +94,9 @@ export interface Movement {
   key: MovementKey;
   date: string;
   cents: number;
+  /** The item it changed, and the change in its units on hand (0 for cost-only changes). */
+  itemId: string;
+  units: number;
   record: MovementRecord;
 }
 
@@ -110,22 +119,22 @@ export function ledgerInfo(data: AppData): LedgerInfo {
   for (const s of data.sales) {
     if (!after(s.createdAt)) continue;
     const cents = toCents(multiplyMoney(s.unitCost, s.quantity));
-    movements.push({ key: 'cogs', date: s.saleDate, cents: -cents, record: { kind: 'sale', id: s.id, label: `${s.itemName}${s.quantity > 1 ? ` × ${s.quantity}` : ''}`, detail: `Sold ${formatDate(s.saleDate)}`, date: s.saleDate, href: `/inventory/${s.itemId}`, amount: -fromCents(cents) } });
+    movements.push({ key: 'cogs', date: s.saleDate, cents: -cents, itemId: s.itemId, units: -s.quantity, record: { kind: 'sale', id: s.id, label: `${s.itemName}${s.quantity > 1 ? ` × ${s.quantity}` : ''}`, detail: `Sold ${formatDate(s.saleDate)}`, date: s.saleDate, href: `/inventory/${s.itemId}`, amount: -fromCents(cents) } });
   }
   for (const a of data.adjustments) {
     if (!after(a.date)) continue;
     const cents = toCents(a.valueDifference);
     if (cents === 0) continue;
-    const key: MovementKey = a.source === 'restock' ? 'restocks' : cents < 0 ? 'decreases' : 'increases';
+    const key: MovementKey = a.source === 'restock' ? 'restocks' : cents < 0 ? (WITHDRAWAL_REASON.test(a.reason) ? 'withdrawals' : 'decreases') : RETURN_REASON.test(a.reason) ? 'returns' : 'increases';
     const date = localDate(a.date);
-    movements.push({ key, date, cents, record: { kind: 'adjustment', id: a.id, label: a.itemName, detail: `${a.difference > 0 ? '+' : ''}${a.difference} units · ${a.reason}`, date, href: `/inventory/${a.itemId}`, amount: fromCents(cents) } });
+    movements.push({ key, date, cents, itemId: a.itemId, units: a.difference, record: { kind: 'adjustment', id: a.id, label: a.itemName, detail: `${a.difference > 0 ? '+' : ''}${a.difference} units · ${a.reason}`, date, href: `/inventory/${a.itemId}`, amount: fromCents(cents) } });
   }
   for (const e of data.inventoryLedger.events) {
     if (e.kind === 'opening') continue;
     const key: MovementKey = e.kind === 'acquired' || e.kind === 'purchase_date' ? (e.lotId ? 'lots' : 'items') : e.kind === 'cost_correction' ? 'corrections' : e.kind === 'removed' ? 'removed' : 'sale_corrections';
     const exists = data.items.some((i) => i.id === e.itemId);
     const href = e.lotId && data.lots.some((l) => l.id === e.lotId) ? `/inventory/lots/${e.lotId}` : exists ? `/inventory/${e.itemId}` : '/inventory';
-    movements.push({ key, date: e.date, cents: toCents(e.amount), record: { kind: e.lotId ? 'lot' : 'item', id: e.id, label: e.itemName, detail: e.note, date: e.date, href, amount: e.amount } });
+    movements.push({ key, date: e.date, cents: toCents(e.amount), itemId: e.itemId, units: e.units ?? 0, record: { kind: e.lotId ? 'lot' : 'item', id: e.id, label: e.itemName, detail: e.note, date: e.date, href, amount: e.amount } });
   }
   const preLedgerSales = startedAt ? data.sales.filter((s) => s.createdAt < startedAt) : data.sales;
   const complete =
@@ -146,8 +155,24 @@ export interface RollForwardLine {
 
 export type RollForwardStatus = 'verified' | 'difference' | 'partial' | 'not_available';
 
+/** A reporting period: a month, a calendar year, or (later) a fiscal year. */
+export interface Period {
+  key: string;
+  start: string;
+  end: string;
+  /** "October 2026", "2026" */
+  label: string;
+}
+
+export function monthPeriod(month: string): Period {
+  const r = monthRange(month);
+  return { key: month, start: r.start, end: r.end, label: monthLabel(month) };
+}
+
 export interface RollForward {
+  /** The period's key (YYYY-MM for a month). */
   month: string;
+  period: Period;
   status: RollForwardStatus;
   statusText: string;
   beginning: number | null;
@@ -165,14 +190,27 @@ export function currentClose(data: AppData, month: string): MonthClose | null {
   return data.monthlyClose.closes.find((c) => c.month === month && c.status === 'closed') ?? null;
 }
 
-export function rollForward(data: AppData, settings: Pick<Settings, 'currency'>, month: string, today: string, info: LedgerInfo = ledgerInfo(data)): RollForward {
+/** A beginning balance from a close or year-end review, instead of the ledger's. */
+export interface OpeningOverride {
+  cents: number;
+  basis: string;
+  /** What the other record's figure is called, for the note when it differs from the ledger. */
+  source: string;
+}
+
+/** Ledger balance (cents) at the end of `date`, from the opening and every movement dated up to it. */
+export function ledgerBalanceAt(info: LedgerInfo, date: string): number {
+  return info.movements.filter((m) => m.date <= date).reduce((c, m) => c + m.cents, info.openingCents);
+}
+
+export function periodRollForward(data: AppData, settings: Pick<Settings, 'currency'>, period: Period, today: string, info: LedgerInfo = ledgerInfo(data), opening: OpeningOverride | null = null): RollForward {
   const money = (cents: number) => formatMoney(fromCents(cents), settings.currency);
-  const r = monthRange(month);
+  const r = period;
   const notes: string[] = [];
-  const empty = (status: RollForwardStatus, statusText: string): RollForward => ({ month, status, statusText, beginning: null, beginningBasis: '', lines: [], expectedEnding: null, recordsEnding: null, recordsBasis: '', difference: null, notes });
+  const empty = (status: RollForwardStatus, statusText: string): RollForward => ({ month: period.key, period, status, statusText, beginning: null, beginningBasis: '', lines: [], expectedEnding: null, recordsEnding: null, recordsBasis: '', difference: null, notes });
   if (!info.startedAt || !info.startDate) return empty('not_available', 'The inventory ledger hasn’t started yet');
   if (!info.complete && r.end < info.startDate) {
-    notes.push(`StockPilot began its dated inventory ledger on ${formatDate(info.startDate)}. Purchases, cost edits and deletions before then weren’t recorded with dates, so inventory balances for ${monthLabel(month)} can’t be verified. Sales, fees and profit still come from your sale records.`);
+    notes.push(`StockPilot began its dated inventory ledger on ${formatDate(info.startDate)}. Purchases, cost edits and deletions before then weren’t recorded with dates, so inventory balances for ${period.label} can’t be verified. Sales, fees and profit still come from your sale records.`);
     return empty('not_available', `Not available: before the inventory ledger began (${formatDate(info.startDate)})`);
   }
   const partial = !info.complete && r.start <= info.startDate;
@@ -180,16 +218,13 @@ export function rollForward(data: AppData, settings: Pick<Settings, 'currency'>,
   const within = info.movements.filter((m) => m.date >= r.start && m.date <= r.end);
   const later = info.movements.filter((m) => m.date > r.end).reduce((c, m) => c + m.cents, 0);
 
-  // Beginning: the previous month's closing figure when it's closed (and this month isn't the
-  // ledger's first), otherwise the ledger's balance.
-  const prev = currentClose(data, shiftMonth(month, -1));
   let beginning = before;
   let beginningBasis = info.complete ? 'From the inventory ledger (it covers your whole history)' : `From the inventory ledger, which began ${formatDate(info.startDate)}`;
   if (partial) beginningBasis = `Opening balance when the inventory ledger began (${formatDate(info.startDate)}), plus later-recorded changes dated earlier`;
-  else if (prev && prev.rollForward.recordsEnding !== null) {
-    beginning = toCents(prev.rollForward.recordsEnding);
-    beginningBasis = `Ending inventory cost when ${monthLabel(prev.month)} was closed (${formatDate(prev.closedAt)})`;
-    if (beginning !== before) notes.push(`The ledger’s balance at the start of the month is ${money(before)}; the ${monthLabel(prev.month)} close recorded ${money(beginning)}. That ${money(before - beginning)} is part of any difference below.`);
+  else if (opening) {
+    beginning = opening.cents;
+    beginningBasis = opening.basis;
+    if (beginning !== before) notes.push(`The ledger’s balance at the start is ${money(before)}; ${opening.source} recorded ${money(beginning)}. That ${money(before - beginning)} is part of any difference below.`);
   }
   const lines: RollForwardLine[] = MOVEMENT_ORDER.map((key) => {
     const ms = within.filter((m) => m.key === key);
@@ -198,14 +233,15 @@ export function rollForward(data: AppData, settings: Pick<Settings, 'currency'>,
   const expected = beginning + within.reduce((c, m) => c + m.cents, 0);
   const records = recordsBalanceCents(data) - later;
   const difference = records - expected;
-  const recordsBasis = r.end >= today ? (later ? 'Item records today, less changes dated after the month' : 'Item records today (the month isn’t over yet)') : later ? `Item records today, less ${money(-later)} of recorded changes dated after ${formatDate(r.end)}` : `Item records today (nothing recorded since ${formatDate(r.end)} changes them)`;
+  const kind = period.key.length === 7 ? 'month' : 'period';
+  const recordsBasis = r.end >= today ? (later ? `Item records today, less changes dated after the ${kind}` : `Item records today (the ${kind} isn’t over yet)`) : later ? `Item records today, less ${money(-later)} of recorded changes dated after ${formatDate(r.end)}` : `Item records today (nothing recorded since ${formatDate(r.end)} changes them)`;
 
   if (partial) {
-    notes.push(`The inventory ledger began on ${formatDate(info.startDate)}, during this month, so the roll-forward covers only what was recorded from then on.`);
-    const pre = info.preLedgerSales.filter((s) => inMonth(s.saleDate, month));
-    if (pre.length) notes.push(`${money(pre.reduce((c, s) => c + toCents(computeSale(s).costOfGoods), 0))} of this month’s cost of goods sold (${plural(pre.length, 'sale')}) was recorded before the ledger began and is already reflected in its opening balance, so it isn’t a line here.`);
+    notes.push(`The inventory ledger began on ${formatDate(info.startDate)}, during this ${kind}, so the roll-forward covers only what was recorded from then on.`);
+    const pre = info.preLedgerSales.filter((s) => s.saleDate >= r.start && s.saleDate <= r.end);
+    if (pre.length) notes.push(`${money(pre.reduce((c, s) => c + toCents(computeSale(s).costOfGoods), 0))} of this ${kind}’s cost of goods sold (${plural(pre.length, 'sale')}) was recorded before the ledger began and is already reflected in its opening balance, so it isn’t a line here.`);
   }
-  if (r.end >= today) notes.push('The month isn’t over: these are figures to date.');
+  if (r.end >= today) notes.push(`The ${kind} isn’t over: these are figures to date.`);
   if (difference !== 0) notes.push(`${money(Math.abs(difference))} of inventory cost on the item records isn’t explained by any dated record. It can come from changes made outside StockPilot’s recorded actions (for example data restored from an older copy).`);
   const status: RollForwardStatus = difference !== 0 ? 'difference' : partial ? 'partial' : 'verified';
   const statusText =
@@ -213,8 +249,18 @@ export function rollForward(data: AppData, settings: Pick<Settings, 'currency'>,
       ? `Unexplained difference of ${money(difference)}`
       : status === 'partial'
         ? `Partly verified: from ${formatDate(info.startDate)}, when the inventory ledger began`
-        : 'Verified: the item records match beginning inventory plus the month’s recorded movements, to the cent';
-  return { month, status, statusText, beginning: fromCents(beginning), beginningBasis, lines, expectedEnding: fromCents(expected), recordsEnding: fromCents(records), recordsBasis, difference: fromCents(difference), notes };
+        : `Verified: the item records match beginning inventory plus the ${kind}’s recorded movements, to the cent`;
+  return { month: period.key, period, status, statusText, beginning: fromCents(beginning), beginningBasis, lines, expectedEnding: fromCents(expected), recordsEnding: fromCents(records), recordsBasis, difference: fromCents(difference), notes };
+}
+
+export function rollForward(data: AppData, settings: Pick<Settings, 'currency'>, month: string, today: string, info: LedgerInfo = ledgerInfo(data)): RollForward {
+  // Beginning: the previous month's closing figure when it's closed, otherwise the ledger's balance.
+  const prev = currentClose(data, shiftMonth(month, -1));
+  const opening: OpeningOverride | null =
+    prev && prev.rollForward.recordsEnding !== null
+      ? { cents: toCents(prev.rollForward.recordsEnding), basis: `Ending inventory cost when ${monthLabel(prev.month)} was closed (${formatDate(prev.closedAt)})`, source: `the ${monthLabel(prev.month)} close` }
+      : null;
+  return periodRollForward(data, settings, monthPeriod(month), today, info, opening);
 }
 
 // ---------------------------------------------------------------------------

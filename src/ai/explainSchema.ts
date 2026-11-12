@@ -51,6 +51,13 @@ export const ASSISTANT_INTENTS = {
   products_hurt: 'Which products hurt my profitability {period}?',
   payouts_reconciled: 'Are my payouts reconciled {period}?',
   inventory_unexplained: 'What inventory differences remain unexplained?',
+  year_beginning: 'How much inventory did I start the year with?',
+  year_purchases: 'How much inventory did I purchase {period}?',
+  year_cogs: 'What was my cost of goods sold {period}?',
+  year_reconcile: 'Why doesn’t my inventory reconcile?',
+  year_writeoffs: 'What inventory did I write off {period}?',
+  year_missing_months: 'Which months are missing information?',
+  year_ready: 'Is my year-end report ready for my accountant?',
 } as const;
 
 export type AssistantIntent = keyof typeof ASSISTANT_INTENTS;
