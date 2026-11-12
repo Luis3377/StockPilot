@@ -47,6 +47,7 @@ Variations are recognized ("how much did I make", "earnings in September", "mone
 | How much money is tied up in slow-moving inventory? | Inventory cost of items unsold for the slow-moving threshold (60 days by default) | Today |
 | Which items should I review for possible losses? | Three separate checks, never added: loss-making sales (recorded), write-offs (recorded), stock whose asking price or your estimate is below cost (estimate) | All recorded / today |
 | What's my projected profit at my asking prices? | **Projected profit** = asking price × quantity − estimated selling costs − cost | Today (estimate) |
+| How accurate have my predictions been? / Which lots made more than expected? / Why did this lot lose money? / How should my previous results affect my next maximum bid? | Predicted vs. actual for lots planned with Max Bid (see [PREDICTED_VS_ACTUAL.md](PREDICTED_VS_ACTUAL.md#the-assistant)) | Completed lots |
 | Also: low stock, slow movers, categories, platforms, discounting, a named item ("How is the Brass lamp doing?") | As before, with a calculation where there's a money figure | |
 
 Anything else gets the existing "I can't answer that — this assistant uses fixed rules, not an AI model" answer with examples (and, in AI builds, the option to ask AI to understand it).
@@ -114,7 +115,7 @@ The production build has no AI code paths and sends nothing (tested: no requests
 | AI does | AI never does |
 | --- | --- |
 | Reword verified figures in 2–5 plain sentences | Calculate, estimate or round a figure |
-| Map an unrecognized question to one of 19 supported questions and a period | See the user's records when interpreting (it gets only the question) |
+| Map an unrecognized question to one of 22 supported questions and a period | See the user's records when interpreting (it gets only the question) |
 | Say "unsupported" when nothing fits | Answer questions the engine can't |
 
 **What is sent, only after the user confirms** (the confirmation says exactly this):
@@ -149,7 +150,7 @@ There is no second budget. Before each call the Worker reserves the worst case, 
 | --- | --- | --- | --- |
 | Scan (for comparison) | 2,048 tokens | $0.0017 / $0.0348 / $0.0695 | ~$0.009–0.015 |
 | Explain an answer | 2,048 tokens | $0.0020 / $0.0400 / $0.0800 | ~$0.005–0.01 |
-| Interpret a question | 1,024 tokens | $0.0016 / $0.0311 / $0.0621 | ~$0.003–0.005 |
+| Interpret a question | 1,024 tokens | $0.0016 / $0.0313 / $0.0626 | ~$0.003–0.005 |
 
 With Sonnet, $10 covers roughly 1,000–2,000 explanations, minus whatever scans use. When the budget or a daily limit is reached, the user sees a clear message (e.g. "You've used all of today's AI requests (scans and AI answers share one daily limit). They reset at midnight UTC.") and the calculation stays on screen. In `node scripts/admin.mjs usage`, the "scans" counts and the month's spend include AI answers. The Worker's logs tell them apart (`evt: "scan"` vs `evt: "assistant"`).
 
@@ -234,7 +235,7 @@ All AI tests use mocks; nothing reaches a real AI service or costs anything.
 
 ## 8. Known limitations
 
-- **Interpreting questions is a fixed list.** The rules recognize many phrasings, but unusual wording in the standard build gets "I can't answer that". In AI builds the AI can map it to one of the 19 supported questions, never to a new kind of question.
+- **Interpreting questions is a fixed list.** The rules recognize many phrasings, but unusual wording in the standard build gets "I can't answer that". In AI builds the AI can map it to one of the 22 supported questions, never to a new kind of question.
 - **Payouts are eBay only.** That's what Feature 2 imports.
 - **Imported refunds.** An imported refund is flagged, not applied: the user edits the sale to reflect it.
 - **AI wording is checked for numbers, not meaning.** A sentence could still describe a correct figure loosely (e.g. call fees "costs"). The figures shown in the calculation are the authority, and the AI text is labeled as AI wording.

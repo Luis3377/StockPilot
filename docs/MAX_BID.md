@@ -143,7 +143,11 @@ From then on:
 - the plan page shows **Purchased** (price paid, buying costs, total, the max bid at the time, how far above or below the recommendation, and a link to the lot) above the original estimate;
 - the lot page shows **Planned with the Max Bid Calculator**.
 
-## Prepared for Predicted vs. Actual (not implemented yet)
+## Predicted vs. Actual
+
+Built on this data: see [PREDICTED_VS_ACTUAL.md](PREDICTED_VS_ACTUAL.md). Plans still being planned show **Learn from your results**, a suggested expected scenario from completed lots (opt-in, with Undo, recorded in `bidPlan.adjustments`).
+
+### The data it uses
 
 Each purchased plan links the prediction to the records that will show the result:
 
@@ -192,7 +196,7 @@ Each purchased plan links the prediction to the records that will show the resul
 - **Items without a list.** A plan estimated as one total starts the lot form with an empty item line, and the user enters the items there.
 - **Scan photos** aren't kept with the plan or carried into the lot.
 - **Lost auctions.** A note can record the winning price, but it isn't a structured field yet.
-- **Predicted vs. actual** comparison screens are the next feature. The data is ready; the screens aren't built.
+- **Predicted vs. actual** is described in [PREDICTED_VS_ACTUAL.md](PREDICTED_VS_ACTUAL.md).
 
 ## Where it lives in the code
 
