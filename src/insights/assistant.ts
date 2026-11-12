@@ -27,6 +27,7 @@ import { performanceAnswer } from './performanceAnswers';
 import { sourcingAnswer } from './sourcingAnswers';
 import { monthAnswer } from './closeAnswers';
 import { yearAnswer } from './yearAnswers';
+import { planningAnswer } from './planningAnswers';
 import { explainPayout } from '../domain/reconcile';
 import { toCents } from '../domain/money';
 import {
@@ -239,6 +240,7 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
         'Where you make the most money, realized profit per logged hour, and your best sourcing trips ("which thrift store is most profitable?")',
         'How a month went and why profit changed, what to review before closing, and unexplained inventory differences ("why did my profit decline?")',
         'Year-end inventory: what you started with, bought, sold at cost and wrote off, and whether it reconciles ("is my year-end report ready for my accountant?")',
+        'Planning: what to consider setting aside at the percentage you chose, what you’ve recorded as set aside, and upcoming obligations ("how much profit should I consider reserving?")',
       ],
       followUps: SUGGESTED_QUESTIONS.slice(0, 4),
     });
@@ -275,6 +277,10 @@ export function answerQuestion(question: string, input: InsightsContext): Assist
   // --- Year-end inventory (beginning, purchases, cost of goods sold, reconciliation, write-offs) --
   const yearly = yearAnswer(q, data, settings, today, parseTimeframe(q, today));
   if (yearly) return b.answer(yearly.intent, yearly.text, { details: yearly.details, calculation: yearly.calculation, followUps: yearly.followUps });
+
+  // --- Financial planning (reserves at the user's own percentages, obligations they entered) --
+  const planning = planningAnswer(q, data, settings, today, parseTimeframe(q, today));
+  if (planning) return b.answer(planning.intent, planning.text, { details: planning.details, calculation: planning.calculation, followUps: planning.followUps });
 
   // --- Marketplace payouts ------------------------------------------------------
   // Answers come from the reconciliation engine's own figures and findings, word for word:
