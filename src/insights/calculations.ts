@@ -45,7 +45,7 @@ export interface RecordLink {
 }
 
 export interface SourceRecord {
-  kind: 'sale' | 'item' | 'lot' | 'payout' | 'finding';
+  kind: 'sale' | 'item' | 'lot' | 'payout' | 'finding' | 'planning';
   id: string;
   label: string;
   detail: string;

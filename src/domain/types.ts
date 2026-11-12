@@ -923,6 +923,84 @@ export function emptyYearEnd(): YearEndData {
   return { reviews: [], decisions: {}, counts: {}, audit: [] };
 }
 
+// ---------------------------------------------------------------------------
+// Financial planning: reserve categories (a tax reserve at a percentage the user chooses, and
+// other goals), money the user says they set aside, and upcoming obligations. Planning records
+// only: they never change sales, expenses, inventory or profit, and nothing here is verified
+// against a bank account.
+// ---------------------------------------------------------------------------
+
+export type ReserveKind = 'tax' | 'equipment' | 'inventory_fund' | 'emergency' | 'upcoming' | 'other';
+
+export interface ReserveCategory {
+  id: string;
+  name: string;
+  kind: ReserveKind;
+  /** 'percent': a share of each period's recorded realized profit. 'goal': a fixed target balance. */
+  mode: 'percent' | 'goal';
+  /** For 'percent' mode: 0–100, up to 2 decimals. Chosen by the user; never a default tax rate. */
+  percent: number | null;
+  /** For 'goal' mode: the target balance. */
+  goal: number | null;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReserveEntry {
+  id: string;
+  categoryId: string;
+  /** The day the user moved or earmarked the money (YYYY-MM-DD). */
+  date: string;
+  kind: 'deposit' | 'withdrawal' | 'adjustment';
+  /** Deposits and withdrawals are positive; an adjustment is signed. */
+  amount: number;
+  note: string;
+  createdAt: string;
+  /** Voided entries stay in the history but don't count. */
+  voidedAt: string | null;
+  voidReason: string;
+}
+
+export type ObligationCategory = 'tax_payment' | 'equipment' | 'insurance' | 'software' | 'inventory_purchase' | 'rent' | 'other';
+
+export interface Obligation {
+  id: string;
+  description: string;
+  category: ObligationCategory;
+  /** The first (or only) expected date (YYYY-MM-DD), entered by the user. */
+  dueDate: string;
+  amount: number;
+  recurrence: 'none' | 'monthly' | 'quarterly' | 'yearly';
+  /** Last date a recurring obligation applies (null = no end). */
+  endDate: string | null;
+  /** Occurrence dates marked done (for one-off obligations: its due date). */
+  completed: string[];
+  cancelled: boolean;
+  reserveCategoryId: string | null;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlanningAuditEvent {
+  id: string;
+  at: string;
+  kind: 'category' | 'percent' | 'entry' | 'void' | 'obligation' | 'completed';
+  detail: string;
+}
+
+export interface PlanningData {
+  categories: ReserveCategory[];
+  entries: ReserveEntry[];
+  obligations: Obligation[];
+  audit: PlanningAuditEvent[];
+}
+
+export function emptyPlanning(): PlanningData {
+  return { categories: [], entries: [], obligations: [], audit: [] };
+}
+
 export interface AppData {
   schemaVersion: 1;
   items: Item[];
@@ -945,6 +1023,8 @@ export interface AppData {
   monthlyClose: MonthlyCloseData;
   /** Year-end reviews, decisions, designated counts and their audit log. Missing in older data (loads empty). */
   yearEnd: YearEndData;
+  /** Reserve planning and upcoming obligations (planning only). Missing in older data (loads empty). */
+  planning: PlanningData;
 }
 
 export interface Settings {
@@ -993,6 +1073,7 @@ export function emptyData(): AppData {
     inventoryLedger: emptyLedger(),
     monthlyClose: emptyMonthlyClose(),
     yearEnd: emptyYearEnd(),
+    planning: emptyPlanning(),
   };
 }
 

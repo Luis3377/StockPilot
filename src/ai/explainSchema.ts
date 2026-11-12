@@ -58,6 +58,12 @@ export const ASSISTANT_INTENTS = {
   year_writeoffs: 'What inventory did I write off {period}?',
   year_missing_months: 'Which months are missing information?',
   year_ready: 'Is my year-end report ready for my accountant?',
+  reserve_suggested: 'How much profit should I consider reserving {period}?',
+  reserve_set_aside: 'How much have I set aside?',
+  reserve_remaining: 'What is my remaining reserve goal {period}?',
+  obligations_upcoming: 'What financial obligations are coming up?',
+  profit_after_reserves: 'How much profit remains after my planned reserves {period}?',
+  reserve_change: 'How did my reserve target change from last month?',
 } as const;
 
 export type AssistantIntent = keyof typeof ASSISTANT_INTENTS;

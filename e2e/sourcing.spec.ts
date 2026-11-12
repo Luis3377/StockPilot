@@ -257,6 +257,8 @@ test('time, trips and source changes: timer survives reloads, shared time is spl
   await page.getByTestId('sourcing-tabs').getByRole('tab', { name: 'Sources' }).click();
   await page.getByRole('button', { name: 'Edit Midwest Liquidation' }).click();
   const src = page.getByTestId('source-dialog');
+  // The dialog fills in the current name just after opening; typing before that would be appended to it.
+  await expect(src.getByLabel('Name')).toHaveValue('Midwest Liquidation');
   await src.getByLabel('Name').fill('Midwest Liquidators LLC');
   await expect(src).toContainText('Renaming keeps the old name as an alias');
   await src.getByTestId('source-save').click();
