@@ -32,6 +32,10 @@ export interface Item {
   photoIds: string[];
   notes: string;
   valueHistory: ValuePoint[];
+  /** Where it was bought (a registered source). Items in a bulk lot use the lot's source. Missing in older data. */
+  sourceId?: string | null;
+  /** The sourcing trip it was bought on. Items in a bulk lot use the lot's trip. Missing in older data. */
+  sessionId?: string | null;
   createdAt: string; // ISO timestamp
   updatedAt: string;
 }
@@ -233,6 +237,14 @@ export interface Lot {
    * and count as unsold. Missing in older data (= open).
    */
   closure?: LotClosure | null;
+  /**
+   * The registered source the lot was bought from, when chosen. `source` keeps the text as
+   * entered; attribution uses this id while that text still names the source (or one of its
+   * earlier names), and otherwise reads the text. Missing in older data.
+   */
+  sourceId?: string | null;
+  /** The sourcing trip the lot was bought on. Missing in older data. */
+  sessionId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -553,6 +565,113 @@ export interface BidPlan {
   updatedAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Sourcing: where inventory comes from, sourcing trips, and time spent. Separate from storage
+// locations (item.location) and from adjustment sources. Added without a schema bump; data and
+// backups without it load empty.
+// ---------------------------------------------------------------------------
+
+export type SourceType = 'thrift' | 'garage_sale' | 'estate_sale' | 'online_marketplace' | 'liquidation' | 'storage_auction' | 'retail' | 'wholesale' | 'auction' | 'other';
+
+export interface Source {
+  id: string;
+  /** e.g. "Goodwill — West Little Rock". Unique ignoring case, spacing and punctuation. */
+  name: string;
+  type: SourceType;
+  /** Optional address or description of where it is. */
+  location: string;
+  notes: string;
+  /** Earlier names (renames, merged sources): lots that still say them stay attributed here. */
+  aliases: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The audit log of source changes: created, renamed, edited, merged, and records assigned. */
+export interface SourceChange {
+  id: string;
+  at: string;
+  kind: 'created' | 'renamed' | 'edited' | 'merged' | 'assigned' | 'deleted';
+  sourceId: string | null;
+  detail: string;
+  recordKind: 'item' | 'lot' | null;
+  recordId: string | null;
+}
+
+/** A cost of a sourcing trip that isn't part of any item's cost (entry fee, parking, fuel…). */
+export interface SessionExpense {
+  id: string;
+  label: string;
+  amount: number;
+  /** acquisition: part of buying inventory; operating: running costs of the trip. */
+  kind: 'acquisition' | 'operating';
+}
+
+/** How a trip's shared time and expenses are divided among several sources. */
+export type SharedSplit = 'equal' | 'by_cost';
+
+export interface SourcingSession {
+  id: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  /** Registered sources visited. */
+  sourceIds: string[];
+  notes: string;
+  expenses: SessionExpense[];
+  /** Chosen by the user when the trip visited several sources; null = not divided. */
+  split: SharedSplit | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TimeActivity = 'sourcing' | 'listing' | 'shipping' | 'other';
+export type TimeLinkKind = 'session' | 'source' | 'lot' | 'item';
+
+export interface TimeLink {
+  kind: TimeLinkKind;
+  id: string;
+  /** With a custom split: this link's share of the time (%). */
+  sharePct: number | null;
+}
+
+export interface TimeEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  minutes: number;
+  activity: TimeActivity;
+  note: string;
+  /** What the time was for. None = general work. */
+  links: TimeLink[];
+  /** Several links: split equally, or by each link's sharePct. */
+  split: 'equal' | 'custom';
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A running (or paused) timer, saved with the data so it survives closing the app. */
+export interface RunningTimer {
+  activity: TimeActivity;
+  note: string;
+  links: TimeLink[];
+  startedAt: string;
+  /** When the current running stretch began; null while paused. */
+  runningSince: string | null;
+  /** Time from earlier stretches. */
+  accumulatedMs: number;
+}
+
+export interface SourcingData {
+  sources: Source[];
+  sessions: SourcingSession[];
+  timeEntries: TimeEntry[];
+  timer: RunningTimer | null;
+  changes: SourceChange[];
+}
+
+export function emptySourcing(): SourcingData {
+  return { sources: [], sessions: [], timeEntries: [], timer: null, changes: [] };
+}
+
 export interface AppData {
   schemaVersion: 1;
   items: Item[];
@@ -567,6 +686,8 @@ export interface AppData {
   marketplace: MarketplaceData;
   /** Max bid plans (planning data, never inventory or money). Missing in older data (loads as []). */
   bidPlans: BidPlan[];
+  /** Sources, sourcing trips and time tracking. Missing in older data (loads empty). */
+  sourcing: SourcingData;
 }
 
 export interface Settings {
@@ -611,6 +732,7 @@ export function emptyData(): AppData {
     lots: [],
     marketplace: emptyMarketplace(),
     bidPlans: [],
+    sourcing: emptySourcing(),
   };
 }
 

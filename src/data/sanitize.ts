@@ -11,6 +11,16 @@ import {
   type AdjustmentSource,
   type AppData,
   type BidAdjustment,
+  emptySourcing,
+  type RunningTimer,
+  type Source,
+  type SourceChange,
+  type SourceType,
+  type SourcingData,
+  type SourcingSession,
+  type TimeActivity,
+  type TimeEntry,
+  type TimeLink,
   type BidAssumptions,
   type BidItem,
   type BidLotKind,
@@ -113,6 +123,9 @@ function sanitizeItem(raw: unknown, n: number): Item {
     photoIds: arr(raw, 'photoIds', where).filter((p): p is string => typeof p === 'string'),
     notes: str(raw, 'notes', where),
     valueHistory,
+    // Items from before sourcing tracking have no source or trip.
+    ...(typeof raw.sourceId === 'string' && raw.sourceId ? { sourceId: raw.sourceId } : {}),
+    ...(typeof raw.sessionId === 'string' && raw.sessionId ? { sessionId: raw.sessionId } : {}),
     createdAt: str(raw, 'createdAt', where) || new Date().toISOString(),
     updatedAt: str(raw, 'updatedAt', where) || new Date().toISOString(),
   };
@@ -325,6 +338,8 @@ function sanitizeLot(raw: unknown, n: number): Lot {
           },
         }
       : {}),
+    ...(typeof raw.sourceId === 'string' && raw.sourceId ? { sourceId: raw.sourceId } : {}),
+    ...(typeof raw.sessionId === 'string' && raw.sessionId ? { sessionId: raw.sessionId } : {}),
     createdAt: str(raw, 'createdAt', where) || new Date().toISOString(),
     updatedAt: str(raw, 'updatedAt', where) || new Date().toISOString(),
   };
@@ -623,7 +638,105 @@ export function sanitizeAppData(raw: unknown): AppData {
     marketplace: sanitizeMarketplace(raw.marketplace),
     // Data and backups from before the Max Bid Calculator have no "bidPlans": they load with none.
     bidPlans: arr(raw, 'bidPlans', 'Data').map((r, i) => sanitizeBidPlan(r, i + 1)),
+    // Data and backups from before sourcing tracking have no "sourcing": it loads empty.
+    sourcing: sanitizeSourcing(raw.sourcing),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Sourcing: sources, trips, time. Entries that can't be read are dropped (they're records of
+// effort, not money); a source needs an id and a name.
+// ---------------------------------------------------------------------------
+
+const SOURCE_TYPE_KEYS: SourceType[] = ['thrift', 'garage_sale', 'estate_sale', 'online_marketplace', 'liquidation', 'storage_auction', 'retail', 'wholesale', 'auction', 'other'];
+const ACTIVITY_KEYS: TimeActivity[] = ['sourcing', 'listing', 'shipping', 'other'];
+const LINK_KINDS: TimeLink['kind'][] = ['session', 'source', 'lot', 'item'];
+const CHANGE_KINDS: SourceChange['kind'][] = ['created', 'renamed', 'edited', 'merged', 'assigned', 'deleted'];
+
+function sanitizeLinks(v: unknown): TimeLink[] {
+  return (Array.isArray(v) ? v : [])
+    .filter(isObj)
+    .filter((l) => LINK_KINDS.includes(l.kind as TimeLink['kind']) && typeof l.id === 'string' && l.id)
+    .map((l) => ({ kind: l.kind as TimeLink['kind'], id: l.id as string, sharePct: finiteOrNull(l.sharePct) }));
+}
+
+function sanitizeSourcing(raw: unknown): SourcingData {
+  if (!isObj(raw)) return emptySourcing();
+  const list = (k: string) => (Array.isArray(raw[k]) ? (raw[k] as unknown[]) : []).filter(isObj);
+  const sources: Source[] = list('sources').flatMap((s) => {
+    if (typeof s.id !== 'string' || !s.id || typeof s.name !== 'string' || !s.name.trim()) return [];
+    return [
+      {
+        id: s.id,
+        name: s.name.slice(0, 120),
+        type: SOURCE_TYPE_KEYS.includes(s.type as SourceType) ? (s.type as SourceType) : 'other',
+        location: text(s.location, 200),
+        notes: text(s.notes, 2000),
+        aliases: strArr(s.aliases).map((x) => x.slice(0, 120)),
+        createdAt: text(s.createdAt, 40) || new Date().toISOString(),
+        updatedAt: text(s.updatedAt, 40) || new Date().toISOString(),
+      },
+    ];
+  });
+  const sessions: SourcingSession[] = list('sessions').flatMap((s) => {
+    if (typeof s.id !== 'string' || typeof s.name !== 'string' || typeof s.date !== 'string' || !isValidISODate(s.date)) return [];
+    return [
+      {
+        id: s.id,
+        name: s.name.slice(0, 120),
+        date: s.date,
+        sourceIds: strArr(s.sourceIds),
+        notes: text(s.notes, 2000),
+        expenses: (Array.isArray(s.expenses) ? s.expenses : [])
+          .filter(isObj)
+          .filter((e) => typeof e.amount === 'number' && Number.isFinite(e.amount) && e.amount >= 0)
+          .map((e) => ({ id: typeof e.id === 'string' && e.id ? e.id : newId(), label: text(e.label, 80) || 'Trip expense', amount: e.amount as number, kind: e.kind === 'acquisition' ? ('acquisition' as const) : ('operating' as const) })),
+        split: s.split === 'equal' || s.split === 'by_cost' ? s.split : null,
+        createdAt: text(s.createdAt, 40) || new Date().toISOString(),
+        updatedAt: text(s.updatedAt, 40) || new Date().toISOString(),
+      },
+    ];
+  });
+  const timeEntries: TimeEntry[] = list('timeEntries').flatMap((e) => {
+    if (typeof e.id !== 'string' || typeof e.date !== 'string' || !isValidISODate(e.date) || typeof e.minutes !== 'number' || !Number.isInteger(e.minutes) || e.minutes < 1) return [];
+    return [
+      {
+        id: e.id,
+        date: e.date,
+        minutes: Math.min(e.minutes, 24 * 60),
+        activity: ACTIVITY_KEYS.includes(e.activity as TimeActivity) ? (e.activity as TimeActivity) : 'other',
+        note: text(e.note, 500),
+        links: sanitizeLinks(e.links),
+        split: e.split === 'custom' ? ('custom' as const) : ('equal' as const),
+        createdAt: text(e.createdAt, 40) || new Date().toISOString(),
+        updatedAt: text(e.updatedAt, 40) || new Date().toISOString(),
+      },
+    ];
+  });
+  const t = raw.timer;
+  const timer: RunningTimer | null =
+    isObj(t) && typeof t.startedAt === 'string' && typeof t.accumulatedMs === 'number' && Number.isFinite(t.accumulatedMs) && t.accumulatedMs >= 0
+      ? {
+          activity: ACTIVITY_KEYS.includes(t.activity as TimeActivity) ? (t.activity as TimeActivity) : 'other',
+          note: text(t.note, 500),
+          links: sanitizeLinks(t.links),
+          startedAt: t.startedAt,
+          runningSince: typeof t.runningSince === 'string' ? t.runningSince : null,
+          accumulatedMs: t.accumulatedMs,
+        }
+      : null;
+  const changes: SourceChange[] = list('changes')
+    .filter((c) => typeof c.at === 'string' && CHANGE_KINDS.includes(c.kind as SourceChange['kind']))
+    .map((c) => ({
+      id: typeof c.id === 'string' ? c.id : newId(),
+      at: c.at as string,
+      kind: c.kind as SourceChange['kind'],
+      sourceId: typeof c.sourceId === 'string' ? c.sourceId : null,
+      detail: text(c.detail, 500),
+      recordKind: c.recordKind === 'item' || c.recordKind === 'lot' ? c.recordKind : null,
+      recordId: typeof c.recordId === 'string' ? c.recordId : null,
+    }));
+  return { sources, sessions, timeEntries, timer, changes };
 }
 
 /** Merges stored settings over defaults, ignoring unknown or mistyped values. */
