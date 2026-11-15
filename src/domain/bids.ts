@@ -729,7 +729,9 @@ export function lotPrefillFromPlan(plan: BidPlan, pricePaid: number, purchaseDat
       purchaseDate,
       source: KIND_LABELS[plan.kind],
       notes: plan.description,
-      method: items.length && items.every((it) => it.unitValue !== null) && items.some((it) => toCents(it.unitValue!) > 0) ? 'relative_value' : 'equal',
+      // Resale estimates entered → split by value (the user can still choose equal; items still
+      // missing an estimate are pointed out before saving).
+      method: items.some((it) => it.unitValue !== null && toCents(it.unitValue) > 0) ? 'relative_value' : 'equal',
       lines: items.map((it) => ({ name: it.name, quantity: it.quantity, estimatedUnitValue: it.unitValue, category: it.category, condition: it.condition, notes: it.notes })),
     },
     lineBidItemIds: items.map((it) => it.id),

@@ -59,7 +59,9 @@ export function closeWholeMonth(data: AppData, month: string, today: string): Ap
   let d = data;
   for (const s of closeChecklist(d, settings, month, today).steps) {
     const attention = s.issues.some((i) => i.severity === 'attention');
-    d = decideStep(d, settings, month, s.step, attention ? 'acknowledged' : s.canReview ? 'reviewed' : 'na', attention ? 'Known; noted for the accountant.' : '', today, at(today));
+    // Steps that weren't performed (no count, no eBay reports) are marked not applicable, with a reason.
+    const na = s.canNA && !s.canReview;
+    d = decideStep(d, settings, month, s.step, na ? 'na' : attention ? 'acknowledged' : s.canReview ? 'reviewed' : 'na', na ? 'Not performed for this shop.' : attention ? 'Known; noted for the accountant.' : '', today, at(today));
   }
   return closeMonth(d, settings, month, { acknowledged: true, note: '' }, today, at(today)).data;
 }

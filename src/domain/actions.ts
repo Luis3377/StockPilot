@@ -716,13 +716,17 @@ export function completeCount(
   const comparison = compareCount(data.items, draft);
   if (comparison.lines.length === 0) throw new DomainError('Enter at least one counted quantity before finishing.');
   const byItem = new Map(decisions.map((d) => [d.itemId, d]));
+  // Every applied difference needs a reason the user chose (manual beta finding: shortages
+  // defaulted to "Miscounted before"). Nothing is changed when one is missing.
+  const noReason = comparison.lines.filter((l) => l.status !== 'match' && byItem.get(l.itemId)?.apply && !byItem.get(l.itemId)!.reason.trim());
+  if (noReason.length) throw new DomainError(`Choose a reason for each adjustment you apply: ${noReason.map((l) => l.itemName).join(', ')}.`);
 
   let items = data.items;
   const adjustments: Adjustment[] = [];
   const lines = comparison.lines.map((line) => {
     const decision = byItem.get(line.itemId);
     if (line.status === 'match' || !decision?.apply) return { ...line, reason: decision?.reason.trim() ?? '' };
-    const reason = decision.reason.trim() || (line.status === 'missing' ? 'Missing at count' : 'Extra found at count');
+    const reason = decision.reason.trim();
     const item = items.find((i) => i.id === line.itemId)!;
     adjustments.push(makeAdjustment(item, line.countedQuantity, reason, 'count_check', iso, draft.id));
     items = replaceItem(items, { ...item, quantity: line.countedQuantity, updatedAt: iso });

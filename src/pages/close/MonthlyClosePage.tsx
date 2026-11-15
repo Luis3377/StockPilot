@@ -19,6 +19,7 @@ import { Badge, type Tone } from '../../ui/Badge';
 import { Button, buttonClass } from '../../ui/Button';
 import { cn } from '../../ui/cn';
 import { DecisionDialog, defaultMonth, FinalizeDialog, MonthPicker, monthOptions, ReopenDialog, StateBadge, STATE_LABEL, type StepView } from './parts';
+import { formatPercent } from '../../domain/money';
 
 export function MonthlyClosePage() {
   const data = useAppState((s) => s.data);
@@ -162,16 +163,16 @@ function FiguresCard({ list }: { list: Checklist }) {
         <dl className="divide-y divide-line">
           <FigureRow label="Sales revenue" value={money(t.revenue)} basis={VERIFIED} note={plural(t.salesCount, 'sale')} testId="fig-revenue" />
           <FigureRow label="Cost of goods sold" value={money(t.costOfGoods)} basis={incomplete ?? VERIFIED} note={incomplete ? `${plural(f.noCostSales.length, 'sale')} without a recorded cost` : undefined} testId="fig-cogs" />
-          <FigureRow label="Gross profit" value={money(f.grossProfit)} basis={incomplete ?? VERIFIED} note={f.grossMarginPct === null ? undefined : `${f.grossMarginPct}% gross margin`} />
+          <FigureRow label="Gross profit" value={money(f.grossProfit)} basis={incomplete ?? VERIFIED} note={f.grossMarginPct === null ? undefined : `${formatPercent(f.grossMarginPct)} gross margin`} />
           <FigureRow label="Marketplace fees" value={money(t.fees)} basis={VERIFIED} />
           <FigureRow label="Shipping" value={money(t.shipping)} basis={VERIFIED} />
           <FigureRow label="Other selling expenses" value={money(t.otherExpenses)} basis={VERIFIED} />
-          <FigureRow label="Realized profit" value={<span className={t.netProfit < 0 ? 'text-bad-text' : undefined}>{money(t.netProfit)}</span>} basis={incomplete ?? VERIFIED} note={f.marginPct === null ? undefined : `${f.marginPct}% margin`} testId="fig-profit" />
+          <FigureRow label="Realized profit" value={<span className={t.netProfit < 0 ? 'text-bad-text' : undefined}>{money(t.netProfit)}</span>} basis={incomplete ?? VERIFIED} note={f.marginPct === null ? undefined : `${formatPercent(f.marginPct)} margin`} testId="fig-profit" />
         </dl>
         <dl className="divide-y divide-line">
           <FigureRow label="Beginning inventory cost" value={rf.beginning === null ? 'Not available' : money(rf.beginning)} basis={rfBasis(rf, 'beginning')} testId="fig-beginning" />
           <FigureRow label="Inventory purchases" value={f.purchases === null ? 'Not available' : money(f.purchases)} basis={f.purchases === null ? ['Missing', 'bad'] : rf.status === 'partial' ? ['Not verified', 'warn'] : VERIFIED} note="Items, bulk lots (with their buying costs), restocks" testId="fig-purchases" />
-          <FigureRow label="Adjustments and corrections" value={rf.status === 'not_available' ? 'Not available' : money(adjustments)} basis={rf.status === 'not_available' ? ['Missing', 'bad'] : undefined} note="Write-offs, units found, cost corrections, deletions" />
+          <FigureRow label="Adjustments and corrections" value={rf.status === 'not_available' ? 'Not available' : money(adjustments)} basis={rf.status === 'not_available' ? ['Missing', 'bad'] : rf.status === 'partial' ? ['Not verified', 'warn'] : VERIFIED} note="Write-offs, units found, cost corrections, deletions; from dated records" testId="fig-adjustments" />
           <FigureRow label="Ending inventory cost" value={rf.recordsEnding === null ? 'Not available' : money(rf.recordsEnding)} basis={rfBasis(rf, 'ending')} testId="fig-ending" />
           <FigureRow label="Payout reconciliation" value={list.recon.status === 'not_performed' ? '—' : `${plural(list.recon.payouts.length, 'payout')}`} basis={reconBasis[list.recon.status]} note={list.recon.statusText} testId="fig-recon" />
           <FigureRow label="Outstanding issues" value={String(issues)} basis={issues ? ['Needs attention', 'warn'] : undefined} />

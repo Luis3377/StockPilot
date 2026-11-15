@@ -88,7 +88,15 @@ test('the Overview shows missing stock on its own, with extras in the small text
   await page.getByLabel('Counted quantity for Mug').fill('4');
   await page.getByLabel('Counted quantity for Mug').press('Enter');
   await page.getByRole('button', { name: 'Review & finish' }).click();
-  await page.getByTestId('count-review').getByRole('button', { name: 'Apply 2 adjustments & finish' }).click();
+  const review = page.getByTestId('count-review');
+  // No reason is preselected: applying without choosing one is refused (manual beta finding).
+  await expect(review.getByLabel('Reason for Hoodie')).toHaveValue('');
+  await review.getByRole('button', { name: 'Apply 2 adjustments & finish' }).click();
+  await expect(review.getByRole('alert').first()).toContainText('Choose why the quantity is');
+  await expect(page.getByText('Past counts')).toBeHidden();
+  await review.getByLabel('Reason for Hoodie').selectOption('Lost');
+  await review.getByLabel('Reason for Mug').selectOption('Damaged');
+  await review.getByRole('button', { name: 'Apply 2 adjustments & finish' }).click();
   await expect(page.getByText('Past counts')).toBeVisible();
 
   await nav(page, 'Overview');

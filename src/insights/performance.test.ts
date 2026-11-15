@@ -354,3 +354,19 @@ describe('history and learning', () => {
 function fromNumbers(xs: number[]) {
   return xs.reduce((a, b) => a + b, 0);
 }
+
+// Manual beta finding: one of two items sold showed "60% sell-through", because the sold item
+// was $120 of the $200 estimated resale value. The definition is now explicit, with units apart.
+describe('sell-through by value and by units', () => {
+  it('names value-based sell-through and shows unit sell-through separately', () => {
+    const a = { ...defaultAssumptions(), valueMode: 'items' as const, items: [item('t-x', 'Speaker', 1, 120, 'Electronics'), item('t-y', 'Lamp', 1, 80, 'Home')] };
+    const r = createBidPlan(emptyData(), { name: 'Two items', description: '', kind: 'estate_sale', assumptions: a }, clock());
+    const { input, lineBidItemIds } = lotPrefillFromPlan(r.plan, 50, '2026-09-01');
+    const bought = recordBidPurchase(r.data, r.plan.id, input, lineBidItemIds, clock('2026-09-01T10:00:00.000Z'));
+    const data = sell(bought.data, bought.items[0].id, 1, 130, 10);
+    const p = perf(data, bought.lot);
+    expect(row(p, 'sellThrough')).toMatchObject({ label: 'Sell-through (share of estimated value sold)', actual: 60 });
+    expect(row(p, 'sellThrough').formula).toContain('not the share of units: by units it’s 50%');
+    expect(row(p, 'sellThroughUnits')).toMatchObject({ label: 'Sell-through by units (units sold ÷ units bought)', actual: 50, predicted: null });
+  });
+});

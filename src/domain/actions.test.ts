@@ -280,6 +280,17 @@ describe('count check', () => {
     expect(cmp.lines.find((l) => l.itemId === a.id)?.status).toBe('missing');
   });
 
+  it('an applied adjustment needs a reason the user chose (none is assumed); nothing changes without one', () => {
+    let { data, a, b } = setup();
+    data = startCount(data, { category: null, location: 'shelf 1' });
+    data = setCount(data, a.id, 7);
+    data = setCount(data, b.id, 5);
+    expect(() => completeCount(data, [{ itemId: a.id, apply: true, reason: '  ' }, { itemId: b.id, apply: false, reason: '' }])).toThrow('Choose a reason for each adjustment you apply: A.');
+    expect(data.countDraft).not.toBeNull();
+    const r = completeCount(data, [{ itemId: a.id, apply: true, reason: 'Lost' }, { itemId: b.id, apply: false, reason: '' }]);
+    expect(r.data.adjustments.map((x) => x.reason)).toEqual(['Lost']);
+  });
+
   it('only applies approved adjustments and records history', () => {
     let { data, a, b } = setup();
     data = startCount(data, { category: null, location: 'shelf 1' });

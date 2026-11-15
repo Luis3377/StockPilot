@@ -480,3 +480,15 @@ describe('backup and restore', () => {
     expect(() => parseBackup(JSON.stringify(file))).toThrow('Bid plan 1: missing "id"');
   });
 });
+
+// Manual beta finding: converting a plan with resale estimates defaulted to "Equally per unit"
+// (one item without an estimate was enough). Estimates entered now mean "by resale value".
+describe('allocation method when a plan becomes a bulk lot', () => {
+  it('prefers splitting by estimated resale value whenever estimates were entered', () => {
+    const a = base({ valueMode: 'items', items: [item('Mixer', 1, 120), item('Plates', 4, 10), item('Misc', 2, null)] });
+    const p = createBidPlan(emptyData(), plan(a), clock()).plan;
+    expect(lotPrefillFromPlan(p, 80, '2026-10-30').input.method).toBe('relative_value');
+    const none = base({ valueMode: 'items', items: [item('Misc', 2, null)] });
+    expect(lotPrefillFromPlan(createBidPlan(emptyData(), plan(none), clock()).plan, 80, '2026-10-30').input.method).toBe('equal');
+  });
+});
