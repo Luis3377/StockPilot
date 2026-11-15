@@ -66,7 +66,7 @@ test('a sale dated before the purchase is explained and needs a reason', async (
   await onboard(page, 'Reseller');
   await restore(page, addItem(emptyData(), { name: 'Sony WH-1000XM4 Headphones', quantity: 1, unitCost: 120, askingPrice: 165, purchaseDate: '2026-06-17' }, at('2026-06-17')).data, testInfo.outputPath('sony.json'));
   await nav(page, 'Sales & Profit');
-  await page.getByRole('button', { name: 'Record sale' }).first().click();
+  await page.getByRole('button', { name: /^Record (your first )?sale$/ }).first().click();
   const d = page.getByTestId('sale-form');
   await d.getByLabel('Item sold').selectOption({ index: 1 });
   await d.getByLabel('Sale price').fill('165');
@@ -92,7 +92,7 @@ test('payouts: only completed payouts count as paid out; the pending one is show
   await axe(page);
 });
 
-test('a purchased Max Bid plan is a read-only prediction that can’t be deleted', async ({ page }, testInfo) => {
+test('a purchased Max Bid plan is a read-only prediction that cannot be deleted', async ({ page }, testInfo) => {
   await page.clock.install({ time: new Date('2026-11-15T10:00:00') });
   await onboard(page, 'Reseller');
   const a = { ...defaultAssumptions(), valueMode: 'items' as const, items: [{ id: 'x', name: 'Mixer', quantity: 1, unitValue: 120, category: 'Kitchen', condition: '', notes: '', aiFields: [] }] };
