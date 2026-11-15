@@ -42,7 +42,9 @@ describe('closing checklist', () => {
   it('nothing is complete until the user decides, even when a step has no records', () => {
     const { data } = closeShop();
     const s = steps(data);
-    expect(s.map((x) => x.state)).toEqual(['todo', 'todo', 'attention', 'todo', 'todo', 'todo', 'todo', 'todo']);
+    // Payouts: eBay sales but no reports imported, so "not performed" is listed as an issue (manual beta finding).
+    expect(s.map((x) => x.state)).toEqual(['todo', 'todo', 'attention', 'todo', 'attention', 'todo', 'todo', 'todo']);
+    expect(step(data, 'payouts').issues.map((i) => i.text)).toContain('Marketplace reconciliation not performed: 3 eBay sales ($418.00) in October 2026 haven’t been checked against eBay’s payouts. Import eBay’s reports, or mark this step not applicable and say why.');
     expect(step(data, 'counts')).toMatchObject({ canNA: true, canReview: false, naExplanation: expect.stringContaining('Not performed: no physical count was done in October 2026') });
     // No reports imported: reconciliation is "not performed", never "reconciled".
     expect(step(data, 'payouts')).toMatchObject({ canReview: false, canNA: true });
@@ -70,7 +72,7 @@ describe('closing checklist', () => {
     data = sell(data, shop.records.id, 1, 20, '2026-10-30').data;
     expect(step(data, 'sales')).toMatchObject({ state: 'todo', stale: true });
     data = undoDecision(data, OCT, 'payouts', at(TODAY));
-    expect(step(data, 'payouts').state).toBe('todo');
+    expect(step(data, 'payouts').state).toBe('attention');
     expect(data.monthlyClose.audit.at(-1)!.kind).toBe('undone');
   });
 
@@ -177,7 +179,7 @@ describe("controller's report", () => {
     expect(changes.find((l) => l.kind === 'contributing')!.text).toBe('Tools: realized profit $68.00 in September 2026 → $248.00 in October 2026 (+$180.00); its margin increased from 45.33% to 62%.');
     // Fewer units but more profit: volume isn't offered as the reason.
     expect(changes.find((l) => l.kind === 'possible' && l.text.includes('Units sold went from 9 to 7'))!.text).toBe('Units sold went from 9 to 7. Profit moved the other way, so the number of units sold doesn’t explain the change.');
-    expect(r.sections.find((s) => s.key === 'categories')!.lines.map((l) => l.text)).toEqual(['Best: Tools $248.00 (margin 62%).', 'Weakest: Collectibles $11.33 (margin 62.94%).']);
+    expect(r.sections.find((s) => s.key === 'categories')!.lines.map((l) => l.text)).toEqual(['Best: Tools $248.00 (margin 62.0%).', 'Weakest: Collectibles $11.33 (margin 62.9%).']);
     const rows = r.sections.find((s) => s.key === 'profitability')!.rows!;
     expect(rows.find((x) => x.label === 'Sales revenue')).toEqual({ label: 'Sales revenue', current: '$418.00', previous: '$250.00', change: '+$168.00 (+67.2%)' });
     expect(r.sections.find((s) => s.key === 'limitations')!.lines.map((l) => l.text)).toContain('Payouts weren’t reconciled, so recorded sales weren’t checked against what the marketplace paid.');
@@ -209,5 +211,14 @@ describe("controller's report", () => {
     expect(html).toContain('<li>Sales revenue: $418.00 (September 2026: $250.00; change +$168.00 (+67.2%))</li>');
     expect(html).toContain('Generated from user-maintained StockPilot records');
     expect(html).not.toContain('<vinyl>');
+  });
+});
+
+// Manual beta finding: "5 purchases" counted inventory entries (one per lot item), not buying transactions.
+describe('purchases are counted as buying transactions', () => {
+  it('a bulk lot is one purchase, however many items it has', () => {
+    const { data } = closeShop();
+    // September: the records bought individually and the pallet (two item lines) — two purchases, three entries.
+    expect(step(data, 'purchases', '2026-09').facts[0]).toBe('2 purchases (1 item bought individually, 1 bulk lot), 3 inventory entries · $430.00');
   });
 });

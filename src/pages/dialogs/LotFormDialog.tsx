@@ -334,8 +334,15 @@ export function LotFormDialog({ open, onClose, fromBid = null }: { open: boolean
     }
   };
 
+  const hasEstimates = draft.lines.some((l) => (readMoney(l.estimate).value ?? 0) > 0);
   const footer = (
     <div className="flex w-full flex-wrap items-center justify-between gap-2">
+      {step === 2 && (
+        <p className="w-full text-sm text-ink" data-testid="lot-method-summary">
+          Cost split: <strong>{METHOD_LABELS[draft.method]}</strong>
+          {draft.method === 'equal' && hasEstimates ? ' · You entered resale estimates: splitting by estimated resale value is usually more accurate.' : ''}
+        </p>
+      )}
       {step > 0 ? (
         <Button icon={<ArrowLeft className="size-4" />} onClick={() => goTo(step - 1)}>
           Back

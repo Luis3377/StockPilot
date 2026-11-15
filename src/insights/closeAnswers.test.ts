@@ -43,7 +43,7 @@ describe('assistant: monthly close questions', () => {
     data = sell(data, drills.id, 1, 10, '2026-11-05', 5).data;
     const a = ask(data, 'Why did my profit decline?');
     expect(a.intent).toBe('month-changes');
-    expect(a.text).toBe('Realized profit fell by $269.53 in November 2026 (to date) compared with October 2026 ($259.33 → -$10.20). It splits exactly into: sales revenue −$408.00, cost of goods sold +$67.47, marketplace fees +$35.00, shipping +$36.00.');
+    expect(a.text).toBe('Realized profit fell by $269.53 in November 2026 (to date) compared with October 2026 ($259.33 → −$10.20). It splits exactly into: sales revenue −$408.00, cost of goods sold +$67.47, marketplace fees +$35.00, shipping +$36.00.');
     const calc = a.calculation!;
     expect(calc.lines.map((l) => [l.label, l.op, l.amount])).toEqual([
       ['Realized profit in October 2026', '+', 259.33],
@@ -66,7 +66,7 @@ describe('assistant: monthly close questions', () => {
     data = sn.data;
     for (const [fee, day] of [[8.33, '11'], [8.33, '12'], [8.34, '13']] as const) data = sell(data, sn.item.id, 1, 60, `2026-10-${day}`, fee).data;
     const a = ask(data, 'Which products hurt my profitability in October?');
-    expect(a.text).toBe('In October 2026, 3 sales lost money: -$145.00 in recorded losses, led by Running sneakers (-$145.00).');
+    expect(a.text).toBe('In October 2026, 3 sales lost money: −$145.00 in recorded losses, led by Running sneakers (−$145.00).');
     expect(a.calculation!.value).toBe(-145);
     expect(a.items).toEqual([{ id: sn.item.id, name: 'Running sneakers' }]);
   });

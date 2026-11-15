@@ -17,7 +17,7 @@ import type {
 } from './types';
 import { DomainError, FieldErrors, isDomainError } from './errors';
 import { newId } from './ids';
-import { isValidISODate, todayISO } from './dates';
+import { formatDate, isValidISODate, todayISO } from './dates';
 import { exactPerUnit, fromCents, multiplyMoney, roundMoney, toCents } from './money';
 import { costLeaving, itemCostValue, mostCommon, nameKey } from './calc';
 import { plural, pluralWord } from './format';
@@ -383,6 +383,8 @@ export interface SaleInput {
   otherExpenses?: number | null;
   saleDate: string;
   notes?: string;
+  /** Required to record a sale dated before the item's recorded purchase date: why (preorder, correction…). */
+  dateException?: string;
 }
 
 interface SaleFields {
@@ -428,6 +430,47 @@ function validateSaleFields(input: SaleInput, otherSales: Sale[], v: FieldErrors
   };
 }
 
+/** The purchase date recorded for an item (its bulk lot's, for lot items), or null when none was entered. */
+export function recordedPurchaseDate(data: AppData, item: Pick<Item, 'id' | 'purchaseDate'>): string | null {
+  const lot = data.lots.find((l) => l.lines.some((line) => line.itemId === item.id));
+  return lot?.purchaseDate ?? item.purchaseDate ?? null;
+}
+
+/** The message for a sale dated before the item was bought (null when the dates are in order or unknown). */
+export function saleBeforePurchase(data: AppData, item: Pick<Item, 'id' | 'name' | 'purchaseDate'>, saleDate: string): string | null {
+  const bought = recordedPurchaseDate(data, item);
+  if (!bought || !saleDate || saleDate >= bought) return null;
+  return `The sale date (${formatDate(saleDate)}) is before “${item.name}” was bought (${formatDate(bought)}). Check both dates. If the sale really came first (a preorder, or you’re correcting an earlier record), say why to record it anyway: until then it would put a sale in a month before the item was in your inventory.`;
+}
+
+/**
+ * Corrects an item's recorded purchase date (for example to the date of a sale entered later,
+ * when the item was added with today's date). Only when the user chooses it; lot items take
+ * their lot's date, which is changed on the lot instead.
+ */
+export function setItemPurchaseDate(data: AppData, itemId: string, date: string, clock?: Clock): { data: AppData; item: Item } {
+  const item = findItem(data, itemId);
+  if (data.lots.some((l) => l.lines.some((line) => line.itemId === itemId))) throw new DomainError('This item is part of a bulk lot: change the purchase date on the lot.');
+  if (!isValidISODate(date)) throw new DomainError('Enter a valid date.', 'purchaseDate');
+  return updateItem(
+    data,
+    itemId,
+    { name: item.name, sku: item.sku, category: item.category, quantity: item.quantity, unitCost: item.unitCost, askingPrice: item.askingPrice, estimatedValue: item.estimatedValue, purchaseDate: date, condition: item.condition, location: item.location, lowStockThreshold: item.lowStockThreshold, photoIds: item.photoIds, notes: item.notes },
+    {},
+    clock,
+  );
+}
+
+/** Validates the before-purchase check: an explicit reason is needed, and it's kept with the sale. */
+function checkSaleDate(data: AppData, item: Item | undefined, saleDate: string | undefined, input: SaleInput, v: FieldErrors): string {
+  const reason = (input.dateException ?? '').trim().slice(0, 300);
+  if (!item || !saleDate) return '';
+  const msg = saleBeforePurchase(data, item, saleDate);
+  if (!msg) return '';
+  if (!reason) v.add('dateException', msg);
+  return reason;
+}
+
 function overSellMessage(item: Item, available: number, requested: number): string {
   return available === 0
     ? `"${item.name}" has no units left to sell.`
@@ -453,6 +496,7 @@ export function recordSale(data: AppData, input: SaleInput, clock?: Clock): { da
   if (item && checked.quantity !== undefined && checked.quantity > item.quantity) {
     v.add('quantity', overSellMessage(item, item.quantity, checked.quantity));
   }
+  const dateException = checkSaleDate(data, item, checked.saleDate, input, v);
   v.throwIfAny();
   const fields = checked as SaleFields;
   // Cost of goods sold is the cost leaving inventory, so a lot or average cost that doesn't
@@ -465,6 +509,7 @@ export function recordSale(data: AppData, input: SaleInput, clock?: Clock): { da
     itemCategory: item!.category,
     unitCost: saleUnitCost(item!, fields.quantity),
     ...fields,
+    ...(dateException ? { dateException } : {}),
     createdAt: iso,
     updatedAt: iso,
   };
@@ -504,6 +549,9 @@ export function updateSale(data: AppData, id: string, input: SaleInput, clock?: 
   if (target && checked.quantity !== undefined && checked.quantity > target.quantity) {
     v.add('quantity', overSellMessage(target, target.quantity, checked.quantity));
   }
+  // Only a changed date or item is checked: editing other details of an older record stays possible.
+  const datesChanged = checked.saleDate !== existing.saleDate || input.itemId !== existing.itemId;
+  const dateException = datesChanged ? checkSaleDate(data, target, checked.saleDate, input, v) : (input.dateException ?? existing.dateException ?? '').trim().slice(0, 300);
   v.throwIfAny();
   const fields = checked as SaleFields;
   const switchedItem = input.itemId !== existing.itemId && target;
@@ -522,8 +570,10 @@ export function updateSale(data: AppData, id: string, input: SaleInput, clock?: 
     itemSku: switchedItem ? target!.sku : existing.itemSku,
     itemCategory: switchedItem ? target!.category : existing.itemCategory,
     unitCost,
+    dateException: dateException || undefined,
     updatedAt: iso,
   };
+  if (!sale.dateException) delete sale.dateException;
   return { data: { ...data, items, sales: data.sales.map((s) => (s.id === id ? sale : s)) }, sale };
 }
 
@@ -684,13 +734,17 @@ export function completeCount(
   const comparison = compareCount(data.items, draft);
   if (comparison.lines.length === 0) throw new DomainError('Enter at least one counted quantity before finishing.');
   const byItem = new Map(decisions.map((d) => [d.itemId, d]));
+  // Every applied difference needs a reason the user chose (manual beta finding: shortages
+  // defaulted to "Miscounted before"). Nothing is changed when one is missing.
+  const noReason = comparison.lines.filter((l) => l.status !== 'match' && byItem.get(l.itemId)?.apply && !byItem.get(l.itemId)!.reason.trim());
+  if (noReason.length) throw new DomainError(`Choose a reason for each adjustment you apply: ${noReason.map((l) => l.itemName).join(', ')}.`);
 
   let items = data.items;
   const adjustments: Adjustment[] = [];
   const lines = comparison.lines.map((line) => {
     const decision = byItem.get(line.itemId);
     if (line.status === 'match' || !decision?.apply) return { ...line, reason: decision?.reason.trim() ?? '' };
-    const reason = decision.reason.trim() || (line.status === 'missing' ? 'Missing at count' : 'Extra found at count');
+    const reason = decision.reason.trim();
     const item = items.find((i) => i.id === line.itemId)!;
     adjustments.push(makeAdjustment(item, line.countedQuantity, reason, 'count_check', iso, draft.id));
     items = replaceItem(items, { ...item, quantity: line.countedQuantity, updatedAt: iso });

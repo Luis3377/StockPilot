@@ -3,6 +3,7 @@ import { inventoryAt, taxWorksheet, yearFigures, yearPeriod } from './yearEnd';
 import { yearChecklist } from './yearChecklist';
 import { movementsCsv, yearInventoryCsv, yearReport, yearReportSnapshot, yearSalesCsv } from './yearReport';
 import { reportHtml } from './controllerReport';
+import { answerQuestion } from './assistant';
 import { parseCsv } from '../csv/csv';
 import { ledgerInfo } from './monthly';
 import { assertClosedMonthsUnchanged, reopenMonth } from '../domain/close';
@@ -248,7 +249,7 @@ describe('accountant summary, worksheet and downloads', () => {
     expect(text).toEqual([
       'On Jan 1, 2026 your inventory cost $120.83 (what you paid for the goods on hand).',
       'During 2026 you bought $108.00 of inventory.',
-      'The goods you sold had cost you $35.33 (cost of goods sold, from 2 recorded sales bringing in $80.00).',
+      'The goods you sold in 2026 had cost you $35.33 (cost of goods sold, from 2 recorded sales bringing in $80.00).',
       '$13.10 was written off as damaged, lost or otherwise removed; $50.00 was taken for personal use; $80.00 left with items deleted from the records; $8.33 came back as returns or units found; cost corrections changed inventory by $1.60.',
       'That leaves $60.33 of inventory expected at Dec 31, 2026. The item records show $60.33: they agree to the cent.',
       'The records support these balances: beginning inventory is documented, every movement is dated and linked to a record, and the ending balance agrees.',
@@ -273,7 +274,7 @@ describe('accountant summary, worksheet and downloads', () => {
     expect(by('41')).toMatchObject({ amount: 60.33, status: 'recorded' });
     expect(by('42')).toMatchObject({ amount: 118.5, status: 'needs_review' });
     expect(ws.bridge.map((b) => [b.label, b.amount])).toEqual([
-      ['Cost of goods sold from recorded sales', 35.33],
+      ['Cost of goods sold in the inventory records', 35.33],
       ['Write-offs and other documented decreases', 13.1],
       ['Items deleted with stock', 80],
       ['Units found and returns added back', -8.33],
@@ -281,6 +282,9 @@ describe('accountant summary, worksheet and downloads', () => {
     ]);
     expect(ws.bridge.reduce((c, b) => c + toCents(b.amount), 0)).toBe(toCents(by('42').amount!));
     expect(ws.disclaimer).toContain('not tax advice');
+    // The inventory records cover the whole year, so all of its sales cost of goods sold is in them.
+    expect(ws.cogs.complete).toBe(true);
+    expect(ws.cogs.lines.map((l) => l.amount)).toEqual([35.33, 35.33]);
   });
 
   it('CSV downloads carry exactly the reconciled figures', () => {
@@ -295,10 +299,102 @@ describe('accountant summary, worksheet and downloads', () => {
     const inv = rows(yearInventoryCsv(data, y));
     expect(inv.reduce((c, r) => c + toCents(Number(r[4])), 0)).toBe(6033);
     const sales = rows(yearSalesCsv(data, y));
-    expect(sales.map((r) => [r[0], r[6]])).toEqual([['2026-01-02', '8.33'], ['2026-09-15', '27']]);
+    expect(sales.map((r) => [r[0], r[6], r[13]])).toEqual([['2026-01-02', '8.33', 'yes'], ['2026-09-15', '27', 'yes']]);
   });
 
   it('periods are calendar years with a structure that allows fiscal years later', () => {
     expect(yearPeriod(2026)).toEqual({ key: '2026', start: '2026-01-01', end: '2026-12-31', label: '2026' });
   });
 });
+
+// Manual beta finding: the inventory ledger began Nov 14 in a year with sales from January on.
+// Line 42 then came to only the cost of goods sold recorded since, and was said to agree with
+// "cost of goods sold from recorded sales" while the year's sales cost far more.
+describe('a year whose inventory records began part-way through', () => {
+  /** Headphones bought and mostly sold before the ledger began on Nov 14, 2026; a mug bought and sold after. */
+  function midYear() {
+    let data = emptyData();
+    const phones = addItem(data, { name: 'Headphones', quantity: 10, unitCost: 100, purchaseDate: '2026-02-01' }, at('2026-02-01'));
+    data = phones.data;
+    data = recordSale(data, { itemId: phones.item.id, quantity: 6, salePrice: 900, priceMode: 'total', saleDate: '2026-03-10' }, at('2026-03-10')).data; // cost 600
+    data = startLedger(data, at('2026-11-14')); // 4 headphones on hand: $400
+    const mug = trackChanges(data, addItem(data, { name: 'Mug', quantity: 3, unitCost: 8, purchaseDate: '2026-11-15' }, at('2026-11-15')).data, at('2026-11-15'));
+    const mugId = mug.items.find((i) => i.name === 'Mug')!.id;
+    data = sell(mug, mugId, 1, 20, '2026-11-20', 2, 3).data; // cost 8
+    data = sell(data, phones.item.id, 1, 150, '2026-11-21').data; // cost 100
+    return data;
+  }
+
+  it('shows all of the year’s cost of goods sold apart from the part the inventory records cover, and explains the difference', () => {
+    const y = fig(midYear(), '2026');
+    expect(y.partialYear).toBe(true);
+    expect(y.coveredFrom).toBe('2026-11-14');
+    expect(y.totals.costOfGoods).toBe(708); // Sales & Profit
+    expect(y.cogsCoverage).toEqual({ sales: 708, salesCount: 3, ledger: 108, preLedger: 600, preLedgerCount: 1, other: 0, complete: false });
+    const ws = taxWorksheet(y, settings);
+    expect(ws.cogs.lines).toEqual([
+      { label: 'Cost of goods sold, all 3 sales dated in 2026 (Sales & Profit)', amount: 708 },
+      { label: 'In StockPilot’s inventory records (sales recorded from Nov 14, 2026)', amount: 108 },
+      { label: 'Recorded before the inventory records began (1 sale)', amount: 600 },
+    ]);
+    expect(ws.cogs.text).toBe('Only $108.00 of 2026’s $708.00 cost of goods sold is in the inventory records. Of the $600.00 difference, $600.00 is from 1 sale recorded before StockPilot’s dated inventory records began on Nov 14, 2026: it is in Sales & Profit but can’t be traced through inventory. Figures from the inventory records therefore cover only part of the year and can’t be reconciled with full-year cost of goods sold.');
+  });
+
+  it('the worksheet doesn’t present partial-year figures as the year’s, and never substitutes sales cost of goods sold', () => {
+    const ws = taxWorksheet(fig(midYear(), '2026'), settings);
+    const by = (n: string) => ws.lines.find((l) => l.line === n)!;
+    for (const n of ['35', '36', '40', '42']) expect(by(n), n).toMatchObject({ amount: null, status: 'needs_review' });
+    expect(by('35').note).toContain('The $400.00 on hand when the records began is not the beginning-of-year figure');
+    expect(by('36').note).toContain('Recorded from Nov 14, 2026: $24.00');
+    expect(by('42').note).toContain('Cost of goods sold from your sales ($708.00) isn’t a substitute');
+    expect(by('41')).toMatchObject({ amount: 316, status: 'needs_review' }); // year-end inventory is still recorded
+    expect(ws.bridge).toEqual([]); // nothing is said to agree
+  });
+
+  it('the accountant summary, checklist, sales download and assistant all state the limitation', () => {
+    const data = midYear();
+    const r = yearReport(data, settings, '2026', AFTER);
+    const summary = r.sections[0].lines.map((l) => l.text);
+    expect(summary[0]).toBe('StockPilot’s dated inventory records begin Nov 14, 2026, during 2026, so inventory on Jan 1, 2026 isn’t recorded. When the records began, the goods on hand had cost $400.00. The figures below for inventory movements cover only Nov 14, 2026 to Dec 31, 2026.');
+    expect(summary).toContain('The goods you sold in 2026 had cost you $708.00 (cost of goods sold, from 3 recorded sales bringing in $1,070.00).');
+    expect(summary.some((t) => t.startsWith('Only $108.00 of 2026’s $708.00 cost of goods sold is in the inventory records.'))).toBe(true);
+    expect(summary.some((t) => t.includes('they agree to the cent for what was recorded from Nov 14, 2026; the months before aren’t covered'))).toBe(true);
+    expect(summary.at(-1)).toContain('the dated inventory records cover only part of 2026 (from Nov 14, 2026)');
+    expect(r.sections.find((s) => s.key === 'movement')!.title).toBe('Inventory movement recorded from Nov 14, 2026');
+    const wsLines = r.sections.find((s) => s.key === 'worksheet')!.lines;
+    expect(wsLines.some((l) => l.text.startsWith('Line 42 compared'))).toBe(false);
+    expect(wsLines.find((l) => l.text.startsWith('Cost of goods sold coverage'))!.kind).toBe('limitation');
+    const issues = yearChecklist(data, settings, '2026', AFTER).steps.flatMap((s) => s.issues.map((i) => i.text));
+    expect(issues.some((t) => t.startsWith('Only $108.00 of 2026’s $708.00'))).toBe(true);
+    const sales = parseCsv(yearSalesCsv(data, fig(data, '2026'))).slice(1).filter((x) => x.length > 1);
+    expect(sales.map((x) => [x[0], x[13]])).toEqual([['2026-03-10', 'no (recorded before the inventory records began)'], ['2026-11-20', 'yes'], ['2026-11-21', 'yes']]);
+    const a = answerQuestion('What was my cost of goods sold in 2026?', { data, settings, today: AFTER });
+    expect(a.text).toContain('$708.00');
+    expect(a.details.some((t) => t.startsWith('Only $108.00 of 2026’s $708.00'))).toBe(true);
+    expect(a.details).toContain('The year-end worksheet’s line 42 isn’t available for this year, because the inventory records don’t cover all of it. See Year-End Review.');
+  });
+
+  it('other reporting periods: the next full year is covered; a year before the records has none', () => {
+    let data = midYear();
+    data = sell(data, data.items.find((i) => i.name === 'Headphones')!.id, 1, 160, '2027-02-01').data;
+    const y27 = fig(data, '2027');
+    expect(y27.partialYear).toBe(false);
+    expect(y27.cogsCoverage).toMatchObject({ sales: 100, ledger: 100, preLedger: 0, complete: true });
+    expect(taxWorksheet(y27, settings).lines.find((l) => l.line === '35')!.amount).toBe(316); // 3 headphones ($300) + 2 mugs ($16) at Dec 31, 2026
+    const y25 = fig(data, '2025');
+    expect(y25.rf.status).toBe('not_available');
+    expect(taxWorksheet(y25, settings).cogs.complete).toBe(false);
+  });
+
+  it('a mid-year start stays visible even when there is also an unexplained difference', () => {
+    let data = midYear();
+    // Changed outside StockPilot's recorded actions (e.g. restored from an older copy): an unexplained difference.
+    data = { ...data, items: data.items.map((i) => (i.name === 'Mug' ? { ...i, quantity: 1 } : i)) };
+    const y = fig(data, '2026');
+    expect(y.rf.status).toBe('difference');
+    expect(y.partialYear).toBe(true);
+    expect(y.beginning.status).toBe('partial');
+    expect(taxWorksheet(y, settings).lines.find((l) => l.line === '42')!.amount).toBeNull();
+  });
+});
+

@@ -66,6 +66,11 @@ export interface Sale {
   otherExpenses: number;
   saleDate: string; // YYYY-MM-DD
   notes: string;
+  /**
+   * Why the sale is dated before the item's recorded purchase date (a preorder, a correction…),
+   * entered by the user when they confirmed it. '' when the dates are in order.
+   */
+  dateException?: string;
   createdAt: string;
   updatedAt: string;
 }

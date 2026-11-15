@@ -469,13 +469,21 @@ function ReviewDialog({ open, onClose, lines, changed, uncounted }: { open: bool
   const diffs = lines.filter((l) => l.status !== 'match');
   const [decisions, setDecisions] = useState<Record<string, { apply: boolean; reason: string; note: string }>>({});
   // Rows whose stock changed after counting start unticked so a stale count can't adjust stock by default.
-  const get = (l: CountLine) => decisions[l.itemId] ?? { apply: !(l.itemId in changed), reason: l.status === 'missing' ? 'Miscounted before' : 'Found extra', note: '' };
+  // No reason is preselected: the user chooses one for each adjustment they apply.
+  const get = (l: CountLine) => decisions[l.itemId] ?? { apply: !(l.itemId in changed), reason: '', note: '' };
+  const [showMissing, setShowMissing] = useState(false);
   const changedCount = lines.filter((l) => l.itemId in changed).length;
   const setD = (l: CountLine, patch: Partial<{ apply: boolean; reason: string; note: string }>) => setDecisions((d) => ({ ...d, [l.itemId]: { ...get(l), ...patch } }));
   const applyCount = diffs.filter((l) => get(l).apply).length;
   const net = diffs.filter((l) => get(l).apply).reduce((s, l) => s + l.valueDifference, 0);
 
   const finish = () => {
+    const missingReason = diffs.filter((l) => get(l).apply && !get(l).reason);
+    if (missingReason.length) {
+      setShowMissing(true);
+      toast.error(`Choose a reason for ${plural(missingReason.length, 'adjustment')} before applying.`);
+      return;
+    }
     const list: CountDecision[] = diffs.map((l) => {
       const d = get(l);
       const reason = d.reason === 'Other' ? d.note.trim() || 'Other' : d.note.trim() ? `${d.reason} — ${d.note.trim()}` : d.reason;
@@ -547,11 +555,28 @@ function ReviewDialog({ open, onClose, lines, changed, uncounted }: { open: bool
                       )}
                       {d.apply && (
                         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          <select value={d.reason} onChange={(e) => setD(l, { reason: e.target.value })} aria-label={`Reason for ${l.itemName}`} className={cn(inputClass, 'h-10 border-line-strong sm:text-sm')}>
-                            {REASONS.map((r) => (
-                              <option key={r}>{r}</option>
-                            ))}
-                          </select>
+                          <div>
+                            <select
+                              value={d.reason}
+                              onChange={(e) => setD(l, { reason: e.target.value })}
+                              aria-label={`Reason for ${l.itemName}`}
+                              aria-invalid={showMissing && !d.reason}
+                              className={cn(inputClass, 'h-10 sm:text-sm', showMissing && !d.reason ? 'border-bad' : 'border-line-strong')}
+                              data-testid="review-reason"
+                            >
+                              <option value="" disabled>
+                                Choose a reason…
+                              </option>
+                              {REASONS.map((r) => (
+                                <option key={r}>{r}</option>
+                              ))}
+                            </select>
+                            {showMissing && !d.reason && (
+                              <p className="mt-1 text-xs text-bad-text" role="alert">
+                                Choose why the quantity is {l.status === 'missing' ? 'lower' : 'higher'}.
+                              </p>
+                            )}
+                          </div>
                           <input value={d.note} onChange={(e) => setD(l, { note: e.target.value })} placeholder="Note (optional)" aria-label={`Note for ${l.itemName}`} className={cn(inputClass, 'h-10 border-line-strong sm:text-sm')} />
                         </div>
                       )}

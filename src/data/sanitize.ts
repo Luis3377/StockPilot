@@ -185,6 +185,8 @@ function sanitizeSale(raw: unknown, n: number): Sale {
     otherExpenses: num(raw, 'otherExpenses', where, { min: 0 }),
     saleDate: date(raw, 'saleDate', where),
     notes: str(raw, 'notes', where),
+    // Older sales have none.
+    ...(typeof raw.dateException === 'string' && raw.dateException.trim() ? { dateException: raw.dateException.trim().slice(0, 300) } : {}),
     createdAt: str(raw, 'createdAt', where) || new Date().toISOString(),
     updatedAt: str(raw, 'updatedAt', where) || new Date().toISOString(),
   };

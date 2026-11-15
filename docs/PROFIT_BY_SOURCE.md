@@ -143,6 +143,14 @@ Time counts toward a **category** only when linked to items or lots. A lot's tim
 
 **Realized profit per logged hour = realized profit ÷ hours logged**, for the same period.
 
+**Matched records only (since the first beta fix round).**
+- The business-wide figure divides only the profit that has time behind it: profit from the sources with time linked to them, ÷ those hours.
+  - Profit from sources with no logged time, and hours not linked to any source, are reported apart, never divided into each other.
+  - Example: $1,818.59 of profit with 2 h logged on a garage sale that made $40. The page shows $40 ÷ 2 h = $20/h. It also says $1,778.59 of profit has no time logged. It no longer shows "$909.30 per hour".
+- Time-tracking coverage is shown: sales and share of revenue with time logged, profit without time, and unlinked hours.
+- The all-profit ÷ all-hours figure appears only when every sale's source has time and every hour is linked.
+- Shared time is still split once, so it is never counted twice.
+
 - It is labelled "realized profit per logged hour", **not a wage**. Your time is not subtracted from profit, and unsold stock isn't counted.
 - The period and the hours included by activity are shown with it.
 - **"Not enough time data"** when no time is logged. It never divides by zero.

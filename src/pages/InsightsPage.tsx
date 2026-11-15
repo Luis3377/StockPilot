@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertOctagon, AlertTriangle, CheckCircle2, ChevronDown, Info, Lightbulb, Settings2, Store, TrendingUp } from 'lucide-react';
 import { AssistantPanel } from './assistant/AssistantPanel';
+import { scannerEnabled } from '../ai/config';
 import type { InsightSection, Severity } from '../insights/rules';
 import { formatDate } from '../domain/dates';
 import { useAppState } from '../data/store';
@@ -51,7 +52,7 @@ export function InsightsPage() {
         description="Alerts, recommendations and answers calculated from your own inventory and sales records."
         eyebrow={
           <Badge tone="accent" icon={<Lightbulb className="size-3" />}>
-            Rule-based · no AI model yet
+            {scannerEnabled ? 'Calculated by rules · AI only explains, when you ask' : 'Rule-based · no AI model'}
           </Badge>
         }
         actions={

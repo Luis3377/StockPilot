@@ -260,6 +260,21 @@ export function resolveSource(data: AppData, text: string, type: SourceType, clo
 }
 
 /** A starting guess at a new source's type from its name (shown, and changeable, in the form). */
+/**
+ * A name that only says what kind of source it is ("Storage-unit auction", "garage sale"), not
+ * which one. Results by source can't tell such places apart, so the user is asked for the real
+ * supplier or place (and may keep the name when they don't know it).
+ */
+export function isGenericSourceName(name: string): boolean {
+  const n = name.toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+  if (!n) return false;
+  const generic = new Set(
+    [...Object.values(SOURCE_TYPE_LABELS), 'garage sale', 'yard sale', 'thrift', 'thrift shop', 'estate sale', 'storage auction', 'storage unit', 'storage unit auction', 'auction', 'flea market', 'facebook marketplace', 'marketplace', 'craigslist', 'online', 'retail', 'store', 'wholesale', 'liquidation', 'pallet', 'unknown', 'other']
+      .map((x) => x.toLowerCase().replace(/[^a-z]+/g, ' ').trim()),
+  );
+  return generic.has(n) || generic.has(n.replace(/s$/, ''));
+}
+
 export function guessSourceType(name: string): SourceType {
   const n = name.toLowerCase();
   const rules: [RegExp, SourceType][] = [
@@ -401,7 +416,9 @@ function checkLinks(data: AppData, links: TimeLink[], split: 'equal' | 'custom',
     return true;
   });
   if (out.length > SOURCING_LIMITS.links) v.add('links', `Link to at most ${SOURCING_LIMITS.links} things.`);
-  if (out.some((l) => !linkExists(data, l))) v.add('links', 'Something this time is linked to no longer exists.');
+  // Nothing is chosen for the user: a link row left on "Choose…" is pointed out, not filled in.
+  if (out.some((l) => !l.id)) v.add('links', `Choose which ${out.find((l) => !l.id)!.kind === 'session' ? 'trip' : out.find((l) => !l.id)!.kind} this time was for, or remove that link.`);
+  else if (out.some((l) => !linkExists(data, l))) v.add('links', 'Something this time is linked to no longer exists.');
   if (split === 'custom' && out.length > 1) {
     const shares = out.map((l) => l.sharePct ?? NaN);
     if (shares.some((x) => !Number.isFinite(x) || x <= 0 || Math.abs(x * 100 - Math.round(x * 100)) > 1e-6)) v.add('links', 'Give every link a share above 0% (up to 2 decimals).');

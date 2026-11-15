@@ -86,12 +86,15 @@ describe('assistant: sourcing questions', () => {
     const { data } = shop();
     const a = ask(data, 'What is my profit per hour?');
     expect(a.intent).toBe('profit-per-hour');
-    // $180 + $620 + $12 (the unsourced lamp) over 40 h.
-    expect(a.text).toBe('Your realized profit per logged hour all time is $20.30: $812.00 realized profit ÷ 40 h logged.');
+    // Matched records only: $180 + $620 over the 40 h linked to those two sources. The unsourced
+    // lamp's $12 has no time behind it, so it isn't divided by anyone's hours.
+    expect(a.text).toBe('Where you logged time, your realized profit per logged hour all time is $20.00: $800.00 ÷ 40 h (Midwest Liquidation, Saturday garage sales). $12.00 of your $812.00 realized profit has no time logged and isn’t included.');
+    expect(a.details).toContain('Time-tracking coverage: 3 of 4 sales (98.22% of revenue) have time logged against their source.');
+    expect(a.details).toContain('All realized profit ÷ all logged hours ($812.00 ÷ 40 h) isn’t shown as an hourly return: $12.00 of that profit has no time behind it.');
     expect(a.details.join(' ')).toContain('Midwest Liquidation: $31.00 per hour ($620.00 ÷ 20 h), still selling');
     expect(a.details.join(' ')).toContain('Saturday garage sales: $9.00 per hour ($180.00 ÷ 20 h)');
     expect(a.details.join(' ')).toContain('not an hourly wage');
-    expect(a.calculation!.value).toBe(812);
+    expect(a.calculation!.value).toBe(800);
     // No time logged: says there isn't enough data rather than dividing by zero.
     const bare = withThrift(emptyData());
     const none = ask(bare, 'What is my profit per hour?');

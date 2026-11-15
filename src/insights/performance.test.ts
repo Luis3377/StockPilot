@@ -183,7 +183,7 @@ describe('the original prediction', () => {
 describe('records and warnings', () => {
   it('restocks, edits and refunds in eBay’s report are flagged, not hidden', () => {
     let { data, lot, A } = plannedLot();
-    data = recordSale(data, { itemId: A.id, quantity: 1, salePrice: 180, priceMode: 'total', fees: 24.25, saleDate: '2026-01-30', orderNumber: '11-00002-00002' }, clock()).data;
+    data = recordSale(data, { itemId: A.id, quantity: 1, salePrice: 180, priceMode: 'total', fees: 24.25, saleDate: '2026-01-30', orderNumber: '11-00002-00002', dateException: 'Dated to match the February eBay report' }, clock()).data;
     data = applyImport(data, previewImport(FEB, 'feb.csv', data), clock()).data;
     const p = perf(data, lot);
     expect(p.warnings.join(' ')).toContain('eBay’s report shows a $15.50 refund on order 11-00002-00002');
@@ -354,3 +354,19 @@ describe('history and learning', () => {
 function fromNumbers(xs: number[]) {
   return xs.reduce((a, b) => a + b, 0);
 }
+
+// Manual beta finding: one of two items sold showed "60% sell-through", because the sold item
+// was $120 of the $200 estimated resale value. The definition is now explicit, with units apart.
+describe('sell-through by value and by units', () => {
+  it('names value-based sell-through and shows unit sell-through separately', () => {
+    const a = { ...defaultAssumptions(), valueMode: 'items' as const, items: [item('t-x', 'Speaker', 1, 120, 'Electronics'), item('t-y', 'Lamp', 1, 80, 'Home')] };
+    const r = createBidPlan(emptyData(), { name: 'Two items', description: '', kind: 'estate_sale', assumptions: a }, clock());
+    const { input, lineBidItemIds } = lotPrefillFromPlan(r.plan, 50, '2026-09-01');
+    const bought = recordBidPurchase(r.data, r.plan.id, input, lineBidItemIds, clock('2026-09-01T10:00:00.000Z'));
+    const data = sell(bought.data, bought.items[0].id, 1, 130, 10);
+    const p = perf(data, bought.lot);
+    expect(row(p, 'sellThrough')).toMatchObject({ label: 'Sell-through (share of estimated value sold)', actual: 60 });
+    expect(row(p, 'sellThrough').formula).toContain('not the share of units: by units it’s 50%');
+    expect(row(p, 'sellThroughUnits')).toMatchObject({ label: 'Sell-through by units (units sold ÷ units bought)', actual: 50, predicted: null });
+  });
+});

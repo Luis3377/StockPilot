@@ -203,6 +203,17 @@ Example summary (2026 above):
 
 The worksheet is organized like Schedule C, Part III, to support a tax preparer. It is not tax advice.
 
+**When the inventory records began during the year** (for example a demo or an existing shop whose ledger started on Nov 14):
+- Lines 35, 36, 40 and 42 show **Not available / needs your accountant**.
+  - The opening balance on the start date isn't beginning-of-year inventory.
+  - Earlier purchases weren't dated.
+  - Cost of goods sold from sales is never substituted into line 42.
+- The worksheet, the summary, the checklist and the assistant show cost of goods sold of all the year's sales (the Sales & Profit figure) apart from the part in the inventory records, and explain the difference.
+  - Example: $2,324.00 in total, of which $168.00 is in the inventory records.
+  - The $2,156.00 difference is sales recorded before the records began.
+- Nothing is said to "agree" unless the inventory records cover all of the year's cost of goods sold.
+- The sales CSV marks each sale `in_inventory_records`.
+
 | Line | What StockPilot shows |
 | --- | --- |
 | 33 Method | **Needs review.** Explains that StockPilot records each item at its own cost (lots split by the chosen method; restocks average). The method is for the accountant |

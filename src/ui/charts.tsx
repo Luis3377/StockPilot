@@ -244,6 +244,7 @@ export function ColumnChart({ labels, series, format, formatAxis, height = 220, 
                     height={plotH}
                     fill="transparent"
                     tabIndex={0}
+                    role="img"
                     aria-label={`${label}: ${series.map((s) => `${s.name} ${format(s.values[i])}`).join(', ')}`}
                     onMouseEnter={() => setActive(i)}
                     onFocus={() => setActive(i)}

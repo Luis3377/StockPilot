@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { recordSale, saleInputErrors, saleUnitCost, updateSale, type SaleInput } from '../../domain/actions';
+import { recordSale, saleBeforePurchase, saleInputErrors, saleUnitCost, setItemPurchaseDate, updateSale, type SaleInput } from '../../domain/actions';
 import { computeSale, convertSalePrice, knownPlatforms, uniqueSorted } from '../../domain/calc';
 import { isDomainError } from '../../domain/errors';
-import { todayISO } from '../../domain/dates';
+import { formatDate, todayISO } from '../../domain/dates';
 import { formatPercent, multiplyMoney, parseMoneyInput, roundMoney } from '../../domain/money';
 import type { PriceMode, Sale } from '../../domain/types';
 import { store, useAppState } from '../../data/store';
@@ -51,6 +51,8 @@ interface FormState {
   otherExpenses: string;
   saleDate: string;
   notes: string;
+  /** Why the sale is dated before the purchase (only asked for then). */
+  dateException: string;
 }
 
 const text = (n: number) => (n === 0 ? '' : String(n));
@@ -70,6 +72,7 @@ function initial(sale: Sale | undefined, itemId: string | null, askingPrice: num
       otherExpenses: text(sale.otherExpenses),
       saleDate: sale.saleDate,
       notes: sale.notes,
+      dateException: sale.dateException ?? '',
     };
   }
   if (prefill) {
@@ -86,6 +89,7 @@ function initial(sale: Sale | undefined, itemId: string | null, askingPrice: num
       otherExpenses: '',
       saleDate: prefill.saleDate ?? todayISO(),
       notes: prefill.notes ?? '',
+      dateException: '',
     };
   }
   return {
@@ -101,6 +105,7 @@ function initial(sale: Sale | undefined, itemId: string | null, askingPrice: num
     otherExpenses: '',
     saleDate: todayISO(),
     notes: '',
+    dateException: '',
   };
 }
 
@@ -142,6 +147,8 @@ export function SaleFormDialog({ open, itemId, saleId, prefill, onClose, onAddIt
   const platforms = useMemo(() => uniqueSorted([...knownPlatforms(data), ...PLATFORM_SUGGESTIONS]), [data]);
 
   const item = data.items.find((i) => i.id === form.itemId);
+  // A sale dated before the item was bought: explained before saving, and recorded only with a reason.
+  const early = item && form.saleDate ? saleBeforePurchase(data, item, form.saleDate) : null;
   const itemDeleted = sale && !data.items.some((i) => i.id === sale.itemId) && form.itemId === sale.itemId;
   const available = (item?.quantity ?? 0) + (sale && sale.itemId === form.itemId ? sale.quantity : 0);
   const qty = Number(form.quantity) || 0;
@@ -204,6 +211,7 @@ export function SaleFormDialog({ open, itemId, saleId, prefill, onClose, onAddIt
       otherExpenses: moneyOrNull('otherExpenses'),
       saleDate: form.saleDate,
       notes: form.notes,
+      dateException: early ? form.dateException : '',
     };
     // Show every problem after one submit: this form's own messages, plus the sale rules
     // (negative amounts, more than is in stock…) for the other fields.
@@ -381,6 +389,42 @@ export function SaleFormDialog({ open, itemId, saleId, prefill, onClose, onAddIt
               <MoneyField label="Other expenses" hint="Packaging, promotion, etc." currency={currency} value={form.otherExpenses} onChange={(v) => set('otherExpenses', v)} error={errors.otherExpenses} />
               <TextField label="Sale date" type="date" required value={form.saleDate} onChange={(v) => set('saleDate', v)} error={errors.saleDate} />
             </div>
+            {early && (
+              <div className="rounded-xl border border-warn/40 bg-warn-soft p-3 text-sm text-warn-text" data-testid="sale-before-purchase">
+                <p className="flex items-start gap-1.5">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  {early}
+                </p>
+                {item && !data.lots.some((l) => l.lines.some((line) => line.itemId === item.id)) && (
+                  <Button
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => {
+                      try {
+                        store.commit((d) => setItemPurchaseDate(d, item.id, form.saleDate));
+                        toast.success(`“${item.name}” now shows ${formatDate(form.saleDate)} as its purchase date.`);
+                      } catch (err) {
+                        // e.g. a closed month: nothing changed.
+                        toast.error(isDomainError(err) ? err.message : 'The purchase date could not be changed.');
+                      }
+                    }}
+                    data-testid="sale-fix-purchase-date"
+                  >
+                    The purchase date is wrong: use {formatDate(form.saleDate)}
+                  </Button>
+                )}
+                <TextField
+                  label="Why is the sale dated before the purchase?"
+                  className="mt-2"
+                  value={form.dateException}
+                  onChange={(v) => set('dateException', v)}
+                  error={errors.dateException ? 'Say why, or correct the dates.' : undefined}
+                  placeholder="e.g. Preorder, paid before the item arrived"
+                  maxLength={300}
+                  data-testid="sale-date-reason"
+                />
+              </div>
+            )}
             <TextAreaField label="Notes" value={form.notes} onChange={(v) => set('notes', v)} placeholder="Buyer, order number…" />
           </div>
 

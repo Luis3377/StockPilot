@@ -22,7 +22,7 @@
 import { computeSale, totalSales, type SalesTotals } from './calc';
 import { daysBetween, formatDate } from './dates';
 import { formatMoney, fromCents, toCents } from './money';
-import type { AppData, MarketplacePayout, MarketplaceTxn, ReconciliationReview, Sale } from './types';
+import type { AppData, Item, MarketplacePayout, MarketplaceTxn, ReconciliationReview, Sale } from './types';
 
 // ---------------------------------------------------------------------------
 // Matching marketplace sales to StockPilot sales
@@ -315,6 +315,69 @@ export interface ReconciliationReport {
 /** eBay payout statuses meaning the money hasn't reached the bank yet, or never will. */
 export const PENDING_STATUS = /initiat|process|pending|schedul|progress|queued|in transit/i;
 export const FAILED_STATUS = /fail|revers|return|cancel|reject/i;
+
+/**
+ * An item that an imported sale is probably for, when no sale is recorded for it yet: the eBay
+ * custom label equals an item's SKU, or failing that the title clearly shares the item's name.
+ * Only a suggestion: the user confirms it by recording the sale themselves.
+ */
+export function suggestItemForTransaction(data: AppData, txn: Pick<MarketplaceTxn, 'title' | 'customLabel'>): { item: Item; reason: string } | null {
+  const stock = data.items.filter((i) => i.quantity > 0);
+  const label = txn.customLabel.trim().toLowerCase();
+  if (label) {
+    const bySku = stock.filter((i) => i.sku.trim().toLowerCase() === label);
+    if (bySku.length === 1) return { item: bySku[0], reason: `its SKU matches eBay’s custom label “${txn.customLabel.trim()}”` };
+  }
+  const words = (t: string) => new Set(t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !STOP.has(w)));
+  const title = words(txn.title);
+  if (!title.size) return null;
+  const scored = stock
+    .map((i) => {
+      const name = words(i.name);
+      const shared = [...name].filter((w) => title.has(w));
+      return { item: i, shared, score: name.size ? shared.length / name.size : 0 };
+    })
+    .filter((x) => x.shared.length >= 2 && x.score >= 0.6)
+    .sort((a, b) => b.score - a.score || b.shared.length - a.shared.length);
+  // Ambiguous (two equally good items): no suggestion rather than a guess.
+  if (!scored.length || (scored[1] && scored[1].score === scored[0].score && scored[1].shared.length === scored[0].shared.length)) return null;
+  return { item: scored[0].item, reason: `its name is similar to eBay’s title (${scored[0].shared.map((w) => `“${w}”`).join(', ')})${label ? `; eBay’s custom label “${txn.customLabel.trim()}” doesn’t match a SKU` : ''}` };
+}
+const STOP = new Set(['the', 'and', 'for', 'with', 'new', 'used', 'of', 'in', 'a', 'an', 'to', 'lot', 'size']);
+
+/** Where a payout stands according to eBay's status: only completed payouts count as paid out. */
+export type PayoutState = 'completed' | 'pending' | 'failed' | 'unknown';
+
+export function payoutState(p: Pick<PayoutRecon, 'statusText' | 'actual'>): PayoutState {
+  if (PENDING_STATUS.test(p.statusText)) return 'pending';
+  if (FAILED_STATUS.test(p.statusText)) return 'failed';
+  return p.actual === null ? 'unknown' : 'completed';
+}
+
+export interface PayoutTotals {
+  paid: number;
+  paidCount: number;
+  pending: number;
+  pendingCount: number;
+  failed: number;
+  failedCount: number;
+  /** Payouts whose paid amount isn't known (the payout report isn't imported). */
+  unknownCount: number;
+}
+
+/** Payout amounts by status, to the cent: pending and failed payouts aren't counted as paid out. */
+export function payoutTotals(payouts: Pick<PayoutRecon, 'statusText' | 'actual' | 'expected'>[]): PayoutTotals {
+  const t = { paid: 0, paidCount: 0, pending: 0, pendingCount: 0, failed: 0, failedCount: 0, unknownCount: 0 };
+  for (const p of payouts) {
+    const state = payoutState(p);
+    const cents = toCents(p.actual ?? p.expected ?? 0);
+    if (state === 'completed') (t.paid += cents), t.paidCount++;
+    else if (state === 'pending') (t.pending += cents), t.pendingCount++;
+    else if (state === 'failed') (t.failed += cents), t.failedCount++;
+    else t.unknownCount++;
+  }
+  return { ...t, paid: fromCents(t.paid), pending: fromCents(t.pending), failed: fromCents(t.failed) };
+}
 const HOLD_STATUS = /hold/i;
 
 export const reviewTarget = {

@@ -3,11 +3,11 @@
 
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Clock, FileUp, Landmark } from 'lucide-react';
-import { STATUS_LABELS, type ReconStatus } from '../../domain/reconcile';
+import { payoutTotals, STATUS_LABELS, type ReconStatus } from '../../domain/reconcile';
 import { MARKETPLACE_LABELS } from '../../marketplace/reports';
 import { formatDate, formatDateTime } from '../../domain/dates';
 import { plural } from '../../domain/format';
-import { fromCents, toCents } from '../../domain/money';
+import { toCents } from '../../domain/money';
 import { useAppState } from '../../data/store';
 import { useMoney } from '../../lib/hooks';
 import { usePersistentState } from '../../lib/usePersistentState';
@@ -75,7 +75,8 @@ export function PayoutsPage() {
   }
 
   const shown = r.payouts.filter((p) => filter === 'all' || p.status === filter);
-  const paidCents = r.payouts.reduce((c, p) => c + toCents(p.actual ?? 0), 0);
+  // Only payouts eBay reports as completed count as paid out; pending and failed ones are shown apart.
+  const totals = payoutTotals(r.payouts);
   const outstanding = r.payouts.reduce((n, p) => n + p.outstandingCount, 0);
 
   return (
@@ -83,7 +84,12 @@ export function PayoutsPage() {
       {header}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="payout-summary">
         <StatTile label="Payouts" value={String(r.payouts.length)} sub={`${r.counts.reconciled} reconciled · ${r.counts.unreconciled} unreconciled`} testId="payout-count" />
-        <StatTile label="Paid out" value={money(fromCents(paidCents))} sub="Money eBay sent to your bank" />
+        <StatTile
+          label="Paid out"
+          value={money(totals.paid)}
+          sub={[`${plural(totals.paidCount, 'completed payout')}`, totals.pendingCount ? `${money(totals.pending)} pending (${plural(totals.pendingCount, 'payout')})` : '', totals.failedCount ? `${money(totals.failed)} failed (${plural(totals.failedCount, 'payout')})` : ''].filter(Boolean).join(' · ')}
+          testId="payout-paid"
+        />
         <StatTile
           label="Unreconciled difference"
           value={<Signed amount={r.unreconciledTotal} tone={false} />}

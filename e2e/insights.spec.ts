@@ -4,7 +4,7 @@ import { addItem, nav, onboard, recordSale } from './helpers';
 test('insights are labeled rule-based and answer questions from real data', async ({ page }) => {
   await onboard(page, 'Reseller', true);
   await nav(page, 'Smart Insights');
-  await expect(page.getByText('Rule-based · no AI model yet')).toBeVisible();
+  await expect(page.getByText('Rule-based · no AI model')).toBeVisible();
   await expect(page.getByTestId('insight-low-stock')).toContainText('Running low');
   await expect(page.getByTestId('insight-low-stock')).toContainText('Soy Candle — Cedar & Sage 8oz');
   await expect(page.getByTestId('insight-pricing')).toContainText('Yeezy Boost 350 V2');

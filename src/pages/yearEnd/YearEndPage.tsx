@@ -10,6 +10,7 @@ import { decideYearStep, designateYearCount, finalizeYear, reopenYear, undoYearD
 import { isDomainError } from '../../domain/errors';
 import { localDate } from '../../domain/ledger';
 import { formatDate, formatDateTime, todayISO } from '../../domain/dates';
+import { fromCents, toCents } from '../../domain/money';
 import { plural } from '../../domain/format';
 import { yearChecklist, type YearChecklist } from '../../insights/yearChecklist';
 import { COVERAGE_LABELS, currentReview, taxWorksheet, yearEndCountCandidates, type CoverageStatus } from '../../insights/yearEnd';
@@ -165,23 +166,28 @@ function Dashboard({ list }: { list: YearChecklist }) {
   const avail = rf.status !== 'not_available';
   const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${money(Math.abs(n))}`;
   const other = (['decreases', 'withdrawals', 'increases', 'returns', 'removed', 'sale_corrections'] as const).reduce((c, k) => c + y.line(k), 0);
-  const ledgerBasis: Basis = rf.status === 'partial' ? UNVERIFIED : VERIFIED;
+  const ledgerBasis: Basis = y.partialYear ? UNVERIFIED : VERIFIED;
+  const since = y.partialYear ? formatDate(y.info.startDate) : '';
+  const cov = y.cogsCoverage;
   const closed = y.coverage.months.filter((m) => m.status === 'verified' || m.status === 'exceptions').length;
   return (
     <Card className="mb-4 p-4 sm:p-5" data-testid="year-dashboard">
       <SectionHeader title={`${list.label} at a glance`} description="Verified: worked out from dated records, with the checks passing. Not verified: only partly covered by the records. Missing: the records can’t establish it. All amounts are at cost." />
       <div className="mt-3 grid gap-x-8 md:grid-cols-2">
         <dl className="divide-y divide-line">
-          <Row label="Beginning inventory" value={avail ? money(rf.beginning!) : 'Not available'} basis={y.beginning.status === 'verified' ? VERIFIED : y.beginning.status === 'partial' ? UNVERIFIED : MISSING} note={y.beginning.text} testId="ye-beginning" />
-          <Row label="Purchases and acquisition costs" value={y.purchases === null ? 'Not available' : money(y.purchases)} basis={y.purchases === null ? MISSING : ledgerBasis} note={y.capitalizedCosts ? `Includes ${money(y.capitalizedCosts)} of freight, premiums and other buying costs on bulk lots` : 'Items, bulk lots and restocks'} testId="ye-purchases" />
+          <Row label={y.partialYear ? `Inventory when records began (${since})` : 'Beginning inventory'} value={avail ? money(rf.beginning!) : 'Not available'} basis={y.beginning.status === 'verified' ? VERIFIED : y.beginning.status === 'partial' ? UNVERIFIED : MISSING} note={y.beginning.text} testId="ye-beginning" />
+          <Row label={y.partialYear ? `Purchases from ${since}` : 'Purchases and acquisition costs'} value={y.purchases === null ? 'Not available' : money(y.purchases)} basis={y.purchases === null ? MISSING : ledgerBasis} note={`${y.capitalizedCosts ? `Includes ${money(y.capitalizedCosts)} of freight, premiums and other buying costs on bulk lots` : 'Items, bulk lots and restocks'}${y.partialYear ? '; earlier purchases weren’t recorded with dates' : ''}`} testId="ye-purchases" />
           <Row label="Inventory cost corrections" value={avail ? signed(y.line('corrections')) : 'Not available'} basis={avail ? ledgerBasis : MISSING} />
-          <Row label="Cost of goods sold (recorded sales)" value={money(y.totals.costOfGoods)} basis={VERIFIED} note={`${plural(y.totals.salesCount, 'sale')}${rf.status === 'partial' ? '; only sales recorded since the ledger began are in the roll-forward' : ''}`} testId="ye-cogs" />
+          <Row label="Cost of goods sold (all recorded sales)" value={money(y.totals.costOfGoods)} basis={VERIFIED} note={`${plural(y.totals.salesCount, 'sale')}; same as Sales & Profit`} testId="ye-cogs" />
+          {avail && !cov.complete && (
+            <Row label="Of which in the inventory records" value={money(cov.ledger)} basis={UNVERIFIED} note={`${money(fromCents(toCents(cov.sales) - toCents(cov.ledger)))} isn’t: ${[cov.preLedger ? `${plural(cov.preLedgerCount, 'sale')} recorded before the records began (${money(cov.preLedger)})` : '', cov.other ? `sale edits or cancellations (${money(cov.other)})` : ''].filter(Boolean).join(', ')}`} testId="ye-cogs-ledger" />
+          )}
           <Row label="Write-offs and other movements" value={avail ? signed(other) : 'Not available'} basis={avail ? ledgerBasis : MISSING} note="Damaged, lost, personal use, returns, units found, deletions, sale edits" />
         </dl>
         <dl className="divide-y divide-line">
           <Row label="Expected ending inventory" value={avail ? money(rf.expectedEnding!) : 'Not available'} basis={avail ? ledgerBasis : MISSING} testId="ye-expected" />
           <Row label="Independently determined ending inventory" value={y.independentEnding === null ? 'Not available' : money(y.independentEnding)} basis={y.independentEnding === null ? MISSING : y.count ? VERIFIED : ledgerBasis} note={y.independentBasis} testId="ye-independent" />
-          <Row label="Unexplained difference" value={y.difference === null ? 'Not available' : <span className={y.difference ? 'text-bad-text' : undefined}>{signed(y.difference)}</span>} basis={y.difference === null ? MISSING : y.difference ? ['Difference', 'bad'] : rf.status === 'partial' ? UNVERIFIED : VERIFIED} testId="ye-difference" />
+          <Row label="Unexplained difference" value={y.difference === null ? 'Not available' : <span className={y.difference ? 'text-bad-text' : undefined}>{signed(y.difference)}</span>} basis={y.difference === null ? MISSING : y.difference ? ['Difference', 'bad'] : y.partialYear ? UNVERIFIED : VERIFIED} note={y.partialYear && y.difference !== null ? `For ${since} to year-end only` : undefined} testId="ye-difference" />
           <Row label="Monthly closing coverage" value={`${closed} of 12 months closed`} basis={y.coverage.complete ? VERIFIED : ['Incomplete', 'warn']} testId="ye-coverage" />
           <Row label="Year-end review status" value={list.review ? 'Finalized' : list.ready ? 'Ready to finalize' : 'In review'} />
         </dl>
@@ -417,9 +423,21 @@ function WorksheetCard({ list }: { list: YearChecklist }) {
             </li>
           ))}
         </ul>
+        <div className={cn('mt-2 rounded-lg p-2 text-sm', ws.cogs.complete ? 'bg-surface-2 text-ink-2' : 'bg-warn-soft text-warn-text')} data-testid="worksheet-cogs">
+          <p className="font-medium">Cost of goods sold: sales vs inventory records</p>
+          <dl className="mt-1">
+            {ws.cogs.lines.map((c) => (
+              <div key={c.label} className="flex flex-wrap justify-between gap-x-3">
+                <dt>{c.label}</dt>
+                <dd className="tabular">{money(c.amount)}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-1">{ws.cogs.text}</p>
+        </div>
         {ws.bridge.length > 0 && (
           <p className="mt-2 text-sm text-ink-2" data-testid="worksheet-bridge">
-            Line 42 compared with your records: {ws.bridge.map((b) => `${b.label.toLowerCase()} ${money(b.amount)}`).join(' + ')}.
+            Line 42 compared with the inventory records: {ws.bridge.map((b) => `${b.label.toLowerCase()} ${money(b.amount)}`).join(' + ')}.
           </p>
         )}
       </details>

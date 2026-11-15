@@ -4,11 +4,12 @@
 
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calculator, Copy, Layers, PackageCheck, RotateCcw, Save, ThumbsDown, Trash2, TrendingUp, Trophy } from 'lucide-react';
+import { ArrowLeft, Calculator, Copy, Layers, Lock, PackageCheck, RotateCcw, Save, ThumbsDown, Trash2, TrendingUp, Trophy } from 'lucide-react';
 import {
   bidPlanErrors,
   calculateBid,
   createBidPlan,
+  canDeleteBidPlan,
   deleteBidPlan,
   duplicateBidPlan,
   KIND_LABELS,
@@ -197,6 +198,14 @@ function PlanEditor({ plan }: { plan: BidPlan | null }) {
       )}
 
       {plan?.status === 'purchased' && plan.purchase && (
+        <p className="mb-3 flex items-start gap-1.5 rounded-xl border border-line bg-surface-2 p-3 text-sm text-ink-2" data-testid="bid-readonly">
+          <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            <strong className="text-ink">Read-only: a historical prediction.</strong> This plan was used to buy a lot, so its assumptions and estimate are frozen and the lot’s results are compared with them. To try other numbers, use <strong className="text-ink">Duplicate</strong>. To correct the purchase itself (price, date, items), edit the lot.
+          </span>
+        </p>
+      )}
+      {plan?.status === 'purchased' && plan.purchase && (
         <Card className="mb-4 border-good/40 p-4 sm:p-5" data-testid="bid-purchased">
           <SectionHeader
             title="Purchased"
@@ -212,8 +221,14 @@ function PlanEditor({ plan }: { plan: BidPlan | null }) {
               {plan.snapshot?.results.expected?.maxBid != null && <PurchaseRow label="Max bid estimate at the time (expected)" value={money(plan.snapshot.results.expected.maxBid)} />}
               {plan.snapshot?.recommendedBid != null && (
                 <PurchaseRow
-                  label={plan.purchase.pricePaid <= plan.snapshot.recommendedBid ? 'Paid below the recommendation by' : 'Paid above the recommendation by'}
-                  value={money(Math.abs(plan.snapshot.recommendedBid - plan.purchase.pricePaid))}
+                  label={
+                    Math.round(plan.purchase.pricePaid * 100) === Math.round(plan.snapshot.recommendedBid * 100)
+                      ? 'Paid compared with the recommendation'
+                      : plan.purchase.pricePaid < plan.snapshot.recommendedBid
+                        ? 'Paid below the recommendation by'
+                        : 'Paid above the recommendation by'
+                  }
+                  value={Math.round(plan.purchase.pricePaid * 100) === Math.round(plan.snapshot.recommendedBid * 100) ? 'Exactly the maximum bid' : money(Math.abs(plan.snapshot.recommendedBid - plan.purchase.pricePaid))}
                   testId="bid-paid-vs-max"
                 />
               )}
@@ -285,9 +300,11 @@ function PlanEditor({ plan }: { plan: BidPlan | null }) {
                     Reopen to edit
                   </Button>
                 )}
-                <Button variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => void remove()} data-testid="bid-delete">
-                  Delete
-                </Button>
+                {canDeleteBidPlan(data, plan) && (
+                  <Button variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => void remove()} data-testid="bid-delete">
+                    Delete
+                  </Button>
+                )}
               </div>
               {plan.history.length > 0 && (
                 <ul className="mt-3 space-y-1 border-t border-line pt-2 text-xs text-ink-2" data-testid="bid-history">

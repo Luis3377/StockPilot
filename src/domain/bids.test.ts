@@ -1,3 +1,4 @@
+import { isGenericSourceName } from './sourcing';
 import { describe, expect, it } from 'vitest';
 import {
   bidPlanErrors,
@@ -5,6 +6,7 @@ import {
   calculateBid,
   createBidPlan,
   defaultAssumptions,
+  canDeleteBidPlan,
   deleteBidPlan,
   duplicateBidPlan,
   linkBidToLot,
@@ -365,7 +367,7 @@ describe('buying the lot', () => {
       name: 'Storage unit #14',
       purchasePrice: 80,
       purchaseDate: '2026-10-30',
-      source: 'Storage-unit auction',
+      source: '', // the plan's kind isn't a supplier: the user enters where they bought it (manual beta finding)
       notes: 'Unit B-14, mostly kitchenware',
       method: 'relative_value',
       extraCosts: [
@@ -407,6 +409,15 @@ describe('buying the lot', () => {
     expect(() => updateBidPlan(once, p.id, plan(base()), clock())).toThrow(/original estimate is kept/);
     expect(() => setBidPlanStatus(once, p.id, 'draft', '', clock())).toThrow(DomainError);
     expect(() => linkBidToLot(once, p.id, once.lots[0].id, clock())).toThrow(/already recorded as purchased/);
+    // Manual beta finding: Delete was still offered and removed the frozen forecast. Now refused
+    // while the lot exists (the plan is its Predicted vs. Actual baseline); nothing is changed.
+    expect(canDeleteBidPlan(once, once.bidPlans[0])).toBe(false);
+    expect(() => deleteBidPlan(once, p.id)).toThrow('This plan is recorded as purchased: it holds the original estimate that lot “Storage unit #14” is compared with, so it can’t be deleted. To try other numbers, duplicate it. To correct the purchase itself (price, date, items), edit the lot.');
+    expect(bidPlanForLot(once, once.lots[0].id)?.id).toBe(p.id);
+    // If the lot itself is gone, the plan no longer anchors anything and may be removed.
+    const lotGone = { ...once, lots: [] };
+    expect(canDeleteBidPlan(lotGone, lotGone.bidPlans[0])).toBe(true);
+    expect(deleteBidPlan(lotGone, p.id).bidPlans).toHaveLength(0);
     // A copy can test other assumptions; the original stays.
     const copy = duplicateBidPlan(once, p.id, clock());
     expect(copy.plan.status).toBe('draft');
@@ -468,5 +479,24 @@ describe('backup and restore', () => {
     expect(p.assumptions.items.map((i) => [i.name, i.quantity])).toEqual([['Lamp', 1]]);
     file.data.bidPlans = [{ name: 'No id' }];
     expect(() => parseBackup(JSON.stringify(file))).toThrow('Bid plan 1: missing "id"');
+  });
+});
+
+// Manual beta finding: converting a plan with resale estimates defaulted to "Equally per unit"
+// (one item without an estimate was enough). Estimates entered now mean "by resale value".
+describe('allocation method when a plan becomes a bulk lot', () => {
+  it('prefers splitting by estimated resale value whenever estimates were entered', () => {
+    const a = base({ valueMode: 'items', items: [item('Mixer', 1, 120), item('Plates', 4, 10), item('Misc', 2, null)] });
+    const p = createBidPlan(emptyData(), plan(a), clock()).plan;
+    expect(lotPrefillFromPlan(p, 80, '2026-10-30').input.method).toBe('relative_value');
+    const none = base({ valueMode: 'items', items: [item('Misc', 2, null)] });
+    expect(lotPrefillFromPlan(createBidPlan(emptyData(), plan(none), clock()).plan, 80, '2026-10-30').input.method).toBe('equal');
+  });
+});
+
+describe('generic source names', () => {
+  it('a name that only says the kind of source is recognised, a specific one isn’t', () => {
+    for (const n of ['Storage-unit auction', 'storage unit auction', 'Garage sale', 'garage sales', 'Thrift store', 'Auction']) expect(isGenericSourceName(n), n).toBe(true);
+    for (const n of ['Public Storage — Elm St auction', 'Goodwill — West Little Rock', 'Saturday Garage Sale on Elm St', '']) expect(isGenericSourceName(n), n).toBe(false);
   });
 });

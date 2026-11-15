@@ -14,6 +14,7 @@ import { formatMoney, formatPercent, fromCents, roundMoney, toCents } from '../d
 import { lotForItem, lotSummary, lotTotal } from '../domain/lots';
 import { FAILED_STATUS, PENDING_STATUS, reconcile, type PayoutRecon, type ReconciliationReport } from '../domain/reconcile';
 import { plural } from '../domain/format';
+import { recordedPurchaseDate } from '../domain/actions';
 import type { TermKey } from '../domain/terms';
 import type { AppData, Item, Sale, Settings } from '../domain/types';
 
@@ -189,6 +190,13 @@ export function saleWarnings(ctx: CalcContext, sales: Sale[]): string[] {
       );
     }
   }
+  const early = sales.flatMap((s) => {
+    const item = ctx.data.items.find((i) => i.id === s.itemId);
+    const bought = item ? recordedPurchaseDate(ctx.data, item) : null;
+    return bought && s.saleDate < bought && !s.dateException ? [{ s, bought }] : [];
+  });
+  for (const { s, bought } of early.slice(0, 5)) warnings.push(`${s.itemName} was sold on ${formatDate(s.saleDate)}, before its recorded purchase date (${formatDate(bought)}). Check both dates: as recorded, the sale’s cost of goods sold falls in a month before the item was in inventory.`);
+  if (early.length > 5) warnings.push(`${early.length - 5} more sales are dated before their item’s purchase date.`);
   const noCost = sales.filter((s) => s.unitCost === 0);
   if (noCost.length) warnings.push(`${plural(noCost.length, 'sale')} ${noCost.length === 1 ? 'has' : 'have'} no recorded item cost, so ${noCost.length === 1 ? 'its' : 'their'} cost of goods sold is $0 and profit may be overstated.`);
 

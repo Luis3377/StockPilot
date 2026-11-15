@@ -612,8 +612,19 @@ export function setBidPlanStatus(data: AppData, id: string, to: 'draft' | 'passe
 
 /** Removes a plan. Never touches inventory: a lot made from it stays as it is. */
 export function deleteBidPlan(data: AppData, id: string): AppData {
-  findPlan(data, id);
+  const plan = findPlan(data, id);
+  // A purchased plan is the frozen forecast its lot is compared with (Predicted vs. Actual): it
+  // stays as long as the lot does. Corrections go to the lot itself, or to a duplicate plan.
+  const lot = plan.purchase ? data.lots.find((l) => l.id === plan.purchase!.lotId) : undefined;
+  if (plan.status === 'purchased' && lot) {
+    throw new DomainError(`This plan is recorded as purchased: it holds the original estimate that lot “${lot.name}” is compared with, so it can’t be deleted. To try other numbers, duplicate it. To correct the purchase itself (price, date, items), edit the lot.`);
+  }
   return { ...data, bidPlans: data.bidPlans.filter((p) => p.id !== id) };
+}
+
+/** Whether a plan can be deleted without breaking a lot's history (see deleteBidPlan). */
+export function canDeleteBidPlan(data: AppData, plan: BidPlan): boolean {
+  return !(plan.status === 'purchased' && plan.purchase && data.lots.some((l) => l.id === plan.purchase!.lotId));
 }
 
 /** The plan a lot was bought with, if any. */
@@ -716,9 +727,12 @@ export function lotPrefillFromPlan(plan: BidPlan, pricePaid: number, purchaseDat
       purchasePrice: fromCents(paid),
       extraCosts,
       purchaseDate,
-      source: KIND_LABELS[plan.kind],
+      // The plan's kind ("Storage-unit auction") isn't a supplier: the user enters where they bought it.
+      source: '',
       notes: plan.description,
-      method: items.length && items.every((it) => it.unitValue !== null) && items.some((it) => toCents(it.unitValue!) > 0) ? 'relative_value' : 'equal',
+      // Resale estimates entered → split by value (the user can still choose equal; items still
+      // missing an estimate are pointed out before saving).
+      method: items.some((it) => it.unitValue !== null && toCents(it.unitValue) > 0) ? 'relative_value' : 'equal',
       lines: items.map((it) => ({ name: it.name, quantity: it.quantity, estimatedUnitValue: it.unitValue, category: it.category, condition: it.condition, notes: it.notes })),
     },
     lineBidItemIds: items.map((it) => it.id),

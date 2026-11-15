@@ -42,6 +42,9 @@ export async function recordEbaySale(page: Page, s: Recorded, withOrder = true) 
   await d.getByLabel('Marketplace fees').fill(s.fees);
   if (s.shipping) await d.getByLabel('Shipping you paid').fill(s.shipping);
   await d.getByLabel('Sale date').fill(s.date);
+  // The item was just added (bought "today"), so a past sale is flagged; its purchase date is the one to fix.
+  await d.getByTestId('sale-fix-purchase-date').click();
+  await expect(d.getByTestId('sale-before-purchase')).toBeHidden();
   await d.getByRole('button', { name: 'Record sale' }).click();
   await expect(d).toBeHidden();
 }

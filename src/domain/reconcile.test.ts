@@ -7,7 +7,7 @@ import { addItem, deleteSale, recordSale, updateSale, type SaleInput } from './a
 import { computeSale, totalSales } from './calc';
 import { createLot } from './lots';
 import { toCents } from './money';
-import { explainPayout, matchSales, payoutFacts, reconcile, reviewTarget, type PayoutRecon } from './reconcile';
+import { explainPayout, matchSales, payoutFacts, payoutState, payoutTotals, reconcile, reviewTarget, suggestItemForTransaction, type PayoutRecon } from './reconcile';
 import { addReview, confirmMatch, removeMatch, undoReview } from './reconcileActions';
 import { emptyData, type AppData } from './types';
 import { clock } from './testUtils';
@@ -188,8 +188,8 @@ describe('payout reconciliation: the February scenario', () => {
       'Payout 5000000002 on Feb 9, 2026: eBay paid $77.82; your records lead to an expected $39.76.',
       'Difference: +$38.06 (the payout is higher than expected).',
       'Possible: Sale not recorded in StockPilot: order 11-00004-00004 (+$42.11).',
-      'Confirmed: Marketplace fees differ: order 11-00003-00003 (-$3.65).',
-      'Confirmed: Shipping label cost differs: order 11-00003-00003 (-$0.40).',
+      'Confirmed: Marketplace fees differ: order 11-00003-00003 (−$3.65).',
+      'Confirmed: Shipping label cost differs: order 11-00003-00003 (−$0.40).',
     ]);
     const facts = payoutFacts(p);
     expect(facts).toMatchObject({ payout: '5000000002', expected: 39.76, actual: 77.82, difference: 38.06, unexplained: 0 });
@@ -521,5 +521,51 @@ describe('integration with lots, profit and backups', () => {
     const broken = JSON.parse(JSON.stringify(data));
     broken.marketplace.transactions[0].net = 'lots';
     expect(() => sanitizeAppData(broken)).toThrow('Marketplace transaction 1: "net" must be a number');
+  });
+});
+
+// Manual beta finding: the dashboard's "Paid out" was $421.18, including eBay's $31.25 payout
+// still "Initiated". Only the three succeeded payouts ($389.93) have been paid out.
+describe('payout totals by status', () => {
+  it('pending payouts aren’t counted as paid out; amounts stay exact', () => {
+    const r = reconcile(scenario());
+    const byRef = new Map(r.payouts.map((p) => [p.ref, p]));
+    expect(['5000000001', '5000000002', '5000000003', '5000000004'].map((ref) => [ref, payoutState(byRef.get(ref)!), byRef.get(ref)!.actual])).toEqual([
+      ['5000000001', 'completed', 250.48],
+      ['5000000002', 'completed', 77.82],
+      ['5000000003', 'pending', 31.25],
+      ['5000000004', 'completed', 61.63],
+    ]);
+    expect(payoutTotals(r.payouts)).toEqual({ paid: 389.93, paidCount: 3, pending: 31.25, pendingCount: 1, failed: 0, failedCount: 0, unknownCount: 0 });
+    // The Feb 2 payout still reconciles to the cent.
+    expect(byRef.get('5000000001')).toMatchObject({ expected: 250.48, actual: 250.48, difference: 0, status: 'reconciled' });
+  });
+
+  it('failed or reversed payouts are kept apart too', () => {
+    expect(payoutTotals([
+      { statusText: 'Succeeded', actual: 10, expected: 10 },
+      { statusText: 'Failed', actual: 5.5, expected: 5.5 },
+      { statusText: 'Reversed', actual: 1, expected: 1 },
+      { statusText: '', actual: null, expected: 3 },
+    ])).toEqual({ paid: 10, paidCount: 1, pending: 0, pendingCount: 0, failed: 6.5, failedCount: 2, unknownCount: 1 });
+  });
+});
+
+// Manual beta finding: an imported sale whose SKU didn't match any item offered no help.
+describe('suggested item for an imported sale', () => {
+  const shop = () => {
+    let d = addItem(emptyData(), { name: 'Sony WH-1000XM4 Headphones', sku: 'HP-01', quantity: 1, unitCost: 120 }, clock()).data;
+    d = addItem(d, { name: 'Nike Air Max 90', sku: 'SH-07', quantity: 1, unitCost: 40 }, clock()).data;
+    return d;
+  };
+  it('suggests by SKU, or by a clearly similar name, with the reason — never by a weak or tied match', () => {
+    const d = shop();
+    expect(suggestItemForTransaction(d, { title: 'Anything', customLabel: 'sh-07' })).toMatchObject({ item: { name: 'Nike Air Max 90' }, reason: 'its SKU matches eBay’s custom label “sh-07”' });
+    const byName = suggestItemForTransaction(d, { title: 'Sony WH-1000XM4 Wireless Noise Cancelling Headphones Black', customLabel: 'SONY-XM4' });
+    expect(byName?.item.name).toBe('Sony WH-1000XM4 Headphones');
+    expect(byName?.reason).toBe('its name is similar to eBay’s title (“sony”, “wh”, “1000xm4”, “headphones”); eBay’s custom label “SONY-XM4” doesn’t match a SKU');
+    expect(suggestItemForTransaction(d, { title: 'Sony speaker', customLabel: '' })).toBeNull(); // one shared word isn't enough
+    const twins = addItem(d, { name: 'Sony WH-1000XM4 Headphones', sku: 'HP-02', quantity: 1, unitCost: 110 }, clock()).data;
+    expect(suggestItemForTransaction(twins, { title: 'Sony WH-1000XM4 Headphones', customLabel: '' })).toBeNull(); // tied: no guess
   });
 });

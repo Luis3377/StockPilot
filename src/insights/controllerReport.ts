@@ -9,7 +9,7 @@
 import type { AppData, ReportSnapshot, Sale, Settings } from '../domain/types';
 import { computeSale, daysWithoutSale, itemCostValue, totalSales } from '../domain/calc';
 import { formatDate, formatDateTime } from '../domain/dates';
-import { formatMoney, fromCents, toCents } from '../domain/money';
+import { formatMoney, formatPercent, fromCents, toCents } from '../domain/money';
 import { plural } from '../domain/format';
 import { sourcingReport } from './sourcing';
 import { closeChecklist, type Checklist } from './closeChecklist';
@@ -68,7 +68,8 @@ const KIND_PREFIX: Record<ReportLineKind, string> = {
 };
 
 const line = (text: string, kind: ReportLineKind = 'plain', links: ReportLink[] = []): ReportLine => ({ text, kind, links });
-const pct = (n: number | null) => (n === null ? '—' : `${n}%`);
+// Same precision as Sales & Profit (one decimal).
+const pct = (n: number | null) => formatPercent(n);
 const round2 = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100);
 const catKey = (c: string) => c.trim() || 'Uncategorized';
 

@@ -115,6 +115,11 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
   const [aiFilled, setAiFilled] = useState<ReadonlySet<ScanFillableField>>(new Set());
   const createdPhotos = useRef<string[]>([]);
   const saved = useRef(false);
+  // New items: the default low-stock alert applies only to items with more than one unit (a
+  // one-of-a-kind item isn't "low on stock"), unless the user sets the alert themselves.
+  const [thresholdTouched, setThresholdTouched] = useState(false);
+  const qtyNow = Number(form.quantity);
+  const thresholdValue = !item && !thresholdTouched ? (Number.isInteger(qtyNow) && qtyNow > 1 && settings.defaultLowStockThreshold !== null ? String(settings.defaultLowStockThreshold) : '') : form.lowStockThreshold;
   const formRef = useRef(form);
   formRef.current = form;
   // Where it was bought (kept apart from the storage location); items in a lot use the lot's.
@@ -133,6 +138,7 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
       setErrors({});
       setShowMore(Boolean(item));
       setApplyCostToSales(true);
+      setThresholdTouched(false);
       setAiFilled(new Set());
       createdPhotos.current = [];
       saved.current = false;
@@ -214,8 +220,9 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
       return v === null || Number.isNaN(v) ? null : v;
     };
     const wholeOrNull = (key: 'quantity' | 'lowStockThreshold') => {
-      if (form[key].trim() === '') return null;
-      const n = Number(form[key]);
+      const raw = key === 'lowStockThreshold' ? thresholdValue : form[key];
+      if (raw.trim() === '') return null;
+      const n = Number(raw);
       if (!Number.isInteger(n)) fieldErrors[key] = 'Enter a whole number';
       return n;
     };
@@ -318,8 +325,11 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
       key="threshold"
       label="Low-stock alert at"
       hint="Get an alert when quantity drops to this number. Leave blank for no alert."
-      value={form.lowStockThreshold}
-      onChange={(v) => set('lowStockThreshold', v)}
+      value={thresholdValue}
+      onChange={(v) => {
+        setThresholdTouched(true);
+        set('lowStockThreshold', v);
+      }}
       error={errors.lowStockThreshold}
     />
   );

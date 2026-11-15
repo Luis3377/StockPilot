@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { Download, CalendarCheck, CalendarRange, PiggyBank, Landmark, Pencil, Receipt, Search, Trash2, Undo2 } from 'lucide-react';
 import { deleteSale } from '../domain/actions';
 import { computeSale, inventoryTotals, nameKey, platformLabel, projectUnsold, salesByPlatform, salesInRange, totalSales } from '../domain/calc';
-import { formatDate, periodRange, PERIOD_OPTIONS, todayISO, type PeriodKey } from '../domain/dates';
-import { formatPercent } from '../domain/money';
+import { formatDate, periodRange, PERIOD_OPTIONS, todayISO, type DateRange, type PeriodKey } from '../domain/dates';
+import { formatPercent, fromCents, toCents } from '../domain/money';
+import { adjustmentSummary } from '../insights/adjustments';
 import { store, useAppState } from '../data/store';
 import { profitSummaryCsv, salesCsv } from '../csv/exports';
 import { downloadText, fileStamp } from '../lib/download';
@@ -166,6 +167,8 @@ export function SalesPage() {
           </div>
         </section>
 
+        <InventoryLossCard range={range} netProfit={t.netProfit} money={money} />
+
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <MonthlyTrend sales={data.sales} months={12} />
           <ChartCard
@@ -245,12 +248,52 @@ export function SalesPage() {
   );
 }
 
+/** Documented inventory losses next to realized sales profit: shown apart, never as net income. */
+function InventoryLossCard({ range, netProfit, money }: { range: DateRange; netProfit: number; money: (n: number) => string }) {
+  const data = useAppState((s) => s.data);
+  const a = adjustmentSummary(data, range);
+  if (!a.losses.records.length && !a.found.records.length && !a.personal.records.length && !a.returns.records.length) return null;
+  const after = fromCents(toCents(netProfit) + toCents(a.netLoss));
+  const row = (label: string, g: { amount: number; records: unknown[] }, testId: string) =>
+    g.records.length ? (
+      <div className="flex flex-wrap justify-between gap-x-3 py-1" data-testid={testId}>
+        <dt className="text-ink-2">
+          {label} <span className="text-xs text-muted">({plural(g.records.length, 'adjustment')})</span>
+        </dt>
+        <dd className="tabular text-ink">{money(g.amount)}</dd>
+      </div>
+    ) : null;
+  return (
+    <Card className="p-4 sm:p-5" data-testid="inventory-losses">
+      <SectionHeader
+        title={`Inventory losses and adjustments ${range.label}`}
+        description="Quantity changes you documented outside of sales (counts, damage, items found). They change inventory cost, not realized sales profit above, so nothing is counted twice."
+      />
+      <dl className="mt-2 divide-y divide-line text-sm">
+        {row('Lost, damaged or missing', a.losses, 'loss-losses')}
+        {row('Units found', a.found, 'loss-found')}
+        <div className="flex flex-wrap justify-between gap-x-3 py-1 font-medium" data-testid="loss-net">
+          <dt className="text-ink">Net documented inventory loss</dt>
+          <dd className="tabular text-ink">{money(a.netLoss)}</dd>
+        </div>
+        <div className="flex flex-wrap justify-between gap-x-3 py-1" data-testid="loss-after">
+          <dt className="text-ink-2">Realized sales profit after documented inventory losses</dt>
+          <dd className={cn('tabular font-medium', after < 0 ? 'text-bad-text' : 'text-ink')}>{money(after)}</dd>
+        </div>
+        {row('Taken for personal use (not a business loss; shown apart)', a.personal, 'loss-personal')}
+        {row('Returns put back in stock (refunds belong on the sale)', a.returns, 'loss-returns')}
+      </dl>
+      <p className="mt-2 text-xs text-muted">Not net income: rent, insurance and other operating expenses aren’t recorded in StockPilot.</p>
+    </Card>
+  );
+}
+
 function ProjectedCard({ projection, money }: { projection: ReturnType<typeof projectUnsold>; money: (n: number) => string }) {
   const rateText =
     projection.rate.source === 'history'
-      ? `Selling costs estimated at ${formatPercent(projection.rate.percent)} of price — your average across ${plural(projection.rate.basedOnSales, 'recorded sale')}.`
+      ? `Selling costs estimated at ${formatPercent(projection.rate.percent, 2)} of price — your average across ${plural(projection.rate.basedOnSales, 'recorded sale')}. It’s recalculated after every sale, so projected amounts can change by a few cents even when an item’s cost and price don’t.`
       : projection.rate.source === 'setting'
-        ? `Selling costs estimated at ${formatPercent(projection.rate.percent)} (from Settings).`
+        ? `Selling costs estimated at ${formatPercent(projection.rate.percent, 2)} (from Settings).`
         : 'No selling costs assumed yet — record sales with fees, or set an estimate in Settings.';
   return (
     <Card className="border-dashed p-4 sm:p-5" data-testid="projected-card">

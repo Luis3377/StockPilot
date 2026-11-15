@@ -295,7 +295,7 @@ function projection(data: AppData, settings: Settings, s: LotSummary, a: ActualF
 // Comparison rows and attribution
 // ---------------------------------------------------------------------------
 
-export type RowKey = 'acquisition' | 'revenue' | 'expenses' | 'net' | 'profit' | 'roi' | 'sellThrough';
+export type RowKey = 'acquisition' | 'revenue' | 'expenses' | 'net' | 'profit' | 'roi' | 'sellThrough' | 'sellThroughUnits';
 
 export interface PerfRow {
   key: RowKey;
@@ -459,14 +459,20 @@ export function lotPerformance(data: AppData, settings: Settings, lot: Lot, opts
     row('roi', 'ROI (whole lot)', 'pct', 'higher', p?.roiPct ?? null, a.lotRoiPct, proj?.finalRoiPct ?? null, 'Profit ÷ acquisition cost.'),
     row(
       'sellThrough',
-      'Sell-through',
+      a.sellThroughValuePct !== null ? 'Sell-through (share of estimated value sold)' : 'Sell-through (share of units sold)',
       'pct',
       'higher',
       p?.sellThroughPct ?? null,
       a.sellThroughValuePct ?? a.sellThroughUnitsPct,
       proj?.finalSellThroughValuePct ?? null,
-      a.sellThroughValuePct !== null ? 'Share of the lot’s estimated value that sold (your item estimates). Predicted: 100% − the unsold allowance.' : 'Share of units sold (not every item has an estimate, so this is by units). Predicted: 100% − the unsold allowance.',
+      a.sellThroughValuePct !== null
+        ? `Estimated resale value of what sold ÷ the lot’s estimated value (your item estimates)${a.sellThroughUnitsPct !== null ? `, not the share of units: by units it’s ${a.sellThroughUnitsPct}%` : ''}. Predicted: 100% − the unsold allowance.`
+        : 'Units sold ÷ units bought (not every item has an estimate, so this is by units). Predicted: 100% − the unsold allowance.',
     ),
+    // Units are shown too when the main row is by value, so the two are never confused.
+    ...(a.sellThroughValuePct !== null && a.sellThroughUnitsPct !== null
+      ? [row('sellThroughUnits', 'Sell-through by units (units sold ÷ units bought)', 'pct', 'higher', null, a.sellThroughUnitsPct, null, `${a.unitsSold} of ${s.unitsBought} units sold. The plan didn’t predict this by units.`)]
+      : []),
   ];
 
   // What sold, against the plan's prices for it.

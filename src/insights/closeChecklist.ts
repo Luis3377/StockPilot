@@ -6,7 +6,7 @@
 import type { AppData, CloseDecision, CloseStepKey, MonthClose, Settings } from '../domain/types';
 import { computeSale, itemCostValue } from '../domain/calc';
 import { formatDate } from '../domain/dates';
-import { formatMoney, toCents } from '../domain/money';
+import { formatMoney, fromCents, toCents } from '../domain/money';
 import { plural } from '../domain/format';
 import { localDate } from '../domain/ledger';
 import { currentClose, ledgerInfo, monthEnded, monthFigures, monthLabel, monthRecon, type MonthFigures, type MonthRecon } from './monthly';
@@ -139,6 +139,16 @@ export function closeChecklist(data: AppData, settings: Settings, month: string,
   }
 
   // 2. Purchases
+  /** Buying transactions, not inventory entries: a bulk lot of five items is one purchase. */
+  const purchaseCountText = (lines: { key: string; records: { kind: string; href: string; id: string }[] }[], entries: number) => {
+    const of = (k: string) => lines.find((l) => l.key === k)?.records ?? [];
+    const items = of('items').length;
+    const lots = new Set(of('lots').map((r) => (r.href.startsWith('/inventory/lots/') ? r.href : r.id))).size;
+    const restocks = of('restocks').length;
+    const parts = [items ? plural(items, 'item bought individually', 'items bought individually') : '', lots ? plural(lots, 'bulk lot') : '', restocks ? plural(restocks, 'restock') : ''].filter(Boolean);
+    const buys = items + lots + restocks;
+    return `${plural(buys, 'purchase')} (${parts.join(', ')})${entries !== buys ? `, ${entries} inventory entries` : ''}`;
+  };
   {
     const notAvailable = rf.status === 'not_available';
     const lines = rf.lines.filter((l) => l.key === 'items' || l.key === 'lots' || l.key === 'restocks');
@@ -155,7 +165,7 @@ export function closeChecklist(data: AppData, settings: Settings, month: string,
     drafts.push({
       step: 'purchases',
       description: 'Items, bulk lots (with their freight and other buying costs) and restocks bought in the month. Buying stock isn’t an expense: its cost counts when it sells.',
-      facts: [figures.purchases === null ? 'Purchases: not fully known for this month.' : records.length ? `${plural(records.length, 'purchase')} · ${money(figures.purchases)}` : `No purchases were recorded in ${label}.`],
+      facts: [figures.purchases === null ? 'Purchases: not fully known for this month.' : records.length ? `${purchaseCountText(lines, records.length)} · ${money(figures.purchases)}` : `No purchases were recorded in ${label}.`],
       records,
       issues,
       canReview: true,
@@ -225,6 +235,16 @@ export function closeChecklist(data: AppData, settings: Settings, month: string,
     ];
     if (recon.status === 'partial') issues.push({ id: 'payouts:partial', severity: 'info', text: recon.statusText, links: [{ label: 'Payouts', href: '/sales/payouts' }] });
     const performed = recon.status !== 'not_performed';
+    // Not performed while the month has eBay sales: listed with the issues, not just in the status line.
+    const ebaySales = figures.sales.filter((x) => /ebay/i.test(x.platform));
+    if (!performed && ebaySales.length) {
+      issues.push({
+        id: `payouts:not-performed:${ebaySales.length}`,
+        severity: 'attention',
+        text: `Marketplace reconciliation not performed: ${plural(ebaySales.length, 'eBay sale')} (${money(fromCents(ebaySales.reduce((c, x) => c + toCents(computeSale(x).revenue), 0)))}) in ${label} ${ebaySales.length === 1 ? 'hasn’t' : 'haven’t'} been checked against eBay’s payouts. Import eBay’s reports, or mark this step not applicable and say why.`,
+        links: [{ label: 'Payouts', href: '/sales/payouts' }],
+      });
+    }
     drafts.push({
       step: 'payouts',
       description: 'Marketplace payouts are transfers of money, not revenue: compare them with your recorded sales and resolve differences.',
