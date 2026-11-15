@@ -130,13 +130,13 @@ export function sourcingAnswer(q: string, data: AppData, settings: Settings, tod
         intent,
         text:
           tc.matchedPerHour !== null
-            ? `Where you logged time, your realized profit per logged hour ${range.label} is ${money(tc.matchedPerHour)}: ${money(tc.matchedProfit)} ÷ ${tc.matchedHours} h (${tc.matchedSources.map((s) => s.ref.name).join(', ')}). ${money(tc.unmatchedProfit)} of your ${money(t.netProfit)} realized profit has no time logged and isn’t included.`
+            ? `Where you logged time, your realized profit per logged hour ${range.label} is ${money(tc.matchedPerHour)}: ${money(tc.matchedProfit)} ÷ ${tc.matchedHours} h (${tc.matchedSources.map((s) => s.ref.name).join(', ')}). ${tc.unmatchedSales ? `${money(tc.unmatchedProfit)} of your ${money(t.netProfit)} realized profit has no time logged and isn’t included.` : `${tc.unlinkedHours} h of logged time isn’t linked to a source and isn’t included.`}`
             : `Your logged time ${range.label} isn’t linked to any source with sales, so realized profit per hour can’t be worked out from matched records. ${money(t.netProfit)} of realized profit has no time logged against it.`,
         details: [
           `Time-tracking coverage: ${tc.matchedSales} of ${plural(tc.matchedSales + tc.unmatchedSales, 'sale')}${tc.revenueCoveragePct !== null ? ` (${tc.revenueCoveragePct}% of revenue)` : ''} have time logged against their source.`,
           tc.unlinkedHours > 0 ? `${tc.unlinkedHours} h of logged time isn’t linked to a source, so it isn’t in any per-hour figure.` : '',
           ...bySource.slice(0, 3).map((s) => `${s.ref.name}: ${money(s.profitPerHour!)} per hour (${money(s.realizedProfit)} ÷ ${s.hours} h)${s.stillSelling ? ', still selling' : ''}.`),
-          `All realized profit ÷ all logged hours (${money(t.netProfit)} ÷ ${t.hours} h) isn’t shown as an hourly return: ${money(tc.unmatchedProfit)} of that profit has no time behind it.`,
+          `All realized profit ÷ all logged hours (${money(t.netProfit)} ÷ ${t.hours} h) isn’t shown as an hourly return: ${tc.unmatchedSales ? `${money(tc.unmatchedProfit)} of that profit has no time behind it` : 'part of that time isn’t linked to any source'}.`,
           'This is realized profit per hour you logged, not an hourly wage: your time isn’t subtracted from profit, and unsold stock isn’t counted.',
         ].filter(Boolean),
         calculation: matchedSales.length ? profitCalculation(cc, matchedSales, range, 'where time is logged') : undefined,

@@ -356,8 +356,8 @@ function PerHour() {
             )}
             <p className="rounded-lg bg-warn-soft p-2 text-warn-text" data-testid="pph-coverage">
               Time-tracking coverage: {tc.matchedSales} of {plural(tc.matchedSales + tc.unmatchedSales, 'sale')}
-              {tc.revenueCoveragePct !== null ? ` (${tc.revenueCoveragePct}% of revenue)` : ''} have time logged against their source. {money(tc.unmatchedProfit)} of realized profit has no time logged
-              {tc.unlinkedHours > 0 ? `, and ${hoursText(tc.unlinkedHours)} of logged time isn’t linked to a source` : ''}. That’s why there’s no business-wide hourly figure: all profit ÷ all hours ({money(t.netProfit)} ÷ {hoursText(t.hours)}) would not be a reliable hourly return.
+              {tc.revenueCoveragePct !== null ? ` (${tc.revenueCoveragePct}% of revenue)` : ''} have time logged against their source.{' '}
+              {[tc.unmatchedSales ? `${money(tc.unmatchedProfit)} of realized profit has no time logged` : '', tc.unlinkedHours > 0 ? `${hoursText(tc.unlinkedHours)} of logged time isn’t linked to a source` : ''].filter(Boolean).join(', and ')}. That’s why there’s no business-wide hourly figure: all profit ÷ all hours ({money(t.netProfit)} ÷ {hoursText(t.hours)}) would not be a reliable hourly return.
             </p>
           </div>
         ) : (

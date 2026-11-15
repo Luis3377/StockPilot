@@ -225,7 +225,7 @@ test('time, trips and source changes: timer survives reloads, shared time is spl
   await page.getByTestId('sourcing-tabs').getByRole('tab', { name: 'Profit per hour' }).click();
   // 40 h + 45 min + 2 h = 42.75 h logged; Midwest 21.4 h + garage 20.6 h = 42 h linked to sources.
   await expect(page.getByTestId('pph-formula')).toHaveText('Where you logged time (2 sources): $800.00 realized profit ÷ 42 h = $19.05 per logged hour');
-  await expect(page.getByTestId('pph-coverage')).toContainText('and 0.75 h of logged time isn’t linked to a source');
+  await expect(page.getByTestId('pph-coverage')).toContainText('$12.00 of realized profit has no time logged, and 0.75 h of logged time isn’t linked to a source');
   await expect(page.getByTestId('pph-sources')).toContainText('Midwest Liquidation$28.97/h$620.00 ÷ 21.4 h');
   await expect(page.getByTestId('pph-sources')).toContainText('Saturday garage sales$8.74/h$180.00 ÷ 20.6 h');
   await expect(page.getByTestId('pph-summary')).toContainText('0.75 h of general work');
@@ -288,7 +288,8 @@ test('time, trips and source changes: timer survives reloads, shared time is spl
   await nav(page, 'Smart Insights');
   const assistant = page.getByTestId('assistant');
   for (const [q, expected] of [
-    ['What is my profit per hour?', 'Where you logged time, your realized profit per logged hour all time is $19.05: $800.00 ÷ 42 h'],
+    // By now the lamp is assigned to the garage sales, so every sale has time; only 0.75 h of general work isn't linked.
+    ['What is my profit per hour?', 'Where you logged time, your realized profit per logged hour all time is $19.33: $812.00 ÷ 42 h (Midwest Liquidators LLC, Saturday garage sales). 0.75 h of logged time isn’t linked to a source and isn’t included.'],
     ['Where do I make the most money?', 'Midwest Liquidators LLC has made you the most all time: $620.00 realized profit'],
     ['Which sourcing trips were most successful?', 'Your most successful completed trip was Saturday loop'],
   ]) {

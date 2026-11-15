@@ -94,13 +94,17 @@ test('an incorrect payout explains every cent, and decisions are recorded with a
   // Record the missing sale through the normal sale form, pre-filled from eBay's order.
   await addItemForMissingSale(page);
   await payoutLinkAfterNav(page, 'Feb 9, 2026');
-  await findings.nth(0).getByRole('button', { name: 'Record this sale' }).click();
+  // A labelled suggestion (eBay's custom label equals the item's SKU), confirmed by recording the sale.
+  await expect(findings.nth(0).getByTestId('suggested-item')).toContainText('Suggested item (not confirmed): Pokemon card lot, because its SKU matches eBay’s custom label “CC-004”');
+  await findings.nth(0).getByTestId('record-suggested').click();
   const sale = page.getByTestId('sale-form');
   await expect(sale.getByLabel('Order number (optional)')).toHaveValue('11-00004-00004');
   await expect(sale.getByLabel('Sale price')).toHaveValue('49.00');
   await expect(sale.getByLabel('Marketplace fees')).toHaveValue('6.89');
-  const select = sale.getByLabel('Item sold');
-  await select.selectOption((await select.locator('option', { hasText: 'Pokemon card lot' }).first().getAttribute('value'))!);
+  await expect(sale.getByLabel('Item sold').locator('option:checked')).toHaveText(/Pokemon card lot/);
+  // Added today for a February sale: the purchase date is corrected explicitly.
+  await sale.getByTestId('sale-fix-purchase-date').click();
+  await expect(sale.getByTestId('sale-before-purchase')).toBeHidden();
   await sale.getByRole('button', { name: 'Record sale' }).click();
   await expect(sale).toBeHidden();
   await expect(findings).toHaveCount(2);
