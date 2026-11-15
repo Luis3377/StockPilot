@@ -115,6 +115,7 @@ The domain layer is pure TypeScript with no browser dependencies, so the same in
 
 ## Further reading
 
+- [docs/BETA_FIXES_1.md](docs/BETA_FIXES_1.md) — the first manual beta fix round: findings, root causes, what changed, and tests
 - [docs/FINANCIAL_PLANNING.md](docs/FINANCIAL_PLANNING.md) — tax set-aside and financial planning: reserve calculations, scenarios, suggested vs. set aside, obligations and reminders, the assistant, stored data and limitations
 - [docs/YEAR_END.md](docs/YEAR_END.md) — year-end review: the annual reconciliation, year-end counts, monthly coverage, finalizing and locking, the accountant summary and exports, the optional tax-preparer worksheet, and limitations
 - [docs/MONTHLY_CLOSE.md](docs/MONTHLY_CLOSE.md) — monthly close: the checklist, the inventory ledger and roll-forward, closing and reopening, the Controller's Report, the assistant, data integrity, year-end preparation and limitations

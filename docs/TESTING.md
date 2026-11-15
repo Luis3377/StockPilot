@@ -214,3 +214,7 @@ The full map is in [FINANCIAL_PLANNING.md](FINANCIAL_PLANNING.md#tests). In shor
 | Never an expense: sales, ledger and closed months untouched; backup and restore | `src/insights/planning.test.ts` |
 | Assistant answers with verified calculations, no assumed rate | `src/insights/planningAnswers.test.ts`; `e2e/planning.spec.ts` |
 | Phones and accessibility | `e2e/planning.spec.ts` (desktop + iPhone-sized, axe) |
+
+## Manual beta fix round 1 → tests
+
+The full map is in [BETA_FIXES_1.md](BETA_FIXES_1.md#tests). New: `src/insights/provenCases.test.ts` (the calculations manual testing confirmed), `src/insights/adjustments.test.ts`, `src/domain/saleDates.test.ts`, `src/domain/timeLinks.test.ts` and `e2e/betafixes.spec.ts`.

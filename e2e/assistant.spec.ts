@@ -125,7 +125,7 @@ test.describe('standard build (no AI)', () => {
       if (!r.url().startsWith('http://localhost')) requests.push(r.url());
     });
     await smallShop(page);
-    await expect(page.getByTestId('assistant')).toContainText('Answers use fixed rules, not an AI model.');
+    await expect(page.getByTestId('assistant')).toContainText('They use fixed rules, not an AI model.');
     await ask(page, 'How much profit have I made this month?');
     await ask(page, 'Am I doing okay?');
     await expect(page.getByTestId('assistant-answer').last()).toContainText('not an AI model');
