@@ -88,12 +88,14 @@ export function yearAnswer(q: string, data: AppData, settings: Settings, today: 
       const records: SourceRecord[] = sales.map((s) => ({ kind: 'sale', id: s.id, label: `${s.itemName}${s.quantity > 1 ? ` × ${s.quantity}` : ''}`, detail: `${formatDate(s.saleDate)} · ${s.quantity} × ${money(s.unitCost)}`, date: s.saleDate, links: [{ label: s.itemName, href: data.items.some((i) => i.id === s.itemId) ? `/inventory/${s.itemId}` : '/sales' }], parts: { cogs: computeSale(s).costOfGoods } }));
       const ws = /^\d{4}$/.test(period.key) ? taxWorksheet(yearFigures(data, settings, period.key, today, info), settings) : null;
       const l42 = ws?.lines.find((l) => l.line === '42')?.amount ?? null;
+      const coverage = ws && !ws.cogs.complete ? ws.cogs.text : '';
       return {
         intent,
         text: `Cost of goods sold in ${L}${toDate} was ${money(cogs)}: what the ${plural(sales.reduce((n, s) => n + s.quantity, 0), 'unit')} you sold had cost you, from ${plural(sales.length, 'recorded sale')}.`,
         details: [
           'Each sale keeps the cost of the units it sold (for bulk-lot items, their exact share of the lot).',
-          l42 !== null ? `The year-end worksheet’s “beginning + purchases − ending” comes to ${money(l42)}, because it also includes write-offs, deletions, returns and cost corrections. See Year-End Review.` : '',
+          coverage,
+          l42 !== null ? `The year-end worksheet’s “beginning + purchases − ending” comes to ${money(l42)}, because it also includes write-offs, deletions, returns and cost corrections. See Year-End Review.` : ws ? 'The year-end worksheet’s line 42 isn’t available for this year, because the inventory records don’t cover all of it. See Year-End Review.' : '',
         ].filter(Boolean),
         calculation: { metric: 'cost_of_goods_sold', title: `Cost of goods sold: ${L}`, value: cogs, period: { start: period.start, end: period.end, label: L }, asOf: today, formula: 'Cost of goods sold = Σ cost per unit × quantity, as recorded on each sale dated in the period.', lines: [{ key: 'cogs', label: 'Cost of goods sold', amount: cogs, op: '+', fromRecords: true }, { key: 'total', label: 'Total', amount: cogs, op: '=', fromRecords: false }], records, warnings: [], basis: 'recorded' },
         followUps: ['What inventory did I write off?', 'Why doesn’t my inventory reconcile?'],

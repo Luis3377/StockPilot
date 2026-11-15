@@ -5,6 +5,7 @@ import {
   calculateBid,
   createBidPlan,
   defaultAssumptions,
+  canDeleteBidPlan,
   deleteBidPlan,
   duplicateBidPlan,
   linkBidToLot,
@@ -407,6 +408,15 @@ describe('buying the lot', () => {
     expect(() => updateBidPlan(once, p.id, plan(base()), clock())).toThrow(/original estimate is kept/);
     expect(() => setBidPlanStatus(once, p.id, 'draft', '', clock())).toThrow(DomainError);
     expect(() => linkBidToLot(once, p.id, once.lots[0].id, clock())).toThrow(/already recorded as purchased/);
+    // Manual beta finding: Delete was still offered and removed the frozen forecast. Now refused
+    // while the lot exists (the plan is its Predicted vs. Actual baseline); nothing is changed.
+    expect(canDeleteBidPlan(once, once.bidPlans[0])).toBe(false);
+    expect(() => deleteBidPlan(once, p.id)).toThrow('This plan is recorded as purchased: it holds the original estimate that lot “Storage unit #14” is compared with, so it can’t be deleted. To try other numbers, duplicate it. To correct the purchase itself (price, date, items), edit the lot.');
+    expect(bidPlanForLot(once, once.lots[0].id)?.id).toBe(p.id);
+    // If the lot itself is gone, the plan no longer anchors anything and may be removed.
+    const lotGone = { ...once, lots: [] };
+    expect(canDeleteBidPlan(lotGone, lotGone.bidPlans[0])).toBe(true);
+    expect(deleteBidPlan(lotGone, p.id).bidPlans).toHaveLength(0);
     // A copy can test other assumptions; the original stays.
     const copy = duplicateBidPlan(once, p.id, clock());
     expect(copy.plan.status).toBe('draft');

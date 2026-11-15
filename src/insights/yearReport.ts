@@ -43,14 +43,24 @@ export function yearReport(data: AppData, settings: Settings, key: string, today
 
   // 1. Summary in plain words
   const summary: ReportLine[] = [];
+  const partial = y.partialYear;
+  const since = partial ? formatDate(y.info.startDate) : '';
+  const cogs = ws.cogs;
   summary.push(
-    avail && rf.beginning !== null
-      ? line(`On ${formatDate(y.period.start)} your inventory cost ${money(rf.beginning)} (what you paid for the goods on hand).${y.beginning.status === 'verified' ? '' : ' This can’t be fully verified; see Record completeness.'}`, y.beginning.status === 'verified' ? 'verified' : 'limitation')
-      : line(`Inventory on ${formatDate(y.period.start)} can’t be determined: ${y.beginning.text}`, 'limitation'),
+    partial && rf.beginning !== null
+      ? line(`StockPilot’s dated inventory records begin ${since}, during ${L}, so inventory on ${formatDate(y.period.start)} isn’t recorded. When the records began, the goods on hand had cost ${money(rf.beginning)}. The figures below for inventory movements cover only ${since} to ${formatDate(y.period.end)}.`, 'limitation')
+      : avail && rf.beginning !== null
+        ? line(`On ${formatDate(y.period.start)} your inventory cost ${money(rf.beginning)} (what you paid for the goods on hand).${y.beginning.status === 'verified' ? '' : ' This can’t be fully verified; see Record completeness.'}`, y.beginning.status === 'verified' ? 'verified' : 'limitation')
+        : line(`Inventory on ${formatDate(y.period.start)} can’t be determined: ${y.beginning.text}`, 'limitation'),
   );
   if (avail) {
-    summary.push(line(`During ${L} you bought ${money(y.purchases!)} of inventory${y.capitalizedCosts ? `, including ${money(y.capitalizedCosts)} of freight, buyer’s premiums and other buying costs added to bulk lots` : ''}.`, 'verified'));
-    summary.push(line(`The goods you sold had cost you ${pos(y.line('cogs'))} (cost of goods sold, from ${plural(y.totals.salesCount, 'recorded sale')} bringing in ${money(y.totals.revenue)}).`, 'verified'));
+    summary.push(
+      partial
+        ? line(`From ${since} you bought ${money(y.purchases!)} of inventory${y.capitalizedCosts ? `, including ${money(y.capitalizedCosts)} of freight, buyer’s premiums and other buying costs added to bulk lots` : ''}. Purchases before then weren’t recorded with dates.`, 'limitation')
+        : line(`During ${L} you bought ${money(y.purchases!)} of inventory${y.capitalizedCosts ? `, including ${money(y.capitalizedCosts)} of freight, buyer’s premiums and other buying costs added to bulk lots` : ''}.`, 'verified'),
+    );
+    summary.push(line(`The goods you sold in ${L} had cost you ${money(y.totals.costOfGoods)} (cost of goods sold, from ${plural(y.totals.salesCount, 'recorded sale')} bringing in ${money(y.totals.revenue)}).`, 'verified'));
+    if (!cogs.complete) summary.push(line(cogs.text, 'limitation'));
     const parts = [
       y.line('decreases') ? `${pos(y.line('decreases'))} was written off as damaged, lost or otherwise removed` : '',
       y.line('withdrawals') ? `${pos(y.line('withdrawals'))} was taken for personal use` : '',
@@ -59,22 +69,34 @@ export function yearReport(data: AppData, settings: Settings, key: string, today
       y.line('corrections') ? `cost corrections changed inventory by ${money(y.line('corrections'))}` : '',
     ].filter(Boolean);
     if (parts.length) summary.push(line(`${parts.join('; ')}.`.replace(/^./, (c) => c.toUpperCase()), 'verified'));
-    summary.push(line(`That leaves ${money(rf.expectedEnding!)} of inventory expected at ${formatDate(y.period.end)}. ${y.count ? 'The year-end count' : 'The item records'} show ${money(y.independentEnding!)}: ${y.difference === 0 ? 'they agree to the cent' : `an unexplained difference of ${money(y.difference!)}`}.`, y.difference === 0 ? 'verified' : 'attention'));
+    summary.push(
+      line(
+        `That leaves ${money(rf.expectedEnding!)} of inventory expected at ${formatDate(y.period.end)}. ${y.count ? 'The year-end count' : 'The item records'} show ${money(y.independentEnding!)}: ${y.difference === 0 ? (partial ? `they agree to the cent for what was recorded from ${since}; the months before aren’t covered` : 'they agree to the cent') : `an unexplained difference of ${money(y.difference!)}`}.`,
+        y.difference !== 0 ? 'attention' : partial ? 'limitation' : 'verified',
+      ),
+    );
   } else {
     summary.push(line(`Sales in ${L}: ${money(y.totals.revenue)} from ${plural(y.totals.salesCount, 'sale')}, with ${money(y.totals.costOfGoods)} cost of goods sold (from your sale records).`, 'verified'));
   }
-  const sufficient = avail && y.beginning.status === 'verified' && y.difference === 0;
-  summary.push(line(sufficient ? `The records support these balances: beginning inventory is documented, every movement is dated and linked to a record, and the ending balance agrees.` : `The records don’t fully support these balances yet: ${[y.beginning.status !== 'verified' ? 'beginning inventory isn’t documented' : '', y.difference ? 'there is an unexplained difference' : '', !avail ? 'there are no dated inventory records for the year' : ''].filter(Boolean).join('; ')}.`, sufficient ? 'verified' : 'limitation'));
+  const sufficient = avail && !partial && y.beginning.status === 'verified' && y.difference === 0 && cogs.complete;
+  summary.push(
+    line(
+      sufficient
+        ? `The records support these balances: beginning inventory is documented, every movement is dated and linked to a record, and the ending balance agrees.`
+        : `The records don’t fully support these balances yet: ${[partial ? `the dated inventory records cover only part of ${L} (from ${since})` : '', y.beginning.status !== 'verified' ? 'beginning inventory isn’t documented' : '', y.difference ? 'there is an unexplained difference' : '', !avail ? 'there are no dated inventory records for the year' : '', avail && !cogs.complete ? 'not all of the year’s cost of goods sold is in the inventory records' : ''].filter(Boolean).join('; ')}.`,
+      sufficient ? 'verified' : 'limitation',
+    ),
+  );
   sections.push({ key: 'summary', title: 'Summary', lines: summary });
 
   // 2. Inventory movement (a table)
   if (avail) {
     sections.push({
       key: 'movement',
-      title: 'Inventory movement for the year',
-      lines: [line(`Beginning inventory: ${rf.beginningBasis}.`)],
+      title: partial ? `Inventory movement recorded from ${since}` : 'Inventory movement for the year',
+      lines: [line(`Beginning inventory: ${rf.beginningBasis}.`), ...(partial ? [line(`This table covers ${since} to ${formatDate(y.period.end)} only, not the whole of ${L}.`, 'limitation')] : [])],
       rows: [
-        { label: `Inventory at ${formatDate(y.period.start)}`, current: money(rf.beginning!), previous: '', change: '' },
+        { label: partial ? `Inventory when the records began (${since})` : `Inventory at ${formatDate(y.period.start)}`, current: money(rf.beginning!), previous: '', change: '' },
         ...MOVEMENT_ORDER.filter((k) => y.line(k) !== 0).map((k) => ({ label: MOVEMENT_LABELS[k], current: `${y.line(k) > 0 ? '+' : '−'}${pos(y.line(k))}`, previous: '', change: '' })),
         { label: `Expected inventory at ${formatDate(y.period.end)}`, current: money(rf.expectedEnding!), previous: '', change: '' },
         { label: 'Item records at year-end', current: money(rf.recordsEnding!), previous: '', change: '' },
@@ -130,7 +152,8 @@ export function yearReport(data: AppData, settings: Settings, key: string, today
     lines: [
       line(ws.disclaimer, 'limitation'),
       ...ws.lines.map((w) => line(`Line ${w.line} — ${w.label}: ${w.amount === null ? '—' : money(w.amount)} [${w.status === 'recorded' ? 'recorded figure' : w.status === 'not_tracked' ? 'not tracked' : 'needs review'}]. ${w.note}`, w.status === 'recorded' ? 'verified' : 'limitation')),
-      ...(ws.bridge.length ? [line(`Line 42 compared with your records: ${ws.bridge.map((b) => `${b.label.toLowerCase()} ${money(b.amount)}`).join(' + ')} = ${money(fromCents(ws.bridge.reduce((c, b) => c + toCents(b.amount), 0)))}.`, 'verified')] : []),
+      line(`Cost of goods sold coverage: ${cogs.lines.map((c) => `${c.label} ${money(c.amount)}`).join('; ')}. ${cogs.text}`, cogs.complete ? 'verified' : 'limitation'),
+      ...(ws.bridge.length ? [line(`Line 42 compared with the inventory records: ${ws.bridge.map((b) => `${b.label.toLowerCase()} ${money(b.amount)}`).join(' + ')} = ${money(fromCents(ws.bridge.reduce((c, b) => c + toCents(b.amount), 0)))}.`, cogs.complete ? 'verified' : 'limitation')] : []),
     ],
   });
 
@@ -163,11 +186,13 @@ export function movementsCsv(y: YearFigures): string {
 /** The year's sales with their cost of goods sold. */
 export function yearSalesCsv(data: AppData, y: YearFigures): string {
   const sales = data.sales.filter((s) => s.saleDate >= y.period.start && s.saleDate <= y.period.end).sort((a, b) => a.saleDate.localeCompare(b.saleDate));
+  const pre = new Set(y.info.preLedgerSales.map((s) => s.id));
+  const available = y.rf.status !== 'not_available';
   return toCsv(
-    ['sale_date', 'item', 'sku', 'category', 'quantity', 'revenue', 'cost_of_goods_sold', 'fees', 'shipping', 'other_expenses', 'realized_profit', 'platform', 'order_number'],
+    ['sale_date', 'item', 'sku', 'category', 'quantity', 'revenue', 'cost_of_goods_sold', 'fees', 'shipping', 'other_expenses', 'realized_profit', 'platform', 'order_number', 'in_inventory_records'],
     sales.map((s) => {
       const f = computeSale(s);
-      return [s.saleDate, s.itemName, s.itemSku, s.itemCategory, s.quantity, f.revenue, f.costOfGoods, f.fees, f.shipping, f.otherExpenses, f.netProfit, s.platform, s.orderNumber];
+      return [s.saleDate, s.itemName, s.itemSku, s.itemCategory, s.quantity, f.revenue, f.costOfGoods, f.fees, f.shipping, f.otherExpenses, f.netProfit, s.platform, s.orderNumber, available && !pre.has(s.id) ? 'yes' : 'no (recorded before the inventory records began)'];
     }),
   );
 }

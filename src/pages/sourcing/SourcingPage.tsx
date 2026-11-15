@@ -134,7 +134,16 @@ function Overview() {
         <StatTile label="Realized profit" value={money(t.netProfit)} tone={t.netProfit < 0 ? 'bad' : 'default'} sub={`From sales ${rangeLabel === 'all time' ? 'of all time' : rangeLabel}`} testId="sourcing-profit" />
         <StatTile label="Sales revenue" value={money(t.revenue)} sub={`${plural(t.unitsSold, 'unit')} sold`} />
         <StatTile label="Cash tied up in unsold stock" value={money(t.inventoryCost)} sub="Inventory cost today" testId="sourcing-tied" />
-        <StatTile label="Realized profit per logged hour" value={t.profitPerHour === null ? 'Not enough time data' : money(t.profitPerHour)} sub={report.hasTime ? `${hoursText(t.hours)} logged` : 'Log time to see this'} testId="sourcing-pph" />
+        {report.timeCoverage.complete || !report.hasTime ? (
+          <StatTile label="Realized profit per logged hour" value={t.profitPerHour === null ? 'Not enough time data' : money(t.profitPerHour)} sub={report.hasTime ? `${hoursText(t.hours)} logged` : 'Log time to see this'} testId="sourcing-pph" />
+        ) : (
+          <StatTile
+            label="Profit per hour, where time is logged"
+            value={report.timeCoverage.matchedPerHour === null ? 'Not enough time data' : money(report.timeCoverage.matchedPerHour)}
+            sub={`${money(report.timeCoverage.matchedProfit)} ÷ ${hoursText(report.timeCoverage.matchedHours)}; ${money(report.timeCoverage.unmatchedProfit)} of profit has no time logged`}
+            testId="sourcing-pph"
+          />
+        )}
       </div>
       <Notes report={report} />
 
@@ -320,6 +329,7 @@ function PerHour() {
   const settings = useAppState((s) => s.settings);
   void settings;
   const t = report.totals;
+  const tc = report.timeCoverage;
   const range = periodRange(f.period);
   const minutesBy = ACTIVITIES.map((a) => [a, data.sourcing.timeEntries.filter((e) => e.activity === a && inRange(e.date, range)).reduce((c, e) => c + e.minutes, 0)] as const);
   const withTime = report.sources.filter((s) => s.hours > 0);
@@ -329,11 +339,27 @@ function PerHour() {
       <Filters f={f} categories={categories} withType={false} />
       <Card className="p-4 sm:p-5" data-testid="pph-summary">
         <SectionHeader title="Realized profit per logged hour" description="Realized profit ÷ hours you logged. Not an hourly wage: your time isn’t subtracted from profit, and unsold stock isn’t counted." />
-        {report.hasTime ? (
+        {report.hasTime && tc.complete ? (
           <p className="mt-3 text-sm text-ink" data-testid="pph-formula">
             {money(t.netProfit)} realized profit ÷ {hoursText(t.hours)} logged ({rangeLabel}) ={' '}
             <span className={cn('text-lg font-semibold', (t.profitPerHour ?? 0) < 0 && 'text-bad-text')}>{money(t.profitPerHour!)} per logged hour</span>
           </p>
+        ) : report.hasTime ? (
+          <div className="mt-3 space-y-2 text-sm" data-testid="pph-partial">
+            {tc.matchedPerHour !== null ? (
+              <p className="text-ink" data-testid="pph-formula">
+                Where you logged time ({plural(tc.matchedSources.length, 'source')}): {money(tc.matchedProfit)} realized profit ÷ {hoursText(tc.matchedHours)} ={' '}
+                <span className={cn('text-lg font-semibold', tc.matchedPerHour < 0 && 'text-bad-text')}>{money(tc.matchedPerHour)} per logged hour</span>
+              </p>
+            ) : (
+              <p className="text-ink-2">None of the logged time is linked to a source that had sales {rangeLabel}, so there’s nothing to divide.</p>
+            )}
+            <p className="rounded-lg bg-warn-soft p-2 text-warn-text" data-testid="pph-coverage">
+              Time-tracking coverage: {tc.matchedSales} of {plural(tc.matchedSales + tc.unmatchedSales, 'sale')}
+              {tc.revenueCoveragePct !== null ? ` (${tc.revenueCoveragePct}% of revenue)` : ''} have time logged against their source. {money(tc.unmatchedProfit)} of realized profit has no time logged
+              {tc.unlinkedHours > 0 ? `, and ${hoursText(tc.unlinkedHours)} of logged time isn’t linked to a source` : ''}. That’s why there’s no business-wide hourly figure: all profit ÷ all hours ({money(t.netProfit)} ÷ {hoursText(t.hours)}) would not be a reliable hourly return.
+            </p>
+          </div>
         ) : (
           <p className="mt-3 text-sm text-ink-2" data-testid="pph-none">
             Not enough time data. Log time on the Time log tab (manually or with the timer) to see this.

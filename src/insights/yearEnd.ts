@@ -10,7 +10,7 @@
 // service businesses aren't modeled.
 
 import type { AppData, CountLine, CountRecord, MonthClose, Settings, YearReview } from '../domain/types';
-import { itemCostValue, totalSales, type SalesTotals } from '../domain/calc';
+import { computeSale, itemCostValue, totalSales, type SalesTotals } from '../domain/calc';
 import { addDays, formatDate } from '../domain/dates';
 import { formatMoney, fromCents, toCents } from '../domain/money';
 import { plural } from '../domain/format';
@@ -72,6 +72,11 @@ export interface BeginningEvidence {
   missing: string[];
 }
 
+/** The inventory records began during the period (so they don't cover its start). Not hidden by an unexplained difference. */
+export function ledgerBeganDuring(info: LedgerInfo, period: Period): boolean {
+  return !info.complete && !!info.startDate && period.start <= info.startDate && info.startDate <= period.end;
+}
+
 function beginningEvidence(rf: RollForward, info: LedgerInfo, period: Period, opening: OpeningOverride | null): BeginningEvidence {
   if (rf.status === 'not_available') {
     return {
@@ -80,7 +85,7 @@ function beginningEvidence(rf: RollForward, info: LedgerInfo, period: Period, op
       missing: [`Inventory cost on ${formatDate(period.start)} (no dated records exist before ${formatDate(info.startDate)})`, `Purchases, write-offs and cost changes during ${period.label}`],
     };
   }
-  if (rf.status === 'partial') {
+  if (ledgerBeganDuring(info, period)) {
     return {
       status: 'partial',
       text: `Cannot fully verify: dated inventory records begin ${formatDate(info.startDate)}, during ${period.label}. The beginning figure is the inventory on hand then, not on ${formatDate(period.start)}.`,
@@ -313,6 +318,51 @@ export interface YearFigures {
   coverage: Coverage;
   tripBuyingCosts: number;
   ended: boolean;
+  /** The inventory records began during the year, so they cover only part of it (from `coveredFrom`). */
+  partialYear: boolean;
+  coveredFrom: string | null;
+  cogsCoverage: CogsCoverage;
+}
+
+/**
+ * Cost of goods sold of all the year's sales (the Sales & Profit figure) against the part that is
+ * in the inventory records' roll-forward. Sales recorded before the records began are in Sales &
+ * Profit but can't be traced through inventory.
+ */
+export interface CogsCoverage {
+  /** Every sale dated in the period. */
+  sales: number;
+  salesCount: number;
+  /** In the inventory roll-forward for the period. */
+  ledger: number;
+  /** Sales dated in the period but recorded before the inventory records began. */
+  preLedger: number;
+  preLedgerCount: number;
+  /** sales − ledger − preLedger: sale edits or cancellations not yet matched (0 when fully explained). */
+  other: number;
+  /** All of the period's sales cost of goods sold is in the inventory records. */
+  complete: boolean;
+}
+
+export function cogsCoverage(data: AppData, info: LedgerInfo, period: Period, ledgerCogs: number | null): CogsCoverage {
+  const sales = data.sales.filter((s) => s.saleDate >= period.start && s.saleDate <= period.end);
+  const pre = new Set(info.preLedgerSales.map((s) => s.id));
+  const cents = (list: typeof sales) => list.reduce((c, s) => c + toCents(computeSale(s).costOfGoods), 0);
+  const total = cents(sales);
+  const preList = sales.filter((s) => pre.has(s.id));
+  const preCents = cents(preList);
+  // Before the inventory records began, nothing is in them; without any records at all, likewise.
+  const ledgerCents = ledgerCogs === null ? 0 : toCents(ledgerCogs);
+  const otherCents = ledgerCogs === null ? 0 : total - ledgerCents - preCents;
+  return {
+    sales: fromCents(total),
+    salesCount: sales.length,
+    ledger: fromCents(ledgerCents),
+    preLedger: ledgerCogs === null ? fromCents(total) : fromCents(preCents),
+    preLedgerCount: ledgerCogs === null ? sales.length : preList.length,
+    other: fromCents(otherCents),
+    complete: ledgerCogs !== null && preCents === 0 && otherCents === 0,
+  };
 }
 
 export function yearFigures(data: AppData, settings: Pick<Settings, 'currency'>, key: string, today: string, info: LedgerInfo = ledgerInfo(data)): YearFigures {
@@ -352,6 +402,9 @@ export function yearFigures(data: AppData, settings: Pick<Settings, 'currency'>,
     coverage: yearCoverage(data, settings, period, today, info, rf, totals, purchases),
     tripBuyingCosts,
     ended: periodEnded(period, today),
+    partialYear: ledgerBeganDuring(info, period),
+    coveredFrom: !available ? null : ledgerBeganDuring(info, period) ? info.startDate : period.start,
+    cogsCoverage: cogsCoverage(data, info, period, available ? -line('cogs') : null),
   };
 }
 
@@ -369,9 +422,37 @@ export interface WorksheetLine {
 
 export interface Worksheet {
   lines: WorksheetLine[];
-  /** How line 42 relates to cost of goods sold from recorded sales (parts add up exactly). */
+  /** How line 42 relates to the inventory records' cost of goods sold (parts add up exactly). Empty when line 42 isn't available. */
   bridge: { label: string; amount: number }[];
+  /** Cost of goods sold of all the year's sales vs the part in the inventory records. */
+  cogs: { lines: { label: string; amount: number }[]; text: string; complete: boolean };
   disclaimer: string;
+}
+
+/** Explains how much of the year's cost of goods sold the inventory records cover (and why not all of it). */
+export function cogsCoverageText(y: YearFigures, money: (n: number) => string): Worksheet['cogs'] {
+  const c = y.cogsCoverage;
+  const L = y.period.label;
+  const from = y.coveredFrom && y.coveredFrom !== y.period.start ? ` (sales recorded from ${formatDate(y.coveredFrom)})` : '';
+  const lines = [
+    { label: `Cost of goods sold, all ${plural(c.salesCount, 'sale')} dated in ${L} (Sales & Profit)`, amount: c.sales },
+    { label: `In StockPilot’s inventory records${from}`, amount: c.ledger },
+    ...(c.preLedger ? [{ label: `Recorded before the inventory records began (${plural(c.preLedgerCount, 'sale')})`, amount: c.preLedger }] : []),
+    ...(c.other ? [{ label: 'Other difference (sale edits or cancellations not yet reflected)', amount: c.other }] : []),
+  ];
+  if (y.rf.status === 'not_available') {
+    return { lines, complete: false, text: `None of ${L}’s cost of goods sold (${money(c.sales)}) can be traced through StockPilot’s inventory records: they begin ${formatDate(y.info.startDate)}, after the year. It still comes from your sale records.` };
+  }
+  if (c.complete) return { lines, complete: true, text: `All of ${L}’s cost of goods sold from sales (${money(c.sales)}) is in the inventory records.` };
+  const parts = [
+    c.preLedger ? `${money(c.preLedger)} is from ${plural(c.preLedgerCount, 'sale')} recorded before StockPilot’s dated inventory records began${y.info.startDate ? ` on ${formatDate(y.info.startDate)}` : ''}: ${c.preLedgerCount === 1 ? 'it is' : 'they are'} in Sales & Profit but can’t be traced through inventory` : '',
+    c.other ? `${money(c.other)} isn’t matched to the inventory records (for example a sale edited or cancelled after it was recorded)` : '',
+  ].filter(Boolean);
+  return {
+    lines,
+    complete: false,
+    text: `Only ${money(c.ledger)} of ${L}’s ${money(c.sales)} cost of goods sold is in the inventory records. Of the ${money(fromCents(toCents(c.sales) - toCents(c.ledger)))} difference, ${parts.join('; and ')}. Figures from the inventory records therefore cover only part of the year and can’t be reconciled with full-year cost of goods sold.`,
+  };
 }
 
 export const WORKSHEET_DISCLAIMER =
@@ -385,13 +466,23 @@ export function taxWorksheet(y: YearFigures, settings: Pick<Settings, 'currency'
   const begin = available ? y.rf.beginning : null;
   const purchasesNet = y.purchases === null ? null : fromCents(toCents(y.purchases) - toCents(withdrawals));
   const ending = y.independentEnding;
-  const sum = begin !== null && purchasesNet !== null ? fromCents(toCents(begin) + toCents(purchasesNet)) : null;
+  // When the inventory records began during the year, they don't hold the year's beginning
+  // inventory or its earlier purchases: lines 35, 36, 40 and 42 aren't available (never filled
+  // with the opening balance, or with cost of goods sold from sales instead).
+  const partial = y.partialYear;
+  const since = partial ? formatDate(y.info.startDate) : '';
+  const sum = !partial && begin !== null && purchasesNet !== null ? fromCents(toCents(begin) + toCents(purchasesNet)) : null;
   const l42 = sum !== null && ending !== null ? fromCents(toCents(sum) - toCents(ending)) : null;
+  const cogs = cogsCoverageText(y, money);
   const lines: WorksheetLine[] = [
     { line: '33', label: 'Method used to value closing inventory', amount: null, status: 'needs_review', note: 'StockPilot records each item at its own cost (bulk lots split by the method you chose; restocks average an item’s cost). Whether that is “cost”, “lower of cost or market” or another method for your return is for your accountant to decide.' },
     { line: '34', label: 'Change in determining quantities, costs or valuations', amount: null, status: 'needs_review', note: 'StockPilot can’t know how earlier years were valued. Needs review.' },
-    { line: '35', label: 'Inventory at beginning of year', amount: begin, status: verifiedBeginning && begin !== null ? 'recorded' : 'needs_review', note: verifiedBeginning ? y.beginning.text : `${y.beginning.text} Needs review.` },
-    {
+    partial
+      ? { line: '35', label: 'Inventory at beginning of year', amount: null, status: 'needs_review', note: `Not available: StockPilot’s dated inventory records begin ${since}, so inventory on ${formatDate(y.period.start)} isn’t recorded. The ${money(begin ?? 0)} on hand when the records began is not the beginning-of-year figure. Needs your accountant.` }
+      : { line: '35', label: 'Inventory at beginning of year', amount: begin, status: verifiedBeginning && begin !== null ? 'recorded' : 'needs_review', note: verifiedBeginning ? y.beginning.text : `${y.beginning.text} Needs review.` },
+    partial
+      ? { line: '36', label: 'Purchases, less cost of items withdrawn for personal use', amount: null, status: 'needs_review', note: `Not available for the whole year: purchases before ${since} weren’t recorded with dates. Recorded from ${since}: ${money(purchasesNet ?? 0)} (purchases ${money(y.purchases ?? 0)} less ${money(withdrawals)} used personally). Needs your accountant.` }
+      : {
       line: '36',
       label: 'Purchases, less cost of items withdrawn for personal use',
       amount: purchasesNet,
@@ -401,15 +492,26 @@ export function taxWorksheet(y: YearFigures, settings: Pick<Settings, 'currency'
     { line: '37', label: 'Cost of labor', amount: null, status: 'not_tracked', note: 'Not tracked by StockPilot. Enter only if it applies to your business; it isn’t assumed.' },
     { line: '38', label: 'Materials and supplies', amount: null, status: 'not_tracked', note: 'Not tracked by StockPilot. Enter only if it applies; it isn’t assumed.' },
     { line: '39', label: 'Other costs', amount: null, status: 'needs_review', note: y.tripBuyingCosts ? `${money(y.tripBuyingCosts)} of sourcing-trip buying costs (entry fees and similar) is recorded separately and isn’t in inventory. Whether it belongs here is for your accountant.` : 'Nothing is assumed. Needs review.' },
-    { line: '40', label: 'Add lines 35 through 39', amount: sum, status: 'needs_review', note: 'Recorded lines 35 and 36 only; lines 37–39 need review.' },
+    { line: '40', label: 'Add lines 35 through 39', amount: sum, status: 'needs_review', note: partial ? 'Not available: lines 35 and 36 aren’t supported for the whole year.' : 'Recorded lines 35 and 36 only; lines 37–39 need review.' },
     { line: '41', label: 'Inventory at end of year', amount: ending, status: ending !== null && y.difference === 0 && verifiedBeginning ? 'recorded' : 'needs_review', note: `${y.independentBasis}.${y.difference ? ` Unexplained difference ${money(y.difference)}: needs review.` : ''}` },
-    { line: '42', label: 'Line 40 less line 41', amount: l42, status: 'needs_review', note: 'Arithmetic on the lines above; see how it compares with cost of goods sold from your recorded sales.' },
+    {
+      line: '42',
+      label: 'Line 40 less line 41',
+      amount: l42,
+      status: 'needs_review',
+      note:
+        l42 === null
+          ? `Not available: ${partial ? `the inventory records cover ${L(y)} only from ${since}` : 'the lines above aren’t available'}. Cost of goods sold from your sales (${money(y.cogsCoverage.sales)}) isn’t a substitute: line 42 depends on beginning inventory, the full year’s purchases and the inventory method you use. Needs your accountant.`
+          : cogs.complete
+            ? 'Arithmetic on the lines above; below, how it relates to cost of goods sold from your sales.'
+            : `Arithmetic on the lines above. ${cogs.text}`,
+    },
   ];
   // Line 42 = cost of goods sold + write-offs + deletions … (the roll-forward identity), exactly.
   const bridge: { label: string; amount: number }[] = [];
   if (l42 !== null) {
     const part = (label: string, cents: number) => cents !== 0 && bridge.push({ label, amount: fromCents(cents) });
-    part('Cost of goods sold from recorded sales', -toCents(y.line('cogs')));
+    part('Cost of goods sold in the inventory records', -toCents(y.line('cogs')));
     part('Write-offs and other documented decreases', -toCents(y.line('decreases')));
     part('Items deleted with stock', -toCents(y.line('removed')));
     part('Units found and returns added back', -(toCents(y.line('increases')) + toCents(y.line('returns'))));
@@ -417,6 +519,8 @@ export function taxWorksheet(y: YearFigures, settings: Pick<Settings, 'currency'
     part('Sale edits and cancellations', -toCents(y.line('sale_corrections')));
     part('Unexplained difference (and count differences)', -toCents(y.difference ?? 0));
   }
-  return { lines, bridge, disclaimer: WORKSHEET_DISCLAIMER };
+  return { lines, bridge, cogs, disclaimer: WORKSHEET_DISCLAIMER };
 }
+
+const L = (y: YearFigures) => y.period.label;
 

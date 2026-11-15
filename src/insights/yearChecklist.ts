@@ -9,7 +9,7 @@ import { formatMoney, toCents } from '../domain/money';
 import { plural } from '../domain/format';
 import { hash, type CloseIssue, type StepRecord, type StepState } from './closeChecklist';
 import { MOVEMENT_LABELS, type MovementKey } from './monthly';
-import { COVERAGE_LABELS, currentReview, periodMonths, yearEndCountCandidates, yearFigures, type YearFigures } from './yearEnd';
+import { COVERAGE_LABELS, currentReview, periodMonths, taxWorksheet, yearEndCountCandidates, yearFigures, type YearFigures } from './yearEnd';
 
 export const YEAR_STEP_TITLES: Record<YearStepKey, string> = {
   months: 'Check the monthly closes',
@@ -152,7 +152,8 @@ export function yearChecklist(data: AppData, settings: Settings, key: string, to
   {
     const issues: CloseIssue[] = [];
     if (y.difference !== null && y.difference !== 0) issues.push({ id: `difference:${y.difference}`, severity: 'attention', text: `Unexplained difference of ${signed(y.difference)}: ${y.bookDifference ? `${signed(y.bookDifference)} between the item records and the dated movements` : ''}${y.bookDifference && y.countDifference ? ', and ' : ''}${y.countDifference ? `${signed(y.countDifference)} between the year-end count and the item records` : ''}.`, links: [] });
-    if (rf.status === 'not_available' || rf.status === 'partial') issues.push({ id: `reconcile:${rf.status}`, severity: 'attention', text: `Cannot fully verify: ${rf.statusText}.`, links: [] });
+    if (rf.status === 'not_available' || y.partialYear) issues.push({ id: `reconcile:${rf.status === 'not_available' ? 'not_available' : 'partial'}`, severity: 'attention', text: `Cannot fully verify: ${y.partialYear ? `Partly verified: from ${formatDate(y.info.startDate)}, when the inventory ledger began` : rf.statusText}.`, links: [] });
+    if (rf.status !== 'not_available' && !y.cogsCoverage.complete) issues.push({ id: `cogs-coverage:${y.cogsCoverage.ledger}:${y.cogsCoverage.sales}`, severity: 'attention', text: taxWorksheet(y, settings).cogs.text, links: [{ label: 'Sales & Profit', href: '/sales' }] });
     if (!y.ended) issues.push({ id: 'year:open', severity: 'attention', text: `${L} isn’t over yet.`, links: [] });
     drafts.push({
       step: 'reconciliation',

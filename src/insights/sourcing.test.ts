@@ -264,3 +264,68 @@ describe('backup and compatibility', () => {
     expect(report(restored).sources.map((s) => s.ref.name).sort()).toEqual(['Midwest Liquidation', 'Unassigned source']);
   });
 });
+
+// Manual beta finding: $1,818.59 of realized profit for the whole business, with 2 hours logged,
+// all of it on the garage sale that earned $40 — shown as $909.30 "per logged hour".
+describe('profit per hour uses matched records and shows time-tracking coverage', () => {
+  function beta() {
+    let data = emptyData();
+    const r = createSource(data, { name: 'Saturday Garage Sale', type: 'garage_sale', location: 'Elm St' }, clock());
+    data = r.data;
+    const mug = addItem(data, { name: 'Coffee mug', category: 'Home', quantity: 3, unitCost: 8, purchaseDate: '2026-11-01' }, clock());
+    data = assignSource(mug.data, 'item', mug.item.id, r.source.id, clock());
+    const other = addItem(data, { name: 'Sony headphones', category: 'Electronics', quantity: 1, unitCost: 120, purchaseDate: '2026-06-17' }, clock());
+    data = other.data;
+    data = sell(data, mug.item.id, 2, 56, 0, 0, '2026-11-05'); // $56 − $16 = $40 profit
+    data = sell(data, other.item.id, 1, 1898.59, 0, 0, '2026-11-06'); // $1,778.59 profit, no source, no time
+    data = addTimeEntry(data, { date: '2026-11-05', minutes: 120, activity: 'sourcing', links: [{ kind: 'source', id: r.source.id, sharePct: null }], split: 'equal' }, clock()).data;
+    return { data, garage: r.source };
+  }
+
+  it('divides only the profit that has time behind it, and keeps the source figure', () => {
+    const { data, garage } = beta();
+    const rep = sourcingReport(data, settings, { range: periodRange('all') });
+    expect(rep.totals.netProfit).toBe(1818.59);
+    expect(rep.totals.profitPerHour).toBe(909.3); // the misleading all ÷ all figure, kept only for reference
+    const g = rep.sources.find((s) => s.ref.sourceId === garage.id)!;
+    expect([g.realizedProfit, g.hours, g.profitPerHour]).toEqual([40, 2, 20]); // $40 ÷ 2 h = $20/h
+    const tc = rep.timeCoverage;
+    expect({ ...tc, matchedSources: tc.matchedSources.map((s) => s.ref.name) }).toEqual({
+      matchedProfit: 40,
+      matchedHours: 2,
+      matchedPerHour: 20,
+      matchedSources: ['Saturday Garage Sale'],
+      matchedSales: 1,
+      unmatchedProfit: 1778.59,
+      unmatchedSales: 1,
+      unlinkedHours: 0,
+      revenueCoveragePct: 2.87,
+      complete: false,
+    });
+  });
+
+  it('shared time is counted once, and unlinked time is reported, not divided into profit', () => {
+    let { data, garage } = beta();
+    const r2 = createSource(data, { name: 'Midwest Liquidation', type: 'liquidation' }, clock());
+    data = r2.data;
+    data = addTimeEntry(data, { date: '2026-11-07', minutes: 60, activity: 'listing', links: [{ kind: 'source', id: garage.id, sharePct: null }, { kind: 'source', id: r2.source.id, sharePct: null }], split: 'equal' }, clock()).data;
+    data = addTimeEntry(data, { date: '2026-11-07', minutes: 30, activity: 'other', links: [], split: 'equal' }, clock()).data;
+    const tc = sourcingReport(data, settings, { range: periodRange('all') }).timeCoverage;
+    // Garage: 2 h + half of the shared hour. Liquidation's half hour has no sales; the general half hour isn't linked.
+    expect(tc.matchedHours).toBe(3);
+    expect(tc.matchedProfit).toBe(40);
+    expect(tc.matchedPerHour).toBe(13.33);
+    expect(tc.unlinkedHours).toBe(0.5);
+    expect(tc.complete).toBe(false);
+  });
+
+  it('when every sale has time behind it and every hour is linked, coverage is complete', () => {
+    const tc = sourcingReport(shopWithAllTime(), settings, { range: periodRange('all') }).timeCoverage;
+    expect(tc.complete).toBe(true);
+  });
+
+  function shopWithAllTime() {
+    const { data, garage } = beta();
+    return { ...data, sales: data.sales.filter((s) => s.itemName === 'Coffee mug'), sourcing: { ...data.sourcing, sources: data.sourcing.sources.filter((s) => s.id === garage.id) } };
+  }
+});

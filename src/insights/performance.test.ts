@@ -183,7 +183,7 @@ describe('the original prediction', () => {
 describe('records and warnings', () => {
   it('restocks, edits and refunds in eBay’s report are flagged, not hidden', () => {
     let { data, lot, A } = plannedLot();
-    data = recordSale(data, { itemId: A.id, quantity: 1, salePrice: 180, priceMode: 'total', fees: 24.25, saleDate: '2026-01-30', orderNumber: '11-00002-00002' }, clock()).data;
+    data = recordSale(data, { itemId: A.id, quantity: 1, salePrice: 180, priceMode: 'total', fees: 24.25, saleDate: '2026-01-30', orderNumber: '11-00002-00002', dateException: 'Dated to match the February eBay report' }, clock()).data;
     data = applyImport(data, previewImport(FEB, 'feb.csv', data), clock()).data;
     const p = perf(data, lot);
     expect(p.warnings.join(' ')).toContain('eBay’s report shows a $15.50 refund on order 11-00002-00002');

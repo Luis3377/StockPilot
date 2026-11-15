@@ -312,6 +312,32 @@ export interface SourcingReport {
   /** Trip expenses not attributed to a source (several sources, no split chosen). */
   unallocatedTripExpenses: number;
   hasTime: boolean;
+  /** How much of the period's realized profit has logged time behind it (see TimeCoverage). */
+  timeCoverage: TimeCoverage;
+}
+
+/**
+ * Profit per hour from matched records: only sources with time linked to them, their profit ÷
+ * their hours. Profit from sources with no logged time has nothing to divide by, so it's reported
+ * apart instead of inflating an overall "per hour" figure. Time shared across sources or trips is
+ * split once (timeShares), so nothing is counted twice.
+ */
+export interface TimeCoverage {
+  matchedProfit: number;
+  matchedHours: number;
+  /** matchedProfit ÷ matched hours; null without matched time. */
+  matchedPerHour: number | null;
+  matchedSources: SourceStats[];
+  matchedSales: number;
+  /** Realized profit and sales whose source has no time logged (including sales with no source). */
+  unmatchedProfit: number;
+  unmatchedSales: number;
+  /** Logged hours not linked to any source (general work, or a trip with several sources not split). */
+  unlinkedHours: number;
+  /** Revenue from sales with matched time ÷ all revenue (a share that doesn't flip sign with losses). */
+  revenueCoveragePct: number | null;
+  /** Every sale's source has time, and every logged hour is linked to a source. */
+  complete: boolean;
 }
 
 const pct = (num: number, den: number): number | null => (den === 0 ? null : Math.round((num / den) * 10000) / 100);
@@ -459,6 +485,12 @@ export function sourcingReport(data: AppData, settings: Settings, opts: ReportOp
 
   const totalSeconds = entries.reduce((c, e) => c + e.minutes * 60, 0);
   const t = totalSales(sales);
+  const matched = sources.filter((x) => shares.some((sh) => sh.sourceKey === x.ref.key && sh.seconds > 0));
+  const matchedKeys = new Set(matched.map((x) => x.ref.key));
+  const matchedSeconds = shares.filter((sh) => sh.sourceKey !== null && matchedKeys.has(sh.sourceKey)).reduce((c, sh) => c + sh.seconds, 0);
+  const matchedSalesList = matched.flatMap((x) => x.sales);
+  const mt = totalSales(matchedSalesList);
+  const unlinkedSeconds = totalSeconds - matchedSeconds;
   const minutesBy = (a: string) => entries.filter((e) => e.activity === a).reduce((c, e) => c + e.minutes, 0);
   const missingActivities = sales.length ? (['sourcing', 'listing', 'shipping'] as const).filter((a) => minutesBy(a) === 0) : [];
   return {
@@ -472,6 +504,18 @@ export function sourcingReport(data: AppData, settings: Settings, opts: ReportOp
     missingActivities,
     unallocatedTripExpenses: fromCents(unallocatedTrip),
     hasTime: totalSeconds > 0,
+    timeCoverage: {
+      matchedProfit: mt.netProfit,
+      matchedHours: hoursOf(matchedSeconds),
+      matchedPerHour: perHour(mt.netProfit, matchedSeconds),
+      matchedSources: matched.filter((x) => visible.includes(x)),
+      matchedSales: matchedSalesList.length,
+      unmatchedProfit: fromCents(toCents(t.netProfit) - toCents(mt.netProfit)),
+      unmatchedSales: sales.length - matchedSalesList.length,
+      unlinkedHours: hoursOf(Math.max(0, unlinkedSeconds)),
+      revenueCoveragePct: pct(toCents(mt.revenue), toCents(t.revenue)),
+      complete: totalSeconds > 0 && matchedSalesList.length === sales.length && unlinkedSeconds <= 0,
+    },
   };
 }
 

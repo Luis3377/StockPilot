@@ -47,7 +47,7 @@ function shop(): AppData {
   const boots = r.item.id;
   r = addItem(data, { name: 'Vintage lamp', quantity: 1, unitCost: 55, askingPrice: 50, estimatedValue: 30, purchaseDate: '2026-01-10' }, clock());
   data = r.data;
-  r = addItem(data, { name: 'Phone case', quantity: 5, unitCost: 2.5, purchaseDate: '2026-10-01' }, clock());
+  r = addItem(data, { name: 'Phone case', quantity: 5, unitCost: 2.5, purchaseDate: '2026-03-01' }, clock());
   data = r.data;
   const cases = r.item.id;
   // This month: a mug (its share of the lot is 3.3333), the boots, and a case sold at a loss.
@@ -444,10 +444,13 @@ describe('trust', () => {
       let data = emptyData();
       for (let n = 0; n < 2 + rand(6); n++) {
         const qty = 1 + rand(5);
-        const r = addItem(data, { name: `Thing ${n}`, quantity: qty, unitCost: rand(5000) / 100, askingPrice: rand(3) ? rand(9000) / 100 : null, estimatedValue: rand(2) ? rand(9000) / 100 : null, purchaseDate: '2026-0' + (1 + rand(9)) + '-1' + rand(9) }, clock());
+        const bought = '2026-0' + (1 + rand(9)) + '-1' + rand(9);
+        const r = addItem(data, { name: `Thing ${n}`, quantity: qty, unitCost: rand(5000) / 100, askingPrice: rand(3) ? rand(9000) / 100 : null, estimatedValue: rand(2) ? rand(9000) / 100 : null, purchaseDate: bought }, clock());
         data = r.data;
         for (let k = 0; k < rand(qty + 1); k++) {
-          data = sale(data, r.item.id, { salePrice: rand(10000) / 100, fees: rand(900) / 100, shipping: rand(900) / 100, otherExpenses: rand(3) ? 0 : rand(300) / 100, saleDate: `2026-${String(1 + rand(10)).padStart(2, '0')}-${String(1 + rand(27)).padStart(2, '0')}` });
+          const date = `2026-${String(1 + rand(10)).padStart(2, '0')}-${String(1 + rand(27)).padStart(2, '0')}`;
+          // Sold on or after the purchase (a sale before it needs a stated reason).
+          data = sale(data, r.item.id, { salePrice: rand(10000) / 100, fees: rand(900) / 100, shipping: rand(900) / 100, otherExpenses: rand(3) ? 0 : rand(300) / 100, saleDate: date < bought ? bought : date });
         }
       }
       for (const q of questions) {

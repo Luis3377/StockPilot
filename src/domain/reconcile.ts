@@ -315,6 +315,40 @@ export interface ReconciliationReport {
 /** eBay payout statuses meaning the money hasn't reached the bank yet, or never will. */
 export const PENDING_STATUS = /initiat|process|pending|schedul|progress|queued|in transit/i;
 export const FAILED_STATUS = /fail|revers|return|cancel|reject/i;
+
+/** Where a payout stands according to eBay's status: only completed payouts count as paid out. */
+export type PayoutState = 'completed' | 'pending' | 'failed' | 'unknown';
+
+export function payoutState(p: Pick<PayoutRecon, 'statusText' | 'actual'>): PayoutState {
+  if (PENDING_STATUS.test(p.statusText)) return 'pending';
+  if (FAILED_STATUS.test(p.statusText)) return 'failed';
+  return p.actual === null ? 'unknown' : 'completed';
+}
+
+export interface PayoutTotals {
+  paid: number;
+  paidCount: number;
+  pending: number;
+  pendingCount: number;
+  failed: number;
+  failedCount: number;
+  /** Payouts whose paid amount isn't known (the payout report isn't imported). */
+  unknownCount: number;
+}
+
+/** Payout amounts by status, to the cent: pending and failed payouts aren't counted as paid out. */
+export function payoutTotals(payouts: Pick<PayoutRecon, 'statusText' | 'actual' | 'expected'>[]): PayoutTotals {
+  const t = { paid: 0, paidCount: 0, pending: 0, pendingCount: 0, failed: 0, failedCount: 0, unknownCount: 0 };
+  for (const p of payouts) {
+    const state = payoutState(p);
+    const cents = toCents(p.actual ?? p.expected ?? 0);
+    if (state === 'completed') (t.paid += cents), t.paidCount++;
+    else if (state === 'pending') (t.pending += cents), t.pendingCount++;
+    else if (state === 'failed') (t.failed += cents), t.failedCount++;
+    else t.unknownCount++;
+  }
+  return { ...t, paid: fromCents(t.paid), pending: fromCents(t.pending), failed: fromCents(t.failed) };
+}
 const HOLD_STATUS = /hold/i;
 
 export const reviewTarget = {

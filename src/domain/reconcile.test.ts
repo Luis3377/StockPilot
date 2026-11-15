@@ -7,7 +7,7 @@ import { addItem, deleteSale, recordSale, updateSale, type SaleInput } from './a
 import { computeSale, totalSales } from './calc';
 import { createLot } from './lots';
 import { toCents } from './money';
-import { explainPayout, matchSales, payoutFacts, reconcile, reviewTarget, type PayoutRecon } from './reconcile';
+import { explainPayout, matchSales, payoutFacts, payoutState, payoutTotals, reconcile, reviewTarget, type PayoutRecon } from './reconcile';
 import { addReview, confirmMatch, removeMatch, undoReview } from './reconcileActions';
 import { emptyData, type AppData } from './types';
 import { clock } from './testUtils';
@@ -521,5 +521,32 @@ describe('integration with lots, profit and backups', () => {
     const broken = JSON.parse(JSON.stringify(data));
     broken.marketplace.transactions[0].net = 'lots';
     expect(() => sanitizeAppData(broken)).toThrow('Marketplace transaction 1: "net" must be a number');
+  });
+});
+
+// Manual beta finding: the dashboard's "Paid out" was $421.18, including eBay's $31.25 payout
+// still "Initiated". Only the three succeeded payouts ($389.93) have been paid out.
+describe('payout totals by status', () => {
+  it('pending payouts aren’t counted as paid out; amounts stay exact', () => {
+    const r = reconcile(scenario());
+    const byRef = new Map(r.payouts.map((p) => [p.ref, p]));
+    expect(['5000000001', '5000000002', '5000000003', '5000000004'].map((ref) => [ref, payoutState(byRef.get(ref)!), byRef.get(ref)!.actual])).toEqual([
+      ['5000000001', 'completed', 250.48],
+      ['5000000002', 'completed', 77.82],
+      ['5000000003', 'pending', 31.25],
+      ['5000000004', 'completed', 61.63],
+    ]);
+    expect(payoutTotals(r.payouts)).toEqual({ paid: 389.93, paidCount: 3, pending: 31.25, pendingCount: 1, failed: 0, failedCount: 0, unknownCount: 0 });
+    // The Feb 2 payout still reconciles to the cent.
+    expect(byRef.get('5000000001')).toMatchObject({ expected: 250.48, actual: 250.48, difference: 0, status: 'reconciled' });
+  });
+
+  it('failed or reversed payouts are kept apart too', () => {
+    expect(payoutTotals([
+      { statusText: 'Succeeded', actual: 10, expected: 10 },
+      { statusText: 'Failed', actual: 5.5, expected: 5.5 },
+      { statusText: 'Reversed', actual: 1, expected: 1 },
+      { statusText: '', actual: null, expected: 3 },
+    ])).toEqual({ paid: 10, paidCount: 1, pending: 0, pendingCount: 0, failed: 6.5, failedCount: 2, unknownCount: 1 });
   });
 });
