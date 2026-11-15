@@ -7,7 +7,7 @@ import { addItem, deleteSale, recordSale, updateSale, type SaleInput } from './a
 import { computeSale, totalSales } from './calc';
 import { createLot } from './lots';
 import { toCents } from './money';
-import { explainPayout, matchSales, payoutFacts, payoutState, payoutTotals, reconcile, reviewTarget, type PayoutRecon } from './reconcile';
+import { explainPayout, matchSales, payoutFacts, payoutState, payoutTotals, reconcile, reviewTarget, suggestItemForTransaction, type PayoutRecon } from './reconcile';
 import { addReview, confirmMatch, removeMatch, undoReview } from './reconcileActions';
 import { emptyData, type AppData } from './types';
 import { clock } from './testUtils';
@@ -188,8 +188,8 @@ describe('payout reconciliation: the February scenario', () => {
       'Payout 5000000002 on Feb 9, 2026: eBay paid $77.82; your records lead to an expected $39.76.',
       'Difference: +$38.06 (the payout is higher than expected).',
       'Possible: Sale not recorded in StockPilot: order 11-00004-00004 (+$42.11).',
-      'Confirmed: Marketplace fees differ: order 11-00003-00003 (-$3.65).',
-      'Confirmed: Shipping label cost differs: order 11-00003-00003 (-$0.40).',
+      'Confirmed: Marketplace fees differ: order 11-00003-00003 (−$3.65).',
+      'Confirmed: Shipping label cost differs: order 11-00003-00003 (−$0.40).',
     ]);
     const facts = payoutFacts(p);
     expect(facts).toMatchObject({ payout: '5000000002', expected: 39.76, actual: 77.82, difference: 38.06, unexplained: 0 });
@@ -548,5 +548,24 @@ describe('payout totals by status', () => {
       { statusText: 'Reversed', actual: 1, expected: 1 },
       { statusText: '', actual: null, expected: 3 },
     ])).toEqual({ paid: 10, paidCount: 1, pending: 0, pendingCount: 0, failed: 6.5, failedCount: 2, unknownCount: 1 });
+  });
+});
+
+// Manual beta finding: an imported sale whose SKU didn't match any item offered no help.
+describe('suggested item for an imported sale', () => {
+  const shop = () => {
+    let d = addItem(emptyData(), { name: 'Sony WH-1000XM4 Headphones', sku: 'HP-01', quantity: 1, unitCost: 120 }, clock()).data;
+    d = addItem(d, { name: 'Nike Air Max 90', sku: 'SH-07', quantity: 1, unitCost: 40 }, clock()).data;
+    return d;
+  };
+  it('suggests by SKU, or by a clearly similar name, with the reason — never by a weak or tied match', () => {
+    const d = shop();
+    expect(suggestItemForTransaction(d, { title: 'Anything', customLabel: 'sh-07' })).toMatchObject({ item: { name: 'Nike Air Max 90' }, reason: 'its SKU matches eBay’s custom label “sh-07”' });
+    const byName = suggestItemForTransaction(d, { title: 'Sony WH-1000XM4 Wireless Noise Cancelling Headphones Black', customLabel: 'SONY-XM4' });
+    expect(byName?.item.name).toBe('Sony WH-1000XM4 Headphones');
+    expect(byName?.reason).toBe('its name is similar to eBay’s title (“sony”, “wh”, “1000xm4”, “headphones”); eBay’s custom label “SONY-XM4” doesn’t match a SKU');
+    expect(suggestItemForTransaction(d, { title: 'Sony speaker', customLabel: '' })).toBeNull(); // one shared word isn't enough
+    const twins = addItem(d, { name: 'Sony WH-1000XM4 Headphones', sku: 'HP-02', quantity: 1, unitCost: 110 }, clock()).data;
+    expect(suggestItemForTransaction(twins, { title: 'Sony WH-1000XM4 Headphones', customLabel: '' })).toBeNull(); // tied: no guess
   });
 });

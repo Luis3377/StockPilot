@@ -291,9 +291,9 @@ function InventoryLossCard({ range, netProfit, money }: { range: DateRange; netP
 function ProjectedCard({ projection, money }: { projection: ReturnType<typeof projectUnsold>; money: (n: number) => string }) {
   const rateText =
     projection.rate.source === 'history'
-      ? `Selling costs estimated at ${formatPercent(projection.rate.percent)} of price — your average across ${plural(projection.rate.basedOnSales, 'recorded sale')}.`
+      ? `Selling costs estimated at ${formatPercent(projection.rate.percent, 2)} of price — your average across ${plural(projection.rate.basedOnSales, 'recorded sale')}. It’s recalculated after every sale, so projected amounts can change by a few cents even when an item’s cost and price don’t.`
       : projection.rate.source === 'setting'
-        ? `Selling costs estimated at ${formatPercent(projection.rate.percent)} (from Settings).`
+        ? `Selling costs estimated at ${formatPercent(projection.rate.percent, 2)} (from Settings).`
         : 'No selling costs assumed yet — record sales with fees, or set an estimate in Settings.';
   return (
     <Card className="border-dashed p-4 sm:p-5" data-testid="projected-card">

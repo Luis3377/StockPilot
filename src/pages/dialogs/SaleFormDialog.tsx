@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { recordSale, saleBeforePurchase, saleInputErrors, saleUnitCost, updateSale, type SaleInput } from '../../domain/actions';
+import { recordSale, saleBeforePurchase, saleInputErrors, saleUnitCost, setItemPurchaseDate, updateSale, type SaleInput } from '../../domain/actions';
 import { computeSale, convertSalePrice, knownPlatforms, uniqueSorted } from '../../domain/calc';
 import { isDomainError } from '../../domain/errors';
-import { todayISO } from '../../domain/dates';
+import { formatDate, todayISO } from '../../domain/dates';
 import { formatPercent, multiplyMoney, parseMoneyInput, roundMoney } from '../../domain/money';
 import type { PriceMode, Sale } from '../../domain/types';
 import { store, useAppState } from '../../data/store';
@@ -395,6 +395,24 @@ export function SaleFormDialog({ open, itemId, saleId, prefill, onClose, onAddIt
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                   {early}
                 </p>
+                {item && !data.lots.some((l) => l.lines.some((line) => line.itemId === item.id)) && (
+                  <Button
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => {
+                      try {
+                        store.commit((d) => setItemPurchaseDate(d, item.id, form.saleDate));
+                        toast.success(`“${item.name}” now shows ${formatDate(form.saleDate)} as its purchase date.`);
+                      } catch (err) {
+                        // e.g. a closed month: nothing changed.
+                        toast.error(isDomainError(err) ? err.message : 'The purchase date could not be changed.');
+                      }
+                    }}
+                    data-testid="sale-fix-purchase-date"
+                  >
+                    The purchase date is wrong: use {formatDate(form.saleDate)}
+                  </Button>
+                )}
                 <TextField
                   label="Why is the sale dated before the purchase?"
                   className="mt-2"

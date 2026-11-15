@@ -7,7 +7,7 @@ import { lotSummary, lotTotal, METHOD_LABELS } from '../domain/lots';
 import { bidPlanForLot } from '../domain/bids';
 import { formatDate, formatDateTime } from '../domain/dates';
 import { plural } from '../domain/format';
-import { multiplyMoney, toCents } from '../domain/money';
+import { formatPercent, fromCents, multiplyMoney, toCents } from '../domain/money';
 import type { LotChange } from '../domain/types';
 import { useAppState } from '../data/store';
 import { useMoney } from '../lib/hooks';
@@ -55,6 +55,9 @@ export function LotDetailPage() {
   }
 
   const s = lotSummary(data, lot);
+  // Money back on the whole lot: what the sales brought in after selling expenses (not profit).
+  const recovered = fromCents(toCents(s.sales.revenue) - toCents(s.sales.totalExpenses));
+  const toRecover = Math.max(0, fromCents(toCents(s.total) - toCents(recovered)));
   const flow: [string, number, string][] = [
     ['Sold (cost of goods sold)', s.sales.costOfGoods, 'bg-good'],
     ['Written off or corrected', s.writtenOff, 'bg-warn'],
@@ -116,7 +119,27 @@ export function LotDetailPage() {
               testId="lot-realized-profit"
             />
           </div>
+          {s.sales.unitsSold > 0 && (
+            <div className="mt-3 rounded-xl bg-surface-2 p-3 text-sm" data-testid="lot-recovered">
+              <p className="text-ink">
+                <strong>Investment recovered:</strong> {money(recovered)} of {money(s.total)} ({s.total > 0 ? formatPercent((recovered / s.total) * 100) : '—'})
+                {toRecover > 0 ? ` · ${money(toRecover)} still to recover` : ' · the whole cost is back'}
+              </p>
+              <p className="mt-1 text-xs text-ink-2">
+                What the sales brought in after fees and shipping ({money(s.sales.revenue)} − {money(s.sales.totalExpenses)}), against what the whole lot cost. Realized profit above only counts the items sold and their share of the cost; the rest of the cost is in the unsold items.
+              </p>
+            </div>
+          )}
         </Card>
+        {s.unitsOnHand === 0 ? (
+          <Card className="p-4 sm:p-5" data-testid="lot-projected">
+            <SectionHeader title="All sold" description="Nothing from this lot is left in stock, so there’s nothing to project." />
+            <p className="mt-3 text-sm text-ink">
+              Final realized profit: <strong className={s.sales.netProfit < 0 ? 'text-bad-text' : undefined}>{money(s.sales.netProfit)}</strong> from {plural(s.sales.unitsSold, 'unit')} sold
+              {s.unitsBought - s.sales.unitsSold > 0 ? ` (${plural(s.unitsBought - s.sales.unitsSold, 'unit')} written off or removed)` : ''}.
+            </p>
+          </Card>
+        ) : (
         <Card className="p-4 sm:p-5" data-testid="lot-projected">
           <SectionHeader title="Still in stock" description="Not sold yet. Profit here is a projection." />
           <div className="mt-3 grid grid-cols-2 gap-3">
@@ -133,6 +156,7 @@ export function LotDetailPage() {
             />
           </div>
         </Card>
+        )}
       </div>
 
       <Card className="mt-4 p-4 sm:p-5" data-testid="lot-reconciliation">

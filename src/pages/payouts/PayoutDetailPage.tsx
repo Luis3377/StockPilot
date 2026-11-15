@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, FileText, History, Landmark, Link2, Receipt, Undo2 } from 'lucide-react';
-import { explainPayout, reviewTarget, TIMING_KINDS, type Finding, type PayoutRecon, type RowRecon } from '../../domain/reconcile';
+import { explainPayout, reviewTarget, suggestItemForTransaction, TIMING_KINDS, type Finding, type PayoutRecon, type RowRecon } from '../../domain/reconcile';
 import { addReview, confirmMatch, removeMatch, undoReview } from '../../domain/reconcileActions';
 import { MARKETPLACE_LABELS } from '../../marketplace/reports';
 import { formatDate, formatDateTime } from '../../domain/dates';
@@ -300,6 +300,18 @@ function FindingCard({ p, f, onResolve, onUndo }: { p: PayoutRecon; f: Finding; 
   const isMatchable = (f.kind === 'missing_sale' || f.kind === 'ambiguous_match') && txn;
   const match = isMatchable ? p.rows.find((row) => row.txn.id === txn!.id)?.match : null;
   const labels = txn ? data.marketplace.transactions.filter((t) => t.kind === 'shipping_label' && t.orderNumber && t.orderNumber === txn.orderNumber) : [];
+  // A suggested item (SKU or a clearly similar name), shown as a suggestion the user confirms by recording the sale.
+  const suggestion = isMatchable && txn ? suggestItemForTransaction(data, txn) : null;
+  const prefill = () => ({
+    quantity: txn!.quantity ?? 1,
+    total: txn!.itemSubtotal !== null ? txn!.itemSubtotal + (txn!.shippingAndHandling ?? 0) : txn!.net,
+    fees: txn!.fees ?? 0,
+    shipping: fromCents(-labels.reduce((c, t) => c + toCents(t.net), 0)),
+    saleDate: txn!.date,
+    platform: 'eBay',
+    orderNumber: txn!.orderNumber,
+    notes: txn!.title,
+  });
   return (
     <li className="rounded-2xl border border-line p-3" data-testid="payout-finding" data-kind={f.kind}>
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -348,25 +360,20 @@ function FindingCard({ p, f, onResolve, onUndo }: { p: PayoutRecon; f: Finding; 
           })}
         </div>
       )}
+      {isMatchable && suggestion && (
+        <div className="mt-2 rounded-lg border border-line bg-surface-2 p-2 text-sm" data-testid="suggested-item">
+          <p className="text-ink-2">
+            <span className="font-medium text-ink">Suggested item (not confirmed):</span> {suggestion.item.name}, because {suggestion.reason}. Check it’s the same item before recording.
+          </p>
+          <Button size="sm" className="mt-1.5" icon={<Receipt className="size-3.5" />} onClick={() => dialogs.recordSale(suggestion.item.id, prefill())} data-testid="record-suggested">
+            Record sale for {suggestion.item.name}
+          </Button>
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {isMatchable && (
-          <Button
-            size="sm"
-            icon={<Receipt className="size-3.5" />}
-            onClick={() =>
-              dialogs.recordSale(undefined, {
-                quantity: txn!.quantity ?? 1,
-                total: txn!.itemSubtotal !== null ? txn!.itemSubtotal + (txn!.shippingAndHandling ?? 0) : txn!.net,
-                fees: txn!.fees ?? 0,
-                shipping: fromCents(-labels.reduce((c, t) => c + toCents(t.net), 0)),
-                saleDate: txn!.date,
-                platform: 'eBay',
-                orderNumber: txn!.orderNumber,
-                notes: txn!.title,
-              })
-            }
-          >
-            Record this sale
+          <Button size="sm" icon={<Receipt className="size-3.5" />} onClick={() => dialogs.recordSale(undefined, prefill())}>
+            {suggestion ? 'Record this sale for another item' : 'Record this sale'}
           </Button>
         )}
         {f.review ? (

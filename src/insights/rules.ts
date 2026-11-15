@@ -183,7 +183,7 @@ export function topRevenueSection(data: AppData, settings: RuleSettings, range: 
     .slice(0, 5);
   return {
     id: 'top-revenue',
-    title: 'Top earners',
+    title: 'Top products by revenue',
     severity: 'good',
     rule: `Items ranked by revenue from sales ${range.label}, with their realized profit.`,
     period: range.label,

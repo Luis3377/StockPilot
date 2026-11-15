@@ -38,7 +38,7 @@ describe('reserve arithmetic', () => {
       [30, 300, 700],
     ]);
     expect(rows[1].explanation).toBe('$1,000.00 × 25% = $250.00; $1,000.00 − $250.00 = $750.00');
-    expect(scenarioRows(-1000, [25], 'USD')[0]).toMatchObject({ reserve: 0, remaining: -10, explanation: 'No profit recorded (-$10.00), so nothing is earmarked at any percentage' });
+    expect(scenarioRows(-1000, [25], 'USD')[0]).toMatchObject({ reserve: 0, remaining: -10, explanation: 'No profit recorded (−$10.00), so nothing is earmarked at any percentage' });
   });
 
   it('the percentage is the user’s own: validated, editable and logged; no default rate', () => {
@@ -80,7 +80,7 @@ describe('the period’s plan', () => {
     data = recordSale(r.data, { itemId: r.item.id, quantity: 1, salePrice: 200, priceMode: 'total', fees: 20, saleDate: '2026-08-15' }, at('2026-08-15')).data;
     const aug = sum(data, 'month', '2026-08');
     expect(aug.profit.netProfit).toBe(-120);
-    expect(aug.tax).toMatchObject({ target: 0, remaining: 0, calculation: 'No profit recorded for August 2026 (-$120.00), so nothing is suggested' });
+    expect(aug.tax).toMatchObject({ target: 0, remaining: 0, calculation: 'No profit recorded for August 2026 (−$120.00), so nothing is suggested' });
     expect(aug.afterReserves).toBe(-120);
     expect(sum(data, 'month', '2026-07').warnings[0]).toBe('No sales are recorded for July 2026, so recorded realized profit is $0.00.');
   });

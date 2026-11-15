@@ -107,9 +107,11 @@ export function BidPurchaseDialog({ plan, open, onClose }: { plan: BidPlan; open
             <Row label="Total cost of the lot" value={money(price! + extra)} strong className="border-t border-line pt-2" />
             {expected?.recommendedBid != null && (
               <p className="mt-1 text-sm text-ink-2" data-testid="bid-purchase-compare">
-                {price! <= expected.recommendedBid
-                  ? `${money(expected.recommendedBid - price!)} below your maximum bid estimate of ${money(expected.recommendedBid)}.`
-                  : `${money(price! - expected.recommendedBid)} above your maximum bid estimate of ${money(expected.recommendedBid)}.`}
+                {Math.round(price! * 100) === Math.round(expected.recommendedBid * 100)
+                  ? `Exactly your maximum bid estimate of ${money(expected.recommendedBid)}.`
+                  : price! < expected.recommendedBid
+                    ? `${money(expected.recommendedBid - price!)} below your maximum bid estimate of ${money(expected.recommendedBid)}.`
+                    : `${money(price! - expected.recommendedBid)} above your maximum bid estimate of ${money(expected.recommendedBid)}.`}
               </p>
             )}
             <p className="mt-1 text-xs text-muted">The buying costs use the plan’s rates at this price. You can change them on the next step.</p>

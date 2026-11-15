@@ -152,7 +152,7 @@ describe('realized profit', () => {
     const r = addItem(emptyData(), { name: 'Bad buy', quantity: 1, unitCost: 50 }, clock());
     const lossy = sale(r.data, r.item.id, { salePrice: 30, saleDate: '2026-10-05', fees: 4 });
     const a = ask(lossy, 'profit this month');
-    expect(a.text).toBe('Your realized profit this month was -$24.00 (a loss).');
+    expect(a.text).toBe('Your realized profit this month was −$24.00 (a loss).');
     expect(a.calculation!.lines.at(-1)).toMatchObject({ label: 'Realized loss', amount: 24, negative: true });
     expect(a.calculation!.lines.find((l) => l.key === 'gross')).toMatchObject({ amount: 20, negative: true });
     expectReproducible(lossy, a.calculation!);

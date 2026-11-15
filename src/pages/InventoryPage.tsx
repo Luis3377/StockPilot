@@ -264,12 +264,19 @@ export function InventoryPage() {
           {results.map((item) => (
             <li key={item.id}>
               <Link to={`/inventory/${item.id}`} className="group block overflow-hidden rounded-2xl border border-line bg-surface shadow-card transition-shadow hover:shadow-pop" data-testid="inventory-item">
-                <div className="relative aspect-square overflow-hidden bg-surface-2">
-                  <ItemThumb photoId={item.photoIds[0]} name={item.name} className="size-full transition-transform group-hover:scale-[1.02]" />
-                  <div className="absolute top-2 left-2">
-                    <StatusBadge item={item} onImage />
+                {item.photoIds[0] ? (
+                  <div className="relative aspect-square overflow-hidden bg-surface-2">
+                    <ItemThumb photoId={item.photoIds[0]} name={item.name} className="size-full transition-transform group-hover:scale-[1.02]" />
+                    <div className="absolute top-2 left-2">
+                      <StatusBadge item={item} onImage />
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  // No photo: a short band instead of a large empty square (the list view is more compact still).
+                  <div className="flex h-12 items-center bg-surface-2 px-2" data-testid="inventory-item-nophoto">
+                    <StatusBadge item={item} />
+                  </div>
+                )}
                 <div className="p-3">
                   {/* Long names show three lines here; the full name is on the item page (and in the tooltip). */}
                   <p className="line-clamp-3 min-h-[2.5em] text-sm leading-tight font-medium break-words text-ink" title={item.name} data-testid="inventory-item-name">

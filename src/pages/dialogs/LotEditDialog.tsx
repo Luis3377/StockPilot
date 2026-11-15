@@ -194,6 +194,13 @@ export function LotEditDialog({ open, lotId, onClose }: { open: boolean; lotId: 
   };
   const { input } = toEditInput(draft);
   const newTotal = toCents(input.purchasePrice ?? 0) + input.extraCosts.reduce((c, x) => c + toCents(x.amount ?? 0), 0);
+  // The button says what it will do: cost changes get a review step first; other details save at once.
+  let costChange = false;
+  try {
+    costChange = Boolean(planLotEdit(data, lot.id, input).costChange);
+  } catch {
+    costChange = false;
+  }
 
   return (
     <Dialog
@@ -210,7 +217,7 @@ export function LotEditDialog({ open, lotId, onClose }: { open: boolean; lotId: 
             Cancel
           </Button>
           <Button variant="primary" onClick={review} data-testid="lot-edit-save">
-            Review changes
+            {costChange ? 'Review cost changes' : 'Save changes'}
           </Button>
         </div>
       }

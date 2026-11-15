@@ -24,7 +24,7 @@ test('import previews the report first, then reconciles an exact payout to the c
   await expect(preview).toContainText('eBay transaction report · Jan 28, 2026 – Feb 14, 2026');
   await expect(preview).toContainText('10 new transactions');
   await expect(preview).toContainText(/Orders: 6\s*\$428\.35/);
-  await expect(preview).toContainText(/Refunds: 1\s*-\$15\.50/);
+  await expect(preview).toContainText(/Refunds: 1\s*−\$15\.50/);
   await expect(preview).toContainText('Importing doesn’t create or change any sales');
   await noHorizontalOverflow(page);
   await d.getByTestId('payout-import-run').click();
@@ -40,8 +40,8 @@ test('import previews the report first, then reconciles an exact payout to the c
   await expect(page.getByTestId('payout-status')).toContainText('Your records and the payout agree to the cent.');
   const calc = page.getByTestId('payout-calculation');
   await expect(calc.getByTestId('expected-sales')).toContainText('$300.00');
-  await expect(calc.getByTestId('expected-fees')).toContainText('-$40.07');
-  await expect(calc.getByTestId('expected-labels')).toContainText('-$9.45');
+  await expect(calc.getByTestId('expected-fees')).toContainText('−$40.07');
+  await expect(calc.getByTestId('expected-labels')).toContainText('−$9.45');
   await expect(calc.getByTestId('payout-expected')).toContainText('$250.48');
   await expect(calc.getByTestId('payout-actual')).toContainText('$250.48');
   await expect(calc.getByTestId('payout-difference')).toContainText('$0.00');
@@ -59,7 +59,7 @@ test('an incorrect payout explains every cent, and decisions are recorded with a
 
   await expect(page.getByTestId('payout-status')).toContainText('Unreconciled');
   const calc = page.getByTestId('payout-calculation');
-  await expect(calc.getByTestId('expected-refunds')).toContainText('-$15.50');
+  await expect(calc.getByTestId('expected-refunds')).toContainText('−$15.50');
   await expect(calc.getByTestId('payout-expected')).toContainText('$39.76');
   await expect(calc.getByTestId('payout-actual')).toContainText('$77.82');
   await expect(calc.getByTestId('payout-difference')).toContainText('+$38.06');
@@ -73,9 +73,9 @@ test('an incorrect payout explains every cent, and decisions are recorded with a
   await expect(findings.nth(1)).toContainText('Confirmed');
   await expect(findings.nth(1)).toContainText('Marketplace fees differ: order 11-00003-00003');
   await expect(findings.nth(1)).toContainText('Promoted Listings - General fee');
-  await expect(findings.nth(1)).toContainText('-$3.65');
+  await expect(findings.nth(1)).toContainText('−$3.65');
   await expect(findings.nth(2)).toContainText('Shipping label cost differs');
-  await expect(findings.nth(2)).toContainText('-$0.40');
+  await expect(findings.nth(2)).toContainText('−$0.40');
   await expect(page.getByTestId('payout-explanation')).toContainText('Difference: +$38.06 (the payout is higher than expected).');
 
   // The refund is an adjustment to review; marking it needs a reason.
@@ -104,16 +104,16 @@ test('an incorrect payout explains every cent, and decisions are recorded with a
   await sale.getByRole('button', { name: 'Record sale' }).click();
   await expect(sale).toBeHidden();
   await expect(findings).toHaveCount(2);
-  await expect(calc.getByTestId('payout-difference')).toContainText('-$4.05');
+  await expect(calc.getByTestId('payout-difference')).toContainText('−$4.05');
 
   // Accept what's left, with a reason. The difference stays visible.
   await page.getByTestId('accept-difference').click();
   await reason.getByLabel('Reason').fill('Fees and label were higher than I entered; will fix next month');
   await reason.getByTestId('reason-save').click();
   await expect(page.getByTestId('payout-status')).toContainText('Reconciled');
-  await expect(page.getByTestId('payout-status')).toContainText('Difference of -$4.05 explained by you');
-  await expect(calc.getByTestId('payout-difference')).toContainText('-$4.05');
-  await expect(page.getByTestId('payout-history')).toContainText('Accepted a difference of -$4.05 on payout 5000000002. Reason: “Fees and label were higher than I entered; will fix next month”.');
+  await expect(page.getByTestId('payout-status')).toContainText('Difference of −$4.05 explained by you');
+  await expect(calc.getByTestId('payout-difference')).toContainText('−$4.05');
+  await expect(page.getByTestId('payout-history')).toContainText('Accepted a difference of −$4.05 on payout 5000000002. Reason: “Fees and label were higher than I entered; will fix next month”.');
 
   // Saved on the device.
   await reloadWhenSaved(page);

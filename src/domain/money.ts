@@ -82,14 +82,19 @@ function moneyFormatter(currency: string, compact: boolean): Intl.NumberFormat {
   return f;
 }
 
+/** One minus sign everywhere: the true minus (−), as in "−$10.20", matching amounts written "−$x" elsewhere. */
+const trueMinus = (text: string) => text.replace(/-/g, '−');
+
 export function formatMoney(amount: number, currency = 'USD'): string {
-  return moneyFormatter(currency, false).format(roundMoney(amount));
+  const text = moneyFormatter(currency, false).format(roundMoney(amount));
+  return roundMoney(amount) < 0 ? trueMinus(text) : text;
 }
 
 /** $1,284 → $1.3K style, for axis ticks and tight spaces. */
 export function formatMoneyCompact(amount: number, currency = 'USD'): string {
   if (Math.abs(amount) < 1000 && !Number.isInteger(amount)) return formatMoney(amount, currency);
-  return moneyFormatter(currency, true).format(amount);
+  const text = moneyFormatter(currency, true).format(amount);
+  return amount < 0 ? trueMinus(text) : text;
 }
 
 export function formatPercent(value: number | null, digits = 1): string {

@@ -5,7 +5,7 @@
 
 import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowUp, Bot, CheckCircle2, ChevronDown, ShieldCheck, Sparkles, User } from 'lucide-react';
+import { AlertTriangle, ArrowUp, Calculator, CheckCircle2, ChevronDown, ShieldCheck, Sparkles, User } from 'lucide-react';
 import { answerQuestion, SUGGESTED_QUESTIONS, type AssistantAnswer } from '../../insights/assistant';
 import { verifyCalculation, type Calculation, type CalcLine } from '../../insights/calculations';
 import { buildExplainFacts, checkExplanation } from '../../insights/explainFacts';
@@ -62,13 +62,13 @@ export function AssistantPanel() {
     <Card className="flex flex-col p-4 sm:p-5 xl:sticky xl:top-6" data-testid="assistant">
       <div className="flex items-center gap-2">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-text">
-          <Bot className="size-5" />
+          <Calculator className="size-5" aria-hidden />
         </span>
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-ink">Ask about your inventory</h2>
           <p className="text-xs text-ink-2">
-            Every figure comes from your records, with its calculation.{' '}
-            {scannerEnabled ? 'AI can explain an answer when you ask; it never calculates.' : 'Answers use fixed rules, not an AI model.'}
+            Answers are calculated by StockPilot from your records, with the calculation shown.{' '}
+            {scannerEnabled ? 'Separately, AI can explain an answer in words when you ask; it never calculates.' : 'They use fixed rules, not an AI model.'}
           </p>
         </div>
       </div>
@@ -123,7 +123,7 @@ function AnswerCard({ turn, onAsk, onInterpreted }: { turn: Turn; onAsk: (q: str
   const problems = calc ? verifyCalculation(calc) : [];
   return (
     <div className="flex gap-2" data-testid="assistant-answer" data-intent={answer.intent}>
-      <Bot className="mt-1 size-5 shrink-0 text-accent" aria-hidden />
+      <Calculator className="mt-1 size-5 shrink-0 text-accent" aria-hidden />
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-surface-2 px-3 py-2.5 text-sm">
         {turn.interpretedAs && (
           <p className="mb-1 flex items-center gap-1 text-xs text-ink-2" data-testid="interpreted-as">

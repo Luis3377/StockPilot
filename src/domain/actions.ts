@@ -443,6 +443,24 @@ export function saleBeforePurchase(data: AppData, item: Pick<Item, 'id' | 'name'
   return `The sale date (${formatDate(saleDate)}) is before “${item.name}” was bought (${formatDate(bought)}). Check both dates. If the sale really came first (a preorder, or you’re correcting an earlier record), say why to record it anyway: until then it would put a sale in a month before the item was in your inventory.`;
 }
 
+/**
+ * Corrects an item's recorded purchase date (for example to the date of a sale entered later,
+ * when the item was added with today's date). Only when the user chooses it; lot items take
+ * their lot's date, which is changed on the lot instead.
+ */
+export function setItemPurchaseDate(data: AppData, itemId: string, date: string, clock?: Clock): { data: AppData; item: Item } {
+  const item = findItem(data, itemId);
+  if (data.lots.some((l) => l.lines.some((line) => line.itemId === itemId))) throw new DomainError('This item is part of a bulk lot: change the purchase date on the lot.');
+  if (!isValidISODate(date)) throw new DomainError('Enter a valid date.', 'purchaseDate');
+  return updateItem(
+    data,
+    itemId,
+    { name: item.name, sku: item.sku, category: item.category, quantity: item.quantity, unitCost: item.unitCost, askingPrice: item.askingPrice, estimatedValue: item.estimatedValue, purchaseDate: date, condition: item.condition, location: item.location, lowStockThreshold: item.lowStockThreshold, photoIds: item.photoIds, notes: item.notes },
+    {},
+    clock,
+  );
+}
+
 /** Validates the before-purchase check: an explicit reason is needed, and it's kept with the sale. */
 function checkSaleDate(data: AppData, item: Item | undefined, saleDate: string | undefined, input: SaleInput, v: FieldErrors): string {
   const reason = (input.dateException ?? '').trim().slice(0, 300);

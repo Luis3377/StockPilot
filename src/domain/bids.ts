@@ -727,7 +727,8 @@ export function lotPrefillFromPlan(plan: BidPlan, pricePaid: number, purchaseDat
       purchasePrice: fromCents(paid),
       extraCosts,
       purchaseDate,
-      source: KIND_LABELS[plan.kind],
+      // The plan's kind ("Storage-unit auction") isn't a supplier: the user enters where they bought it.
+      source: '',
       notes: plan.description,
       // Resale estimates entered → split by value (the user can still choose equal; items still
       // missing an estimate are pointed out before saving).

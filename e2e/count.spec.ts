@@ -18,11 +18,11 @@ test('Count Check finds shortages and overages and applies approved adjustments'
   await page.getByRole('button', { name: 'Matches (3)' }).click();
 
   await expect(page.getByTestId('count-missing')).toContainText('2 units');
-  await expect(page.getByTestId('count-missing')).toContainText('-$8.00');
+  await expect(page.getByTestId('count-missing')).toContainText('−$8.00');
   await expect(page.getByTestId('count-excess')).toContainText('1 unit');
   await expect(page.getByTestId('count-excess')).not.toContainText('1 units');
   await expect(page.getByTestId('count-excess')).toContainText('$5.00');
-  await expect(page.getByTestId('count-net')).toContainText('-$3.00');
+  await expect(page.getByTestId('count-net')).toContainText('−$3.00');
 
   // Progress is saved: reload keeps the draft.
   await reloadWhenSaved(page);
@@ -100,7 +100,7 @@ test('the Overview shows missing stock on its own, with extras in the small text
   await expect(page.getByText('Past counts')).toBeVisible();
 
   await nav(page, 'Overview');
-  await expect(page.getByTestId('stat-discrepancy-value')).toHaveText('-$6.50 missing');
+  await expect(page.getByTestId('stat-discrepancy-value')).toHaveText('−$6.50 missing');
   await expect(page.getByTestId('stat-discrepancy')).toContainText('+$18.00 extra found · Last count');
 });
 

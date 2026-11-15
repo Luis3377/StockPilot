@@ -221,8 +221,14 @@ function PlanEditor({ plan }: { plan: BidPlan | null }) {
               {plan.snapshot?.results.expected?.maxBid != null && <PurchaseRow label="Max bid estimate at the time (expected)" value={money(plan.snapshot.results.expected.maxBid)} />}
               {plan.snapshot?.recommendedBid != null && (
                 <PurchaseRow
-                  label={plan.purchase.pricePaid <= plan.snapshot.recommendedBid ? 'Paid below the recommendation by' : 'Paid above the recommendation by'}
-                  value={money(Math.abs(plan.snapshot.recommendedBid - plan.purchase.pricePaid))}
+                  label={
+                    Math.round(plan.purchase.pricePaid * 100) === Math.round(plan.snapshot.recommendedBid * 100)
+                      ? 'Paid compared with the recommendation'
+                      : plan.purchase.pricePaid < plan.snapshot.recommendedBid
+                        ? 'Paid below the recommendation by'
+                        : 'Paid above the recommendation by'
+                  }
+                  value={Math.round(plan.purchase.pricePaid * 100) === Math.round(plan.snapshot.recommendedBid * 100) ? 'Exactly the maximum bid' : money(Math.abs(plan.snapshot.recommendedBid - plan.purchase.pricePaid))}
                   testId="bid-paid-vs-max"
                 />
               )}

@@ -27,7 +27,7 @@ export function StatusBadge({ status, className }: { status: ReconStatus; classN
   );
 }
 
-/** "+$7.32" / "-$7.32" / "$0.00", coloured only when it's a difference that matters. */
+/** "+$7.32" / "−$7.32" / "$0.00", coloured only when it's a difference that matters. */
 export function Signed({ amount, className, tone = true }: { amount: number | null; className?: string; tone?: boolean }) {
   const { money } = useMoney();
   if (amount === null) return <span className={cn('text-muted', className)}>—</span>;

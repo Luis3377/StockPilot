@@ -3,7 +3,7 @@
 // the storage location (where the item is kept now).
 
 import { useId } from 'react';
-import { findSourceByName, similarSources, SOURCE_TYPE_LABELS, SOURCE_TYPES } from '../../domain/sourcing';
+import { findSourceByName, isGenericSourceName, similarSources, SOURCE_TYPE_LABELS, SOURCE_TYPES } from '../../domain/sourcing';
 import type { SourceType, SourcingSession } from '../../domain/types';
 import { useAppState } from '../../data/store';
 import { formatDate } from '../../domain/dates';
@@ -36,6 +36,11 @@ export function SourceField({ value, onChange, error, className }: { value: Sour
         error={error}
         hint={match ? `${SOURCE_TYPE_LABELS[match.type]}${match.name !== text ? ` · saved as “${match.name}”` : ''}` : text ? undefined : 'Optional. The store, sale or supplier, not where you keep it.'}
       />
+      {text && isGenericSourceName(text) && (
+        <p className="mt-1 text-xs text-warn-text" data-testid="source-generic">
+          “{text}” says what kind of place it was, not which one. Add the specific seller or place (for example “Public Storage, Elm St auction”) so its results can be compared with your other sources. If you don’t know it, you can keep this.
+        </p>
+      )}
       {similar.length > 0 && (
         <p className="mt-1 text-xs text-warn-text" data-testid="source-similar">
           Did you mean{' '}

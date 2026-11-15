@@ -52,7 +52,7 @@ function LinkEditor({ links, onChange, custom }: { links: TimeLink[]; onChange: 
       <legend className="text-sm font-medium text-ink">What was it for? (optional)</legend>
       {links.map((l, i) => (
         <div key={i} className="flex flex-wrap items-end gap-2" data-testid="time-link">
-          <SelectField className="w-28" label={<span className="sr-only">Link {i + 1} kind</span>} value={l.kind} onChange={(v) => onChange(links.map((x, n) => (n === i ? { ...x, kind: v as TimeLinkKind, id: targets[v as TimeLinkKind][0]?.id ?? '' } : x)))}>
+          <SelectField className="w-28" label={<span className="sr-only">Link {i + 1} kind</span>} value={l.kind} onChange={(v) => onChange(links.map((x, n) => (n === i ? { ...x, kind: v as TimeLinkKind, id: '' } : x)))}>
             {kinds.map((k) => (
               <option key={k} value={k}>
                 {KIND_LABELS[k]}
@@ -60,6 +60,9 @@ function LinkEditor({ links, onChange, custom }: { links: TimeLink[]; onChange: 
             ))}
           </SelectField>
           <SelectField className="min-w-0 flex-1" label={<span className="sr-only">Link {i + 1}</span>} value={l.id} onChange={(v) => onChange(links.map((x, n) => (n === i ? { ...x, id: v } : x)))}>
+            <option value="" disabled>
+              Choose {KIND_LABELS[l.kind].toLowerCase()}…
+            </option>
             {targets[l.kind].map((t) => (
               <option key={t.id} value={t.id}>
                 {t.label}
@@ -82,7 +85,7 @@ function LinkEditor({ links, onChange, custom }: { links: TimeLink[]; onChange: 
         </div>
       ))}
       {kinds.length > 0 ? (
-        <Button size="sm" icon={<Plus className="size-4" />} onClick={() => onChange([...links, { kind: kinds[0], id: targets[kinds[0]][0].id, sharePct: null }])} data-testid="time-add-link">
+        <Button size="sm" icon={<Plus className="size-4" />} onClick={() => onChange([...links, { kind: kinds[0], id: '', sharePct: null }])} data-testid="time-add-link">
           Link to a trip, source, lot or item
         </Button>
       ) : (

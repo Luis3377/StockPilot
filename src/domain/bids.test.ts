@@ -1,3 +1,4 @@
+import { isGenericSourceName } from './sourcing';
 import { describe, expect, it } from 'vitest';
 import {
   bidPlanErrors,
@@ -366,7 +367,7 @@ describe('buying the lot', () => {
       name: 'Storage unit #14',
       purchasePrice: 80,
       purchaseDate: '2026-10-30',
-      source: 'Storage-unit auction',
+      source: '', // the plan's kind isn't a supplier: the user enters where they bought it (manual beta finding)
       notes: 'Unit B-14, mostly kitchenware',
       method: 'relative_value',
       extraCosts: [
@@ -490,5 +491,12 @@ describe('allocation method when a plan becomes a bulk lot', () => {
     expect(lotPrefillFromPlan(p, 80, '2026-10-30').input.method).toBe('relative_value');
     const none = base({ valueMode: 'items', items: [item('Misc', 2, null)] });
     expect(lotPrefillFromPlan(createBidPlan(emptyData(), plan(none), clock()).plan, 80, '2026-10-30').input.method).toBe('equal');
+  });
+});
+
+describe('generic source names', () => {
+  it('a name that only says the kind of source is recognised, a specific one isn’t', () => {
+    for (const n of ['Storage-unit auction', 'storage unit auction', 'Garage sale', 'garage sales', 'Thrift store', 'Auction']) expect(isGenericSourceName(n), n).toBe(true);
+    for (const n of ['Public Storage — Elm St auction', 'Goodwill — West Little Rock', 'Saturday Garage Sale on Elm St', '']) expect(isGenericSourceName(n), n).toBe(false);
   });
 });

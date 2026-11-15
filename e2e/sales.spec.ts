@@ -155,7 +155,7 @@ test('on phones, net profit and the loss warning are visible without scrolling',
   await expect(summary).toContainText('Net profit $60.00 · 60% margin');
   await dialog.getByLabel('Sale price').fill('30');
   await expect(summary).toContainText('This sale loses money');
-  await expect(summary).toContainText('-$10.00');
+  await expect(summary).toContainText('−$10.00');
   await expect(summary).toBeInViewport();
   // The full breakdown is still in the form.
   await expect(dialog.getByTestId('sale-preview')).toContainText('This sale loses money after costs.');

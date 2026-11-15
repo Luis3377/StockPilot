@@ -167,7 +167,7 @@ test.describe('AI build (mocked backend)', () => {
       explained('You made $21.50 this month: $70.00 of sales, minus $35.00 the items cost you, $8.50 in fees and $5.00 of shipping.'),
     ]);
     await smallShop(page);
-    await expect(page.getByTestId('assistant')).toContainText('AI can explain an answer when you ask; it never calculates.');
+    await expect(page.getByTestId('assistant')).toContainText('Separately, AI can explain an answer in words when you ask; it never calculates.');
     const answer = await ask(page, 'How much profit have I made this month?');
     await expect(answer).toContainText('Your realized profit this month was $21.50.');
     expect(sent).toHaveLength(0);

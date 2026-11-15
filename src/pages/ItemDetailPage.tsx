@@ -211,7 +211,13 @@ export function ItemDetailPage() {
               label="Projected profit / item"
               value={unitProfit === null ? '—' : money(unitProfit)}
               tone={unitProfit !== null && unitProfit < 0 ? 'bad' : undefined}
-              hint={unitProfit === null ? 'Set an asking price' : rate.percent > 0 ? `After ~${formatPercent(rate.percent, 0)} selling costs` : 'Before selling fees'}
+              hint={
+                unitProfit === null
+                  ? 'Set an asking price'
+                  : rate.percent > 0
+                    ? `After ${formatPercent(rate.percent, 2)} selling costs${rate.source === 'history' ? ' (your average so far; it updates with each sale, so this can move by a cent)' : ''}`
+                    : 'Before selling fees'
+              }
             />
           </div>
         </div>
