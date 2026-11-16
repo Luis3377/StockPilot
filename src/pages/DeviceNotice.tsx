@@ -28,7 +28,8 @@ function readSnooze(): number {
  *   3. a one-time explanation of where data lives, until dismissed.
  */
 export function DeviceNotice() {
-  const demo = useAppState((s) => s.dataset === 'demo');
+  // Backup reminders are about your own records: not shown in the demo or during a practice lesson.
+  const demo = useAppState((s) => s.dataset !== 'real');
   const storageKind = useAppState((s) => s.storageKind);
   const data = useAppState((s) => s.data);
   const lastBackupAt = useAppState((s) => s.settings.lastBackupAt);

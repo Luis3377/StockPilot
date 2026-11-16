@@ -1,16 +1,32 @@
-// A small "?" next to a financial term: opens a plain-English explanation (from help.ts) with a
-// link to the Learning Center. Keyboard: Enter/Space opens, Escape closes; screen readers get the
-// button's question and the expanded state. The panel stays inside the screen on phones.
+// A small "ⓘ" next to a financial term (the same button stat tiles use): opens a plain-English
+// explanation from help.ts with a link to the Learning Center. Keyboard: Enter/Space opens,
+// Escape closes; screen readers get the button's question and the expanded state. The panel
+// stays inside the screen on phones. A link with ?help=<topic> (the Learning Center's "See it in
+// StockPilot") opens it on arrival.
 
-import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { CircleHelp } from 'lucide-react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Info } from 'lucide-react';
 import { helpTopic } from './help';
 import { useClickOutside } from '../lib/useClickOutside';
 import { cn } from '../ui/cn';
 
 const WIDTH = 288;
 const GUTTER = 8;
+
+/** Opens a help explanation when the page was opened with ?help=<topic> for it, and brings it into view. */
+export function useHelpParam(topic: string | undefined, open: () => void, ref: RefObject<HTMLElement | null>) {
+  const [params] = useSearchParams();
+  const wanted = params.get('help');
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    if (!topic || wanted !== topic) return;
+    openRef.current();
+    const raf = requestAnimationFrame(() => ref.current?.scrollIntoView({ block: 'center' }));
+    return () => cancelAnimationFrame(raf);
+  }, [topic, wanted, ref]);
+}
 
 export function HelpTip({ topic, className }: { topic: string; className?: string }) {
   const t = helpTopic(topic);
@@ -23,6 +39,7 @@ export function HelpTip({ topic, className }: { topic: string; className?: strin
     open,
     useCallback(() => setOpen(false), []),
   );
+  useHelpParam(topic, () => setOpen(true), ref);
 
   // Centered under the icon, but never past either edge of the screen.
   useLayoutEffect(() => {
@@ -51,7 +68,7 @@ export function HelpTip({ topic, className }: { topic: string; className?: strin
         className="-m-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted hover:text-ink"
         data-testid={`help-${t.id}`}
       >
-        <CircleHelp className="size-3.5" />
+        <Info className="size-3.5" />
       </button>
       {open && (
         <span

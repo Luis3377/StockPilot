@@ -116,6 +116,7 @@ The domain layer is pure TypeScript with no browser dependencies, so the same in
 
 ## Further reading
 
+- [docs/TUTORIAL_QA_1.md](docs/TUTORIAL_QA_1.md) — the first tutorial QA fix round: Practice Mode data safety, tab ownership, the interactive Max Bid and collector lessons, every Medium/Low item, and tests
 - [docs/LEARNING_CENTER.md](docs/LEARNING_CENTER.md) — the Learning Center and guided tours: how lessons work, the lessons and paths, practice-data isolation, safeguards, help icons, progress and backups, accessibility, testing and limitations
 - [docs/BETA_FIXES_1.md](docs/BETA_FIXES_1.md) — the first manual beta fix round: findings, root causes, what changed, and tests
 - [docs/FINANCIAL_PLANNING.md](docs/FINANCIAL_PLANNING.md) — tax set-aside and financial planning: reserve calculations, scenarios, suggested vs. set aside, obligations and reminders, the assistant, stored data and limitations

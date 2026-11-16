@@ -2,7 +2,7 @@ import { isDomainError } from '../../domain/errors';
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, FileUp, AlertTriangle, Download } from 'lucide-react';
 import { applyInventoryImport, importTemplateCsv, previewInventoryImport, type DuplicateHandling, type ImportPreview } from '../../csv/inventoryImport';
-import { store, useAppState } from '../../data/store';
+import { PRACTICE_DATA_LOCK, PracticeLockError, store, useAppState } from '../../data/store';
 import { downloadText, readFileText } from '../../lib/download';
 import { Dialog } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
@@ -12,6 +12,7 @@ import { plural, pluralWord } from '../../domain/format';
 
 export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const data = useAppState((s) => s.data);
+  const practicing = useAppState((s) => s.dataset === 'practice');
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
@@ -53,10 +54,10 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
     if (!preview) return;
     let result: ReturnType<typeof applyInventoryImport>;
     try {
-      result = store.commit((d) => applyInventoryImport(d, preview, handling));
+      result = store.importInventory((d) => applyInventoryImport(d, preview, handling));
     } catch (e) {
       // e.g. purchase dates in a closed month
-      toast.error(isDomainError(e) ? e.message : 'The import could not be applied. Your data was not changed.');
+      toast.error(isDomainError(e) || e instanceof PracticeLockError ? e.message : 'The import could not be applied. Your data was not changed.');
       return;
     }
     const parts = [`${result.added} added`];
@@ -78,13 +79,18 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={run} disabled={!preview || willImport === 0}>
+          <Button variant="primary" onClick={run} disabled={practicing || !preview || willImport === 0}>
             {willImport > 0 ? `Import ${plural(willImport, 'item')}` : 'Import'}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        {practicing && (
+          <p role="note" className="rounded-xl bg-demo-soft p-3 text-sm text-ink" data-testid="practice-data-lock">
+            {PRACTICE_DATA_LOCK}
+          </p>
+        )}
         <div className="rounded-2xl border border-dashed border-line-strong bg-surface-2 p-5 text-center">
           <FileUp className="mx-auto mb-2 size-6 text-ink-2" />
           <p className="text-sm text-ink-2">

@@ -13,6 +13,14 @@ interface DemoItem extends ItemInput {
 
 const SAMPLE_NOTE = 'Sample item (demo data).';
 
+/**
+ * Whether a demo-mode item came with the demo, rather than being added while trying StockPilot
+ * out. Every seeded item carries the sample note (in saved demos too), so nothing is migrated.
+ */
+export function isDemoSeedItem(item: { notes: string }): boolean {
+  return item.notes.startsWith(SAMPLE_NOTE);
+}
+
 const ITEMS: DemoItem[] = [
   // Sneakers
   { name: 'Nike Dunk Low "Panda" — Size 10', category: 'Sneakers', quantity: 2, unitCost: 85, askingPrice: 135, estimatedValue: 128, condition: 'New with box', location: 'Closet shelf A', ageDays: 48,

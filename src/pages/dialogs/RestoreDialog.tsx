@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileUp } from 'lucide-react';
 import { parseBackup, type ParsedBackup } from '../../data/backup';
-import { store, useAppState } from '../../data/store';
+import { PRACTICE_DATA_LOCK, store, useAppState } from '../../data/store';
 import { isDomainError } from '../../domain/errors';
 import { formatDateTime } from '../../domain/dates';
 import { readFileText } from '../../lib/download';
@@ -70,13 +70,18 @@ export function RestoreDialog({ open, onClose, onRestored }: { open: boolean; on
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="danger" onClick={() => void restore()} disabled={!backup} loading={busy}>
+          <Button variant="danger" onClick={() => void restore()} disabled={!backup || dataset === 'practice'} loading={busy}>
             Replace my data
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        {dataset === 'practice' && (
+          <p role="note" className="rounded-xl bg-demo-soft p-3 text-sm text-ink" data-testid="practice-data-lock">
+            {PRACTICE_DATA_LOCK}
+          </p>
+        )}
         <div className="rounded-2xl border border-dashed border-line-strong bg-surface-2 p-5 text-center">
           <FileUp className="mx-auto mb-2 size-6 text-ink-2" />
           <p className="text-sm text-ink-2">Choose a StockPilot backup file (.json).</p>

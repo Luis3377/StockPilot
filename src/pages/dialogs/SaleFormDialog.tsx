@@ -356,7 +356,7 @@ export function SaleFormDialog({ open, itemId, saleId, prefill, onClose, onAddIt
               />
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
+              <div data-tour="sale-fees">
                 {form.feeMode === 'amount' ? (
                   <MoneyField label="Marketplace fees" hint="Total fees for this sale" currency={currency} value={form.fees} onChange={(v) => set('fees', v)} error={errors.fees} />
                 ) : (

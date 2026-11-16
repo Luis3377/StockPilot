@@ -1,8 +1,10 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import { cn } from './cn';
 import { Badge, type Tone } from './Badge';
-import { HelpTip } from '../learn/HelpTip';
+import { helpTopic } from '../learn/help';
+import { useHelpParam } from '../learn/HelpTip';
 
 interface StatTileProps {
   label: string;
@@ -22,7 +24,7 @@ interface StatTileProps {
 const valueTone = { default: 'text-ink', good: 'text-good-text', bad: 'text-bad-text', warn: 'text-warn-text' };
 
 /** A small "ⓘ" button that shows a definition inline (works with touch, keyboard and screen readers). */
-export function InfoButton({ label, open, onToggle, controls }: { label: string; open: boolean; onToggle: () => void; controls: string }) {
+export function InfoButton({ label, open, onToggle, controls, testId }: { label: string; open: boolean; onToggle: () => void; controls: string; testId?: string }) {
   return (
     <button
       type="button"
@@ -31,6 +33,7 @@ export function InfoButton({ label, open, onToggle, controls }: { label: string;
       aria-controls={controls}
       aria-label={`What is ${label}?`}
       className="-m-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted hover:text-ink"
+      data-testid={testId}
     >
       <Info className="size-3.5" />
     </button>
@@ -40,14 +43,19 @@ export function InfoButton({ label, open, onToggle, controls }: { label: string;
 export function StatTile({ label, value, sub, icon, tag, tone = 'default', info, help, className, testId }: StatTileProps) {
   const [open, setOpen] = useState(false);
   const infoId = useId();
+  const ref = useRef<HTMLDivElement>(null);
+  // A help topic shows the same way as a definition: the same ⓘ, opening in the tile, plus a Learning Center link.
+  const topic = help ? helpTopic(help) : null;
+  useHelpParam(help, () => setOpen(true), ref);
   return (
-    <div className={cn('min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-card', className)} data-testid={testId}>
+    <div ref={ref} className={cn('min-w-0 rounded-2xl border border-line bg-surface p-4 shadow-card', className)} data-testid={testId}>
       <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
         <div className="flex min-w-0 items-start gap-2 text-sm leading-5 text-ink-2">
           {icon && <span className="mt-0.5 text-muted">{icon}</span>}
           <span className="min-w-0">{label}</span>
-          {info && <InfoButton label={label} open={open} onToggle={() => setOpen((v) => !v)} controls={infoId} />}
-          {help && <HelpTip topic={help} />}
+          {(info || topic) && (
+            <InfoButton label={topic ? topic.term.toLowerCase() : label} open={open} onToggle={() => setOpen((v) => !v)} controls={infoId} testId={topic ? `help-${topic.id}` : undefined} />
+          )}
         </div>
         {tag && <Badge tone={tag.tone}>{tag.label}</Badge>}
       </div>
@@ -55,10 +63,18 @@ export function StatTile({ label, value, sub, icon, tag, tone = 'default', info,
         {value}
       </div>
       {sub && <div className="mt-1 text-xs text-ink-2">{sub}</div>}
-      {info && (
+      {info && !topic && (
         <p id={infoId} hidden={!open} className="mt-2 rounded-lg bg-surface-2 px-2.5 py-2 text-xs text-ink-2" data-testid={testId ? `${testId}-info` : undefined}>
           {info}
         </p>
+      )}
+      {topic && (
+        <div id={infoId} hidden={!open} className="mt-2 rounded-lg bg-surface-2 px-2.5 py-2 text-xs text-ink-2" data-testid={`help-${topic.id}-text`}>
+          {topic.text}{' '}
+          <Link to={`/learn?topic=${topic.id}`} className="font-medium text-accent-text underline">
+            More in the Learning Center
+          </Link>
+        </div>
       )}
     </div>
   );

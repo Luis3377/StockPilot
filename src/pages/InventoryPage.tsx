@@ -4,7 +4,8 @@ import { Boxes, Calculator, Download, FileUp, Layers, LayoutGrid, List, PackageP
 import { acquiredDate, itemCostValue, knownCategories, knownLocations, stockStatus, uniqueSorted, daysWithoutSale } from '../domain/calc';
 import { todayISO } from '../domain/dates';
 import type { Item } from '../domain/types';
-import { store, useAppState } from '../data/store';
+import { PRACTICE_DATA_LOCK, store, useAppState } from '../data/store';
+import { isDemoSeedItem } from '../data/demo';
 import { inventoryCsv } from '../csv/exports';
 import { downloadText, fileStamp } from '../lib/download';
 import { useMoney } from '../lib/hooks';
@@ -60,6 +61,7 @@ export function InventoryPage() {
   const data = useAppState((s) => s.data);
   const settings = useAppState((s) => s.settings);
   const dataset = useAppState((s) => s.dataset);
+  const practicing = dataset === 'practice';
   const dialogs = useDialogs();
   const toast = useToast();
   const { money } = useMoney();
@@ -139,7 +141,7 @@ export function InventoryPage() {
                 <Link to="/inventory/bids" className={buttonClass('secondary', 'md')} data-testid="bids-link">
                   <Calculator className="size-4" /> Max bid calculator
                 </Link>
-                <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv}>
+                <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} disabled={practicing} title={practicing ? PRACTICE_DATA_LOCK : undefined}>
                   Import CSV
                 </Button>
               </>
@@ -159,7 +161,7 @@ export function InventoryPage() {
         description={`${plural(data.items.length, 'item')} · ${plural(data.items.reduce((n, i) => n + i.quantity, 0), 'unit')} on hand`}
         actions={
           <>
-            <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} className="hidden sm:inline-flex">
+            <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} className="hidden sm:inline-flex" disabled={practicing} title={practicing ? PRACTICE_DATA_LOCK : undefined}>
               Import
             </Button>
             <Button icon={<Download className="size-4" />} onClick={exportCsv}>
@@ -283,6 +285,7 @@ export function InventoryPage() {
                     {item.name}
                   </p>
                   <p className="mt-1 truncate text-xs text-muted">{[item.sku, item.category].filter(Boolean).join(' · ')}</p>
+                  {dataset === 'demo' && !isDemoSeedItem(item) && <AddedByYou />}
                   <div className="mt-2 flex items-end justify-between gap-2">
                     <span className="tabular text-sm font-semibold text-ink">{priceLabel(item, settings.mode, money)}</span>
                     <span className="tabular text-xs text-ink-2">Qty {item.quantity}</span>
@@ -316,6 +319,7 @@ export function InventoryPage() {
                         <span className="line-clamp-2 font-medium break-words text-ink" title={item.name}>
                           {item.name}
                         </span>
+                        {dataset === 'demo' && !isDemoSeedItem(item) && <AddedByYou />}
                         <span className="block truncate text-xs text-muted">
                           {item.sku}
                           <span className="md:hidden"> · Qty {item.quantity} · {priceLabel(item, settings.mode, money)}</span>
@@ -397,5 +401,18 @@ function FilterSelect({ label, value, onChange, options, className }: { label: s
         <path d="m6 9 6 6 6-6" />
       </svg>
     </label>
+  );
+}
+
+/** In demo mode: an item someone added while trying StockPilot out, not one that came with the demo. */
+function AddedByYou() {
+  return (
+    <span
+      className="mt-1 inline-block rounded-full bg-demo-soft px-2 py-0.5 text-[11px] font-medium text-ink"
+      data-testid="demo-added-by-you"
+      title="You added this while trying the demo; it didn’t come with it."
+    >
+      Added by you
+    </span>
   );
 }

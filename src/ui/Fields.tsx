@@ -36,7 +36,8 @@ export function Field({ label, hint, hintTone, error, required, children, classN
   const errId = `${id}-err`;
   const describedBy = [hint ? hintId : null, error ? errId : null].filter(Boolean).join(' ') || undefined;
   return (
-    <div className={className}>
+    // data-field: the whole field (label, control, extra buttons, hint) for Learning Center highlights.
+    <div className={className} data-field>
       <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-ink">
         {label}
         {required && <span className="ml-0.5 text-bad-text" aria-hidden> *</span>}

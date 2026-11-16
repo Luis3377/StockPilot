@@ -222,3 +222,7 @@ The full map is in [BETA_FIXES_1.md](BETA_FIXES_1.md#tests). New: `src/insights/
 ## Learning Center + guided tours → tests
 
 The full map is in [LEARNING_CENTER.md](LEARNING_CENTER.md#tests). New: `src/learn/learn.test.ts` (progress, lessons, help text, practice isolation, backups) and `e2e/tutorial.spec.ts` (welcome, practice lessons, wrong clicks, invalid answers, refresh/resume, exit/skip/replay without duplicates, every lesson's targets in each mode, missing targets, backup/restore of progress, keyboard, axe, reduced motion, phone layout), plus a scanner-lesson test in `e2e/scanner.spec.ts`. Existing browser tests now dismiss the welcome after onboarding (`dismissWelcome` in `e2e/helpers.ts`).
+
+## Tutorial QA round 1 → tests
+
+The full map is in [TUTORIAL_QA_1.md](TUTORIAL_QA_1.md#tests): Practice Mode data lock, two tabs, Max Bid with real values, collector details, practice isolation, replays, refresh/resume, phone buttons, discovery of all 17 lessons, and the unchanged calculation suites.
