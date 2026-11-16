@@ -158,12 +158,12 @@ export function SalesPage() {
             <Badge tone="good">Money actually earned</Badge>
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <StatTile label="Revenue" value={money(t.revenue)} sub={`${plural(t.salesCount, 'sale')} · ${plural(t.unitsSold, 'unit')}`} testId="sales-revenue" />
-            <StatTile label="Cost of goods" value={money(t.costOfGoods)} sub="What the sold items cost you" testId="sales-cogs" />
+            <StatTile label="Revenue" value={money(t.revenue)} sub={`${plural(t.salesCount, 'sale')} · ${plural(t.unitsSold, 'unit')}`} testId="sales-revenue" help="revenue" />
+            <StatTile label="Cost of goods" value={money(t.costOfGoods)} sub="What the sold items cost you" testId="sales-cogs" help="cogs" />
             <StatTile label="Selling expenses" value={money(t.totalExpenses)} sub={`Fees ${money(t.fees)} · Ship ${money(t.shipping)} · Other ${money(t.otherExpenses)}`} testId="sales-expenses" />
-            <StatTile label="Net profit" value={money(t.netProfit)} tone={t.netProfit < 0 ? 'bad' : 'good'} tag={REALIZED} testId="sales-net" />
-            <StatTile label="Profit margin" value={formatPercent(t.margin)} sub="Net profit ÷ revenue" testId="sales-margin" />
-            <StatTile label="ROI" value={formatPercent(t.roi)} sub="Net profit ÷ cost of goods" testId="sales-roi" />
+            <StatTile label="Net profit" value={money(t.netProfit)} tone={t.netProfit < 0 ? 'bad' : 'good'} tag={REALIZED} testId="sales-net" help="realized-profit" />
+            <StatTile label="Profit margin" value={formatPercent(t.margin)} sub="Net profit ÷ revenue" testId="sales-margin" help="margin" />
+            <StatTile label="ROI" value={formatPercent(t.roi)} sub="Net profit ÷ cost of goods" testId="sales-roi" help="roi" />
           </div>
         </section>
 

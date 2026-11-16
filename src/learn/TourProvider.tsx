@@ -11,7 +11,7 @@ import { GraduationCap, X } from 'lucide-react';
 import { store, useAppState } from '../data/store';
 import { scannerEnabled } from '../ai/config';
 import { completeLesson, goToStep, pauseLesson, skipLesson, startLesson, type ActiveLesson, type TutorialProgress } from './progress';
-import { lessonById, pathFor, stepsFor } from './lessons';
+import { lessonById, pathFor, practiceDetailParent, stepsFor } from './lessons';
 import { resolveTarget } from './targets';
 import type { Lesson, LessonEnv, LessonStep, StaticEnv } from './types';
 import { Dialog } from '../ui/Dialog';
@@ -195,17 +195,21 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
   const navigate = useNavigate();
   const toast = useToast();
   const { start } = useTour();
-  const [el, setEl] = useState<HTMLElement | null>(null);
+  // The element found for *this* step (an element found for the previous step is never used,
+  // so a stale field can't complete the next step).
+  const stepKey = `${lesson.id}:${index}`;
+  const [found, setFound] = useState<{ key: string; el: HTMLElement | null }>({ key: '', el: null });
+  const el = found.key === stepKey ? found.el : null;
   const [box, setBox] = useState<Box | null>(null);
   const [missing, setMissing] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [touched, setTouched] = useState(false);
   const missingSince = useRef<number | null>(null);
-  const scrolledFor = useRef<string | null>(null);
+  const scrolledFor = useRef<{ key: string; count: number; at: number } | null>(null);
   const navigatedFor = useRef<string | null>(null);
   const firstRun = useRef(true);
-  const carryHint = useRef<string | null>(null);
+  const carryHint = useRef<{ index: number; text: string } | null>(null);
 
   const env = useCallback(
     (): LessonEnv => ({
@@ -233,11 +237,16 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
     async (how: 'pause' | 'skip' | 'finish') => {
       const p = store.getState().settings.tutorial;
       saveProgress(how === 'pause' ? pauseLesson(p) : how === 'skip' ? skipLesson(p) : completeLesson(p, new Date().toISOString()));
-      if (lesson.practice) await store.exitPractice();
+      if (lesson.practice) {
+        await store.exitPractice();
+        // A practice record's page (e.g. a practice Max Bid plan) doesn't exist in your own records.
+        const parent = practiceDetailParent(location.pathname);
+        if (parent) navigate(parent);
+      }
       if (how === 'pause') toast.info('Lesson paused. Resume it any time from the Learning Center.');
       if (how === 'finish') toast.success(`Lesson complete: ${lesson.title}.`);
     },
-    [lesson, toast],
+    [lesson, toast, location.pathname, navigate],
   );
 
   // A practice lesson only ever runs on the practice records (e.g. after a refresh).
@@ -251,14 +260,19 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
     firstRun.current = false;
     if (step.resumeAt && !resolveTarget(step.target)) {
       const to = steps.findIndex((s) => s.id === step.resumeAt);
-      if (to >= 0 && to < index) go(index, to);
+      if (to >= 0 && to < index) {
+        carryHint.current = { index: to, text: 'The form closed when the page reloaded. Open it again to carry on — what you saved is still there.' };
+        go(index, to);
+      }
     }
   }, [step, steps, index, go]);
 
   // Each step opens its page once when it starts; after that the user can go anywhere.
   useEffect(() => {
-    setHint(carryHint.current);
-    carryHint.current = null;
+    if (carryHint.current?.index === index) {
+      setHint(carryHint.current.text);
+      carryHint.current = null;
+    } else setHint(null);
     setMissing(false);
     setTouched(false);
     missingSince.current = null;
@@ -273,9 +287,24 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
   // Find the target, follow it as the page scrolls or resizes, and notice when it's missing.
   useEffect(() => {
     let raf = 0;
+    // The highlighted element carries the step's id (for tests and assistive tech), set here so
+    // it never sits on the previous step's element.
+    let marked: HTMLElement | null = null;
+    const mark = (found: HTMLElement | null) => {
+      if (marked === found) return;
+      if (marked) {
+        marked.removeAttribute('data-tour-active');
+        marked.style.scrollMarginTop = '';
+        marked.style.scrollMarginBottom = '';
+      }
+      found?.setAttribute('data-tour-active', step.id);
+      marked = found;
+    };
+    const key = `${lesson.id}:${index}`;
     const measure = () => {
       const found = resolveTarget(step.target);
-      setEl((prev) => (prev === found ? prev : found));
+      mark(found);
+      setFound((prev) => (prev.key === key && prev.el === found ? prev : { key, el: found }));
       if (!step.target) {
         setBox(null);
         return;
@@ -287,14 +316,15 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
         setBox((b) =>
           b && b.top === r.top && b.left === r.left && b.width === r.width && b.height === r.height ? b : { top: r.top, left: r.left, width: r.width, height: r.height },
         );
-        const key = `${lesson.id}:${index}`;
-        if (scrolledFor.current !== key) {
-          scrolledFor.current = key;
-          if (r.top < 0 || r.bottom > window.innerHeight)
-            found.scrollIntoView({
-              block: 'center',
-              behavior: reducedMotion() ? 'auto' : 'smooth',
-            });
+        // Off screen, or under the sticky header or the phone's tab bar: bring it to the middle.
+        // Checked when the step starts and once more a moment later (a page that was still
+        // loading, or the browser restoring the scroll position after a refresh, can move it).
+        const tries = scrolledFor.current?.key === key ? scrolledFor.current : { key, count: 0, at: 0 };
+        if (tries.count < 2 && Date.now() - tries.at > 600) {
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height, 40) / 2);
+          const hidden = r.top < 0 || r.bottom > window.innerHeight || !hit || !(found.contains(hit) || hit.closest('[data-tour-popover], [data-testid="tour-mask"]'));
+          scrolledFor.current = { key, count: hidden ? tries.count + 1 : tries.count === 0 ? 1 : 2, at: Date.now() };
+          if (hidden) found.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
         }
       } else {
         setBox(null);
@@ -304,7 +334,7 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
         if (step.optional && waited > OPTIONAL_MS) go(index, index + 1);
         else if (back >= 0 && back < index && waited > OPTIONAL_MS) {
           // The form this step is in was closed: back to the step that opens it.
-          carryHint.current = 'The form was closed. Open it again to carry on.';
+          carryHint.current = { index: back, text: 'The form was closed. Open it again to carry on.' };
           go(index, back);
         } else if (waited > MISSING_MS) setMissing(true);
       }
@@ -318,6 +348,7 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
     window.addEventListener('scroll', onFrame, true);
     window.addEventListener('resize', onFrame);
     return () => {
+      mark(null);
       window.clearInterval(timer);
       cancelAnimationFrame(raf);
       window.removeEventListener('scroll', onFrame, true);
@@ -325,12 +356,17 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
     };
   }, [step, steps, lesson.id, index, go]);
 
-  // Mark the highlighted element (for assistive tech and tests).
+
+  // Escape exits the lesson when nothing else uses it (open dialogs and menus handle their own).
   useEffect(() => {
-    if (!el) return;
-    el.setAttribute('data-tour-active', 'true');
-    return () => el.removeAttribute('data-tour-active');
-  }, [el]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const a = document.activeElement;
+      if (!a || a === document.body || a.closest('[data-tour-popover]')) void leave('pause');
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [leave]);
 
   // Verified progress: "when" checks and "already done" checks, on every change that matters.
   useEffect(() => {
@@ -377,9 +413,17 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
       if (!(to instanceof HTMLElement) || to.closest('[data-tour-popover]')) return;
       if (valid(fieldValue(el))) go(index, index + 1);
     };
+    // Choosing from a list is a complete answer on its own.
+    const onChange = () => {
+      if (el instanceof HTMLSelectElement && valid(el.value)) window.setTimeout(() => go(index, index + 1), 0);
+    };
     el.addEventListener('blur', onBlur);
+    el.addEventListener('change', onChange);
     if (document.activeElement !== el && !window.matchMedia('(pointer: coarse)').matches) el.focus({ preventScroll: true });
-    return () => el.removeEventListener('blur', onBlur);
+    return () => {
+      el.removeEventListener('blur', onBlur);
+      el.removeEventListener('change', onChange);
+    };
   }, [step, el, index, go]);
 
   const isLast = index === steps.length - 1;
@@ -387,6 +431,10 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
   const nextLesson = isLast ? path[path.findIndex((l) => l.id === lesson.id) + 1] : undefined;
   const offRoute = Boolean(step.route && location.pathname !== step.route && navigatedFor.current === `${lesson.id}:${index}`);
   const canNext = step.advance.kind === 'next' || (step.advance.kind === 'click' && step.advance.orNext) || (step.advance.kind === 'field' && fieldOk);
+  // "Look" steps only point at something: the highlighted control can't be used from here, so an
+  // explanation lesson never saves, imports, closes or deletes anything.
+  const lookOnly = step.advance.kind === 'next';
+  const onLookClick = () => setHint('This step only shows where this is. Press Next to continue.');
   const onMaskClick = () =>
     setHint(
       step.target
@@ -396,7 +444,7 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
 
   return createPortal(
     <>
-      <Mask box={step.target ? box : null} onClick={onMaskClick} />
+      <Mask box={step.target ? box : null} onClick={onMaskClick} onLookClick={lookOnly ? onLookClick : undefined} />
       <Popover
         lesson={lesson}
         step={step}
@@ -423,7 +471,23 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
           }
         }}
         onReturn={() => step.route && navigate(step.route)}
-        onFocusTarget={() => el?.focus()}
+        onFocusTarget={() => {
+          el?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+          el?.focus({ preventScroll: true });
+        }}
+        onCovered={(pop) => {
+          // On a phone the lesson box can sit over the control: scroll the control into the free part.
+          if (!el) return;
+          const vh = window.innerHeight;
+          if (pop.top > vh / 2) {
+            el.style.scrollMarginTop = '72px';
+            el.style.scrollMarginBottom = `${vh - pop.top + 12}px`;
+          } else {
+            el.style.scrollMarginTop = `${pop.bottom + 12}px`;
+            el.style.scrollMarginBottom = '96px';
+          }
+          el.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+        }}
         onExit={() => void leave('pause')}
         onSkipLesson={() => void leave('skip')}
         onNextLesson={async () => {
@@ -436,7 +500,7 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
   );
 }
 
-function Mask({ box, onClick }: { box: Box | null; onClick: () => void }) {
+function Mask({ box, onClick, onLookClick }: { box: Box | null; onClick: () => void; onLookClick?: () => void }) {
   const cls = 'fixed z-[60] bg-black/45';
   if (!box) return <div className={cn(cls, 'inset-0')} onClick={onClick} aria-hidden data-testid="tour-mask" />;
   const t = Math.max(0, box.top - PAD);
@@ -449,6 +513,7 @@ function Mask({ box, onClick }: { box: Box | null; onClick: () => void }) {
       <div className={cls} style={{ top: b, left: 0, right: 0, bottom: 0 }} onClick={onClick} />
       <div className={cls} style={{ top: t, left: 0, width: l, height: b - t }} onClick={onClick} />
       <div className={cls} style={{ top: t, left: r, right: 0, height: b - t }} onClick={onClick} />
+      {onLookClick && <div className="fixed z-[60]" style={{ top: t, left: l, width: r - l, height: b - t }} onClick={onLookClick} data-testid="tour-look-shield" />}
       <div
         className="pointer-events-none fixed z-[61] rounded-xl ring-4 ring-accent motion-safe:transition-all motion-safe:duration-150"
         style={{ top: t, left: l, width: r - l, height: b - t }}
@@ -477,6 +542,8 @@ interface PopoverProps {
   onRetry: () => void;
   onReturn: () => void;
   onFocusTarget: () => void;
+  /** The box ended up over the highlighted control (phones): the runner scrolls it clear. */
+  onCovered: (popover: DOMRect) => void;
   onExit: () => void;
   onSkipLesson: () => void;
   onNextLesson: () => void;
@@ -496,9 +563,18 @@ function Popover(p: PopoverProps) {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+  const coveredFor = useRef<number | null>(null);
   useEffect(() => {
     const r = ref.current?.getBoundingClientRect();
     if (r && (Math.abs(r.width - size.w) > 1 || Math.abs(r.height - size.h) > 1)) setSize({ w: r.width, h: r.height });
+    const b = p.box;
+    if (r && b && coveredFor.current !== p.index) {
+      const overlaps = r.top < b.top + b.height && r.bottom > b.top && r.left < b.left + b.width && r.right > b.left;
+      if (overlaps) {
+        coveredFor.current = p.index;
+        p.onCovered(r);
+      }
+    }
   });
   // Each new step is announced, and focus moves here unless the step is about typing in a field.
   useEffect(() => {
@@ -508,7 +584,7 @@ function Popover(p: PopoverProps) {
   const phone = vw.w < 640;
   let style: React.CSSProperties;
   if (!p.box) style = phone ? { left: 12, right: 12, bottom: 12 } : { left: (vw.w - size.w) / 2, top: Math.max(16, (vw.h - size.h) / 2) };
-  else if (phone) style = p.box.top + p.box.height / 2 > vw.h / 2 ? { left: 12, right: 12, top: 12 } : { left: 12, right: 12, bottom: 12 };
+  else if (phone) style = p.box.top > vw.h - (p.box.top + p.box.height) ? { left: 12, right: 12, top: 12 } : { left: 12, right: 12, bottom: 12 };
   else {
     const below = p.box.top + p.box.height + PAD + 12;
     const above = p.box.top - PAD - 12 - size.h;
@@ -625,7 +701,7 @@ function Popover(p: PopoverProps) {
             </Button>
           ) : (
             (p.canNext || p.step.advance.kind === 'field') && (
-              <Button size="sm" variant="primary" onClick={p.onNext} aria-disabled={!p.canNext} className={cn(!p.canNext && 'opacity-60')} data-testid="tour-next">
+              <Button size="sm" variant="primary" onClick={p.onNext} data-testid="tour-next">
                 Next
               </Button>
             )

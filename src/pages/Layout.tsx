@@ -191,7 +191,7 @@ function PracticeBanner() {
       </span>
       <button
         type="button"
-        className="shrink-0 rounded-lg bg-white/20 px-2.5 py-1 text-xs font-semibold hover:bg-white/30"
+        className="shrink-0 rounded-lg bg-black/25 px-2.5 py-1 text-xs font-semibold hover:bg-black/35"
         data-testid="practice-leave"
         onClick={async () => {
           // Pause the lesson first, so it doesn't switch straight back to practice.

@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from 'react';
 import { Info } from 'lucide-react';
 import { cn } from './cn';
 import { Badge, type Tone } from './Badge';
+import { HelpTip } from '../learn/HelpTip';
 
 interface StatTileProps {
   label: string;
@@ -12,6 +13,8 @@ interface StatTileProps {
   tone?: 'default' | 'good' | 'bad' | 'warn';
   /** What the number means and how it's calculated; shown on request. */
   info?: string;
+  /** A Learning Center help topic (src/learn/help.ts) explained by a "?" beside the label. */
+  help?: string;
   className?: string;
   testId?: string;
 }
@@ -34,7 +37,7 @@ export function InfoButton({ label, open, onToggle, controls }: { label: string;
   );
 }
 
-export function StatTile({ label, value, sub, icon, tag, tone = 'default', info, className, testId }: StatTileProps) {
+export function StatTile({ label, value, sub, icon, tag, tone = 'default', info, help, className, testId }: StatTileProps) {
   const [open, setOpen] = useState(false);
   const infoId = useId();
   return (
@@ -44,6 +47,7 @@ export function StatTile({ label, value, sub, icon, tag, tone = 'default', info,
           {icon && <span className="mt-0.5 text-muted">{icon}</span>}
           <span className="min-w-0">{label}</span>
           {info && <InfoButton label={label} open={open} onToggle={() => setOpen((v) => !v)} controls={infoId} />}
+          {help && <HelpTip topic={help} />}
         </div>
         {tag && <Badge tone={tag.tone}>{tag.label}</Badge>}
       </div>

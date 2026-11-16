@@ -193,7 +193,7 @@ export const LESSONS: Lesson[] = [
         id: 'result',
         route: '/inventory',
         title: 'It’s in your inventory',
-        body: 'Its inventory cost is cost per item × quantity: what you have invested in it until it sells. With 3 at $8.00 that’s $24.00.',
+        body: 'Its inventory cost is cost per item × quantity: what you have invested in it until it sells. For example, 3 at $8.00 each is $24.00.',
         target: '[data-testid="inventory-item"]',
         advance: { kind: 'next' },
         illustrative: true,
@@ -799,7 +799,7 @@ export const LESSONS: Lesson[] = [
 /** The learning path the welcome tour follows, per mode. */
 export const MODE_PATHS: Record<UserMode, string[]> = {
   business: ['tour-dashboard', 'practice-add-item', 'practice-record-sale', 'inventory-levels', 'profit-by-source', 'monthly-close', 'financial-planning', 'backup'],
-  reseller: ['tour-dashboard', 'ai-scanner', 'max-bid', 'bulk-lots', 'practice-record-sale', 'payouts', 'predicted-actual', 'profit-by-source', 'backup'],
+  reseller: ['tour-dashboard', 'practice-add-item', 'ai-scanner', 'max-bid', 'bulk-lots', 'practice-record-sale', 'payouts', 'predicted-actual', 'profit-by-source', 'backup'],
   collector: ['tour-dashboard', 'collector-add', 'collector-organize', 'collector-valuation', 'collector-sales', 'backup'],
 };
 
@@ -819,4 +819,13 @@ export function pathFor(env: StaticEnv): Lesson[] {
 
 export function stepsFor(lesson: Lesson, env: StaticEnv): LessonStep[] {
   return lesson.steps.filter((s) => !s.include || s.include(env));
+}
+
+/** For a page that shows one record (/inventory/<id>, /inventory/bids/<id>, …), the list it belongs to. */
+export function practiceDetailParent(path: string): string | null {
+  const m = path.match(/^\/(inventory\/(?:bids|lots)|inventory|sales\/payouts|insights\/sourcing\/(?:source|trips))\/([^/]+)(\/.*)?$/);
+  if (!m) return null;
+  if (m[1] === 'inventory' && (m[2] === 'lots' || m[2] === 'bids')) return null;
+  if (m[1] === 'inventory/lots' && m[2] === 'performance') return null;
+  return `/${m[1].replace(/\/(source|trips)$/, '')}`;
 }

@@ -36,8 +36,15 @@ export function LearnPage() {
   const focusTopic = params.get('topic');
   const done = path.filter((l) => lessonStatus(progress, l.id) === 'completed').length;
 
+  // Opened from a help icon: show that topic (after the page's own scroll-to-top) and move focus to it.
   useEffect(() => {
-    if (focusTopic) document.getElementById(`topic-${focusTopic}`)?.scrollIntoView({ block: 'center' });
+    if (!focusTopic) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(`topic-${focusTopic}`);
+      el?.scrollIntoView({ block: 'center' });
+      el?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(raf);
   }, [focusTopic]);
 
   return (
@@ -89,7 +96,8 @@ export function LearnPage() {
         {topics.length ? (
           <dl className="mt-3 divide-y divide-line">
             {topics.map((t) => (
-              <div key={t.id} id={`topic-${t.id}`} className={cn('scroll-mt-24 py-2.5', focusTopic === t.id && 'rounded-lg bg-accent-soft/40 px-2')} data-testid="learn-topic">
+              <div key={t.id} id={`topic-${t.id}`}
+                tabIndex={-1} className={cn('scroll-mt-24 py-2.5 outline-none', focusTopic === t.id && 'rounded-lg bg-accent-soft/40 px-2')} data-testid="learn-topic">
                 <dt className="text-sm font-semibold text-ink">{t.term}</dt>
                 <dd className="mt-0.5 text-sm text-ink-2">
                   {t.text}

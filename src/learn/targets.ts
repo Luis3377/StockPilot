@@ -26,9 +26,10 @@ function byLabel(scope: ParentNode, text: string): HTMLElement[] {
 
 function byText(scope: ParentNode, text: string): HTMLElement[] {
   const wanted = text.split('|').map(norm);
-  return [...scope.querySelectorAll<HTMLElement>('button, a[href], [role="button"]')].filter(
-    (el) => wanted.includes(norm(el.textContent)) || wanted.includes(norm(el.getAttribute('aria-label'))),
-  );
+  const els = [...scope.querySelectorAll<HTMLElement>('button, a[href], [role="button"]')];
+  const exact = els.filter((el) => wanted.includes(norm(el.textContent)) || wanted.includes(norm(el.getAttribute('aria-label'))));
+  // A button with a sub-line ("More details · Condition, location…") matches by how it starts.
+  return exact.length ? exact : els.filter((el) => wanted.some((w) => norm(el.textContent).startsWith(w)));
 }
 
 function resolveOne(spec: string, root: ParentNode): HTMLElement[] {

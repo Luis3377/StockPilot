@@ -24,6 +24,7 @@ import { Dialog } from '../../ui/Dialog';
 import { MoneyField, Segmented, SelectField, TextAreaField, TextField } from '../../ui/Fields';
 import { useConfirm } from '../../ui/Confirm';
 import { cn } from '../../ui/cn';
+import { HelpTip } from '../../learn/HelpTip';
 
 /** The time and currency for history text and messages. */
 const clk = () => ({ now: new Date(), currency: store.getState().settings.currency });
@@ -126,7 +127,11 @@ function TaxCard({ s }: { s: PlanningSummary }) {
   const save = () => run(() => store.update((d) => setTaxPercent(d, value.trim() === '' ? null : Number(value), clk())), 'Reserve percentage saved.');
   return (
     <Card className="mb-4 p-4 sm:p-5" data-testid="tax-card">
-      <SectionHeader title="Tax reserve calculator" description="Choose the percentage of recorded profit you want to earmark. It’s your own planning choice: StockPilot doesn’t know your tax rate, and doesn’t work out what you owe." />
+      <SectionHeader
+        title="Tax reserve calculator"
+        description="Choose the percentage of recorded profit you want to earmark. It’s your own planning choice: StockPilot doesn’t know your tax rate, and doesn’t work out what you owe."
+        action={<HelpTip topic="tax-reserve" />}
+      />
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <TextField label="Your reserve percentage (%)" inputMode="decimal" value={value} onChange={setValue} className="w-56" placeholder="e.g. 25" data-testid="tax-percent" />
         <Button variant="primary" onClick={save} data-testid="tax-percent-save">
