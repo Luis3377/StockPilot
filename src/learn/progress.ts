@@ -9,6 +9,8 @@ export interface ActiveLesson {
   step: number;
   /** Counts in the practice dataset when the lesson started, so "you added an item" means a new one. */
   baseline: { items: number; sales: number; lots: number; bidPlans: number };
+  /** The browser tab running it: only that tab moves it on (see session.ts). Missing in older saves. */
+  owner?: string;
 }
 
 export interface TutorialProgress {
@@ -59,6 +61,7 @@ export function sanitizeTutorial(raw: unknown, onboarded: boolean): TutorialProg
             lots: n(b.lots),
             bidPlans: n(b.bidPlans),
           },
+          ...(typeof a.owner === 'string' && /^[a-z0-9]{1,20}$/.test(a.owner) ? { owner: a.owner } : {}),
         }
       : null;
   return {
@@ -70,10 +73,10 @@ export function sanitizeTutorial(raw: unknown, onboarded: boolean): TutorialProg
   };
 }
 
-export function startLesson(p: TutorialProgress, lessonId: string, baseline: ActiveLesson['baseline'], fromStep = 0): TutorialProgress {
+export function startLesson(p: TutorialProgress, lessonId: string, baseline: ActiveLesson['baseline'], fromStep = 0, owner?: string): TutorialProgress {
   return {
     ...p,
-    active: { lessonId, step: fromStep, baseline },
+    active: { lessonId, step: fromStep, baseline, ...(owner ? { owner } : {}) },
     skipped: p.skipped.filter((x) => x !== lessonId),
   };
 }

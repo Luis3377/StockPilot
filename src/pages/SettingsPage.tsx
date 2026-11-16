@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Check, Database, Download, FileUp, FlaskConical, HardDrive, Monitor, Moon, RotateCcw, ShieldCheck, Sun, Trash2, Upload } from 'lucide-react';
-import { store, useAppState } from '../data/store';
+import { PRACTICE_DATA_LOCK, store, useAppState } from '../data/store';
 import { adjustmentsCsv, inventoryCsv, profitSummaryCsv, salesCsv } from '../csv/exports';
 import { importTemplateCsv } from '../csv/inventoryImport';
 import { sellingCostRate } from '../domain/calc';
@@ -96,6 +96,8 @@ export function SettingsPage() {
   const toast = useToast();
   const location = useLocation();
   const demo = dataset === 'demo';
+  // During a practice lesson the open records are sample ones: data management waits until you leave.
+  const practicing = dataset === 'practice';
   const prefix = `stockpilot-${demo ? 'demo-' : ''}`;
   const rate = sellingCostRate(data.sales, { sellingCostPercent: null });
 
@@ -228,7 +230,12 @@ export function SettingsPage() {
           </div>
         </Section>
 
-        <Section id="data" title="Your data" description={demo ? 'You’re in demo mode, so these actions apply to the sample data.' : 'Import, export and back up your records.'}>
+        <Section
+          id="data"
+          title="Your data"
+          description={practicing ? 'You’re in Practice Mode, so the records open now are practice samples.' : demo ? 'You’re in demo mode, so these actions apply to the sample data.' : 'Import, export and back up your records.'}
+        >
+          {practicing && <PracticeLockNotice />}
           {storageKind === 'memory' ? (
             <div className="mb-4 flex gap-3 rounded-2xl bg-bad-soft p-4 text-sm text-bad-text" role="alert">
               <HardDrive className="mt-0.5 size-5 shrink-0" />
@@ -276,7 +283,7 @@ export function SettingsPage() {
                   “Protected” means the browser won’t remove the data on its own to free space. You (or someone with the device) can still delete it, so keep backups either way.
                 </p>
                 <div className="mt-3">
-                  <Button variant="primary" size="sm" icon={<Download className="size-4" />} onClick={() => void backup()} loading={busy}>
+                  <Button variant="primary" size="sm" icon={<Download className="size-4" />} onClick={() => void backup()} loading={busy} disabled={practicing}>
                     Back up now
                   </Button>
                 </div>
@@ -293,10 +300,10 @@ export function SettingsPage() {
           )}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <ActionGroup id="backup" title="Backup & restore" icon={<Database className="size-4" />}>
-              <Button variant="primary" icon={<Download className="size-4" />} onClick={() => void backup()} loading={busy}>
+              <Button variant="primary" icon={<Download className="size-4" />} onClick={() => void backup()} loading={busy} disabled={practicing}>
                 Download backup
               </Button>
-              <Button icon={<Upload className="size-4" />} onClick={dialogs.restoreBackup}>
+              <Button icon={<Upload className="size-4" />} onClick={dialogs.restoreBackup} disabled={practicing}>
                 Restore from backup
               </Button>
               <p className="w-full text-xs text-muted">
@@ -305,7 +312,7 @@ export function SettingsPage() {
               </p>
             </ActionGroup>
             <ActionGroup title="Import" icon={<FileUp className="size-4" />}>
-              <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv}>
+              <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} disabled={practicing}>
                 Import inventory CSV
               </Button>
               <Button variant="ghost" icon={<Download className="size-4" />} onClick={() => downloadText('stockpilot-import-template.csv', importTemplateCsv())}>
@@ -332,9 +339,11 @@ export function SettingsPage() {
         {scannerEnabled && <ScannerSettings />}
 
         <Section title="Demo mode" description="Explore StockPilot with clearly labeled sample inventory. Demo data is stored separately and never mixes with your real records.">
+          {practicing && <PracticeLockNotice />}
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant={demo ? 'primary' : 'secondary'}
+              disabled={practicing}
               icon={<FlaskConical className="size-4" />}
               onClick={async () => {
                 await store.setDemoActive(!demo);
@@ -346,6 +355,7 @@ export function SettingsPage() {
             <Button
               variant="ghost"
               icon={<RotateCcw className="size-4" />}
+              disabled={practicing}
               onClick={async () => {
                 const ok = await confirm({ title: 'Reset demo data?', message: 'Any changes you made in demo mode are thrown away and fresh sample data is created. Your real data is not affected.', confirmLabel: 'Reset demo' });
                 if (!ok) return;
@@ -360,10 +370,11 @@ export function SettingsPage() {
 
         {!demo && (
           <Section title="Erase all data" description="Permanently delete every item, photo, sale and count stored on this device.">
+            {practicing && <PracticeLockNotice />}
             <Button
               variant="danger"
               icon={<Trash2 className="size-4" />}
-              disabled={data.items.length === 0 && data.sales.length === 0 && data.countHistory.length === 0}
+              disabled={practicing || (data.items.length === 0 && data.sales.length === 0 && data.countHistory.length === 0)}
               onClick={async () => {
                 const ok = await confirm({
                   title: 'Erase all your data?',
@@ -393,6 +404,15 @@ export function SettingsPage() {
         </Section>
       </div>
     </>
+  );
+}
+
+/** Why data management is unavailable during a practice lesson. */
+function PracticeLockNotice() {
+  return (
+    <p role="note" className="mb-3 rounded-xl bg-demo-soft px-3 py-2 text-sm text-ink" data-testid="practice-data-lock">
+      <strong>{PRACTICE_DATA_LOCK}</strong> Backups, restores, imports, demo data and erasing are paused while a Learning Center lesson has its practice records open, so they can never act on the wrong records.
+    </p>
   );
 }
 

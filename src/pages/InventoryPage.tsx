@@ -4,7 +4,7 @@ import { Boxes, Calculator, Download, FileUp, Layers, LayoutGrid, List, PackageP
 import { acquiredDate, itemCostValue, knownCategories, knownLocations, stockStatus, uniqueSorted, daysWithoutSale } from '../domain/calc';
 import { todayISO } from '../domain/dates';
 import type { Item } from '../domain/types';
-import { store, useAppState } from '../data/store';
+import { PRACTICE_DATA_LOCK, store, useAppState } from '../data/store';
 import { inventoryCsv } from '../csv/exports';
 import { downloadText, fileStamp } from '../lib/download';
 import { useMoney } from '../lib/hooks';
@@ -60,6 +60,7 @@ export function InventoryPage() {
   const data = useAppState((s) => s.data);
   const settings = useAppState((s) => s.settings);
   const dataset = useAppState((s) => s.dataset);
+  const practicing = dataset === 'practice';
   const dialogs = useDialogs();
   const toast = useToast();
   const { money } = useMoney();
@@ -139,7 +140,7 @@ export function InventoryPage() {
                 <Link to="/inventory/bids" className={buttonClass('secondary', 'md')} data-testid="bids-link">
                   <Calculator className="size-4" /> Max bid calculator
                 </Link>
-                <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv}>
+                <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} disabled={practicing} title={practicing ? PRACTICE_DATA_LOCK : undefined}>
                   Import CSV
                 </Button>
               </>
@@ -159,7 +160,7 @@ export function InventoryPage() {
         description={`${plural(data.items.length, 'item')} · ${plural(data.items.reduce((n, i) => n + i.quantity, 0), 'unit')} on hand`}
         actions={
           <>
-            <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} className="hidden sm:inline-flex">
+            <Button icon={<FileUp className="size-4" />} onClick={dialogs.importCsv} className="hidden sm:inline-flex" disabled={practicing} title={practicing ? PRACTICE_DATA_LOCK : undefined}>
               Import
             </Button>
             <Button icon={<Download className="size-4" />} onClick={exportCsv}>

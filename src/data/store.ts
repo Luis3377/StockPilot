@@ -13,7 +13,7 @@ import { emptyData, defaultSettings, type AppData, type DatasetId, type PhotoRec
 import { sanitizeAppData, sanitizeSettings } from './sanitize';
 import { buildDemoData } from './demo';
 import { openStorage, type StorageAdapter } from './storage';
-import type { ParsedBackup } from './backup';
+import { createBackup, type ParsedBackup } from './backup';
 
 export interface AppState {
   status: 'loading' | 'ready' | 'error';
@@ -31,6 +31,17 @@ type Listener = () => void;
 /** Which saved dataset the settings point at: a practice lesson, the demo, or the real records. */
 export function datasetFor(settings: Pick<Settings, 'practiceActive' | 'demoActive'>): DatasetId {
   return settings.practiceActive ? 'practice' : settings.demoActive ? 'demo' : 'real';
+}
+
+/** Shown wherever data management is refused during a practice lesson. */
+export const PRACTICE_DATA_LOCK = 'Leave Practice Mode to manage your data.';
+
+/** Backups, restores, imports, demo switching, resets and erasing are refused while practicing. */
+export class PracticeLockError extends Error {
+  constructor() {
+    super(PRACTICE_DATA_LOCK);
+    this.name = 'PracticeLockError';
+  }
 }
 
 const TAB_ID = Math.random().toString(36).slice(2);
@@ -71,7 +82,17 @@ export class AppStore {
   async init(adapter?: StorageAdapter): Promise<void> {
     try {
       this.adapter = adapter ?? (await openStorage());
-      const settings = sanitizeSettings(await this.adapter.getSettings());
+      let settings = sanitizeSettings(await this.adapter.getSettings());
+      // Someone who already has records (e.g. their settings were lost but their data wasn't) isn't
+      // a new user: no first-time onboarding and no welcome.
+      if (!settings.onboarded) {
+        const real = await this.storage.getData('real');
+        const has = (k: string) => Array.isArray((real as Record<string, unknown> | undefined)?.[k]) && ((real as Record<string, unknown[]>)[k]).length > 0;
+        if (has('items') || has('sales') || has('lots')) {
+          settings = { ...settings, onboarded: true, tutorial: { ...settings.tutorial, welcome: settings.tutorial.welcome === 'pending' ? 'seen' : settings.tutorial.welcome } };
+          void this.persist(() => this.storage.putSettings(settings), 'settings');
+        }
+      }
       const dataset = datasetFor(settings);
       const data = await this.loadDataset(dataset);
       this.set({ status: 'ready', settings, dataset, data, storageKind: this.adapter.kind });
@@ -185,7 +206,22 @@ export class AppStore {
     }
   }
 
+  /** True while a Learning Center practice lesson has the practice records open. */
+  get practicing(): boolean {
+    return this.state.dataset === 'practice' || this.state.settings.practiceActive;
+  }
+
+  /**
+   * Data management (backups, restores, imports, demo switching and resets, erasing) only ever
+   * acts on your own or the demo records, so it's refused while the practice records are open.
+   * Enforced here, not only by disabled buttons.
+   */
+  assertCanManageData(): void {
+    if (this.practicing) throw new PracticeLockError();
+  }
+
   async setDemoActive(active: boolean): Promise<void> {
+    this.assertCanManageData();
     await this.flush();
     const dataset: DatasetId = active ? 'demo' : 'real';
     const data = await this.loadDataset(dataset);
@@ -220,6 +256,7 @@ export class AppStore {
   }
 
   async resetDemo(): Promise<void> {
+    this.assertCanManageData();
     await this.flush();
     await this.storage.clearDataset('demo');
     if (this.state.dataset === 'demo') {
@@ -230,6 +267,7 @@ export class AppStore {
 
   /** Permanently erases the real dataset and its photos. */
   async clearRealData(): Promise<void> {
+    this.assertCanManageData();
     await this.flush();
     await this.storage.clearDataset('real');
     if (this.state.dataset === 'real') this.set({ data: startLedger(emptyData()) });
@@ -242,9 +280,10 @@ export class AppStore {
    * Photos get fresh ids so a backup restored into another dataset can't collide with it.
    */
   async restore(backup: ParsedBackup, restoreSettings: boolean): Promise<void> {
+    this.assertCanManageData();
     await this.flush();
+    this.assertCanManageData();
     const dataset = this.state.dataset;
-    if (dataset === 'practice') throw new Error('You’re in practice mode. Leave practice before restoring a backup.');
     const now = new Date().toISOString();
     const idMap = new Map(backup.photos.map((p) => [p.id, newId()]));
     const photos: PhotoRecord[] = backup.photos.map((p) => ({ id: idMap.get(p.id)!, full: p.full, thumb: p.thumb, dataset, createdAt: now }));
@@ -275,6 +314,29 @@ export class AppStore {
       });
     }
     this.notifyOtherTabs('data');
+  }
+
+  /** Applies a CSV import to the open records (refused while practicing). */
+  importInventory<R>(apply: (data: AppData) => { data: AppData } & R): R {
+    this.assertCanManageData();
+    return this.commit(apply);
+  }
+
+  /** A backup file of the open records (refused while practicing: practice records aren't yours to back up). */
+  async createBackupFile(): Promise<{ file: ReturnType<typeof createBackup>; dataset: DatasetId }> {
+    this.assertCanManageData();
+    await this.flush();
+    this.assertCanManageData();
+    const { settings, data, dataset } = this.state;
+    const photos = await this.storage.listPhotos(dataset);
+    return { file: createBackup(dataset, settings, data, photos), dataset };
+  }
+
+  /** Deletes the stored practice records (Learning Center → "Delete practice records"); never while practicing. */
+  async clearPractice(): Promise<void> {
+    this.assertCanManageData();
+    await this.flush();
+    await this.storage.clearDataset('practice');
   }
 
   async savePhotos(photos: Omit<PhotoRecord, 'dataset'>[]): Promise<void> {

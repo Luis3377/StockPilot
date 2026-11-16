@@ -119,7 +119,10 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
   // one-of-a-kind item isn't "low on stock"), unless the user sets the alert themselves.
   const [thresholdTouched, setThresholdTouched] = useState(false);
   const qtyNow = Number(form.quantity);
-  const thresholdValue = !item && !thresholdTouched ? (Number.isInteger(qtyNow) && qtyNow > 1 && settings.defaultLowStockThreshold !== null ? String(settings.defaultLowStockThreshold) : '') : form.lowStockThreshold;
+  // Practice products get no default alert, so a practice sale doesn't raise a low-stock warning.
+  const practicing = useAppState((st) => st.dataset === 'practice');
+  const thresholdValue =
+    !item && !thresholdTouched ? (Number.isInteger(qtyNow) && qtyNow > 1 && settings.defaultLowStockThreshold !== null && !practicing ? String(settings.defaultLowStockThreshold) : '') : form.lowStockThreshold;
   const formRef = useRef(form);
   formRef.current = form;
   // Where it was bought (kept apart from the storage location); items in a lot use the lot's.
@@ -269,7 +272,7 @@ export function ItemFormDialog({ open, itemId, scan = false, onClose }: Props) {
         void store.deletePhotos(removed);
         forgetPhotos(removed);
       }
-      toast.success(item ? `Saved changes to "${result.item.name}"` : `Added "${result.item.name}" to your inventory`);
+      toast.success(item ? `Saved changes to "${result.item.name}"` : `Added "${result.item.name}" to your ${settings.mode === 'collector' ? 'collection' : 'inventory'}`);
       onClose();
     } catch (err) {
       if (isDomainError(err) && Object.keys(err.fields).length) showErrors(err.fields);

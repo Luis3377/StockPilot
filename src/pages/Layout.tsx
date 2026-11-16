@@ -22,6 +22,9 @@ import { cn } from '../ui/cn';
 import { useToast } from '../ui/Toast';
 import { pluralWord } from '../domain/format';
 import { pauseLesson } from '../learn/progress';
+import { lessonById } from '../learn/lessons';
+import { useTour } from '../learn/TourProvider';
+import { scannerEnabled } from '../ai/config';
 
 interface NavItem {
   to: string;
@@ -213,7 +216,8 @@ function LearnLink({ compact = false }: { compact?: boolean }) {
     <NavLink
       to="/learn"
       data-tour="learn-link"
-      aria-label={compact ? 'Learning Center' : undefined}
+      aria-label={compact ? 'Learning Center: lessons and help' : undefined}
+      title={compact ? 'Learning Center' : undefined}
       className={({ isActive }) =>
         cn(
           compact
@@ -224,9 +228,32 @@ function LearnLink({ compact = false }: { compact?: boolean }) {
         )
       }
     >
-      <GraduationCap className="size-5" />
+      <GraduationCap className="size-5" aria-hidden />
       {!compact && <span className="flex-1">Learning Center</span>}
     </NavLink>
+  );
+}
+
+/** On the Overview: an unfinished lesson, ready to resume (only when none is running). */
+function ResumeTour() {
+  const tutorial = useAppState((s) => s.settings.tutorial);
+  const settings = useAppState((s) => s.settings);
+  const { start } = useTour();
+  const id = Object.keys(tutorial.resume).find((x) => lessonById(x) && !lessonById(x)!.unavailable?.({ settings, scannerEnabled }));
+  if (tutorial.active || !id) return null;
+  const lesson = lessonById(id)!;
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-accent/40 bg-accent-soft/40 px-4 py-3 text-sm text-ink" data-testid="resume-tour">
+      <span className="flex min-w-0 items-center gap-2">
+        <GraduationCap className="size-4 shrink-0 text-accent" aria-hidden />
+        <span>
+          You have an unfinished lesson: <strong>{lesson.title}</strong>
+        </span>
+      </span>
+      <button type="button" className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-ink hover:bg-accent-hover" onClick={() => void start(id, { resume: true })} data-testid="resume-tour-button">
+        Resume tour
+      </button>
+    </div>
   );
 }
 
@@ -317,6 +344,7 @@ export function Layout() {
         </div>
         <main className="min-w-0 px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-8 lg:pb-12 print:p-0">
           <div className="mx-auto max-w-6xl">
+            {location.pathname === '/' && <ResumeTour />}
             <Outlet />
           </div>
         </main>
