@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Boxes, Check, ChevronDown, ClipboardCheck, FlaskConical, LayoutDashboard, Lightbulb, Settings as SettingsIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  BarChart3,
+  Boxes,
+  Check,
+  ChevronDown,
+  ClipboardCheck,
+  FlaskConical,
+  GraduationCap,
+  LayoutDashboard,
+  Lightbulb,
+  Settings as SettingsIcon,
+} from 'lucide-react';
 import { store, useAppState } from '../data/store';
 import { MODES, modeInfo, salesEnabled } from '../lib/modes';
 import { useInsights } from '../lib/hooks';
@@ -9,6 +21,7 @@ import type { UserMode } from '../domain/types';
 import { cn } from '../ui/cn';
 import { useToast } from '../ui/Toast';
 import { pluralWord } from '../domain/format';
+import { pauseLesson } from '../learn/progress';
 
 interface NavItem {
   to: string;
@@ -23,14 +36,46 @@ export function useNavItems(): NavItem[] {
   const report = useInsights();
   const alerts = report.lowStock.findings.length;
   const items: NavItem[] = [
-    { to: '/', label: 'Overview', short: 'Overview', icon: <LayoutDashboard className="size-5" /> },
-    { to: '/inventory', label: settings.mode === 'collector' ? 'Collection' : 'Inventory', short: settings.mode === 'collector' ? 'Collection' : 'Inventory', icon: <Boxes className="size-5" /> },
+    {
+      to: '/',
+      label: 'Overview',
+      short: 'Overview',
+      icon: <LayoutDashboard className="size-5" />,
+    },
+    {
+      to: '/inventory',
+      label: settings.mode === 'collector' ? 'Collection' : 'Inventory',
+      short: settings.mode === 'collector' ? 'Collection' : 'Inventory',
+      icon: <Boxes className="size-5" />,
+    },
   ];
-  if (salesEnabled(settings)) items.push({ to: '/sales', label: 'Sales & Profit', short: 'Sales', icon: <BarChart3 className="size-5" /> });
+  if (salesEnabled(settings))
+    items.push({
+      to: '/sales',
+      label: 'Sales & Profit',
+      short: 'Sales',
+      icon: <BarChart3 className="size-5" />,
+    });
   items.push(
-    { to: '/insights', label: 'Smart Insights', short: 'Insights', icon: <Lightbulb className="size-5" />, badge: alerts || undefined },
-    { to: '/count', label: 'Count Check', short: 'Count', icon: <ClipboardCheck className="size-5" /> },
-    { to: '/settings', label: 'Settings', short: 'Settings', icon: <SettingsIcon className="size-5" /> },
+    {
+      to: '/insights',
+      label: 'Smart Insights',
+      short: 'Insights',
+      icon: <Lightbulb className="size-5" />,
+      badge: alerts || undefined,
+    },
+    {
+      to: '/count',
+      label: 'Count Check',
+      short: 'Count',
+      icon: <ClipboardCheck className="size-5" />,
+    },
+    {
+      to: '/settings',
+      label: 'Settings',
+      short: 'Settings',
+      icon: <SettingsIcon className="size-5" />,
+    },
   );
   return items;
 }
@@ -52,7 +97,11 @@ export function ModeSwitcher({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  useClickOutside(ref, open, useCallback(() => setOpen(false), []));
+  useClickOutside(
+    ref,
+    open,
+    useCallback(() => setOpen(false), []),
+  );
 
   const choose = (m: UserMode) => {
     setOpen(false);
@@ -85,10 +134,7 @@ export function ModeSwitcher({ compact = false }: { compact?: boolean }) {
       {open && (
         <div
           role="menu"
-          className={cn(
-            'animate-fade-in absolute z-40 w-72 rounded-2xl border border-line bg-surface p-1.5 shadow-pop',
-            compact ? 'top-11 right-0' : 'bottom-12 left-0',
-          )}
+          className={cn('animate-fade-in absolute z-40 w-72 rounded-2xl border border-line bg-surface p-1.5 shadow-pop', compact ? 'top-11 right-0' : 'bottom-12 left-0')}
         >
           {MODES.map((m) => (
             <button
@@ -135,6 +181,55 @@ function DemoBanner() {
   );
 }
 
+function PracticeBanner() {
+  const toast = useToast();
+  return (
+    <div className="flex items-center justify-center gap-3 bg-demo px-4 py-2 text-center text-sm text-white" role="status" data-testid="practice-banner">
+      <GraduationCap className="size-4 shrink-0" />
+      <span>
+        <strong>Practice mode</strong> — a Learning Center lesson is using sample records. Your own records aren’t changed.
+      </span>
+      <button
+        type="button"
+        className="shrink-0 rounded-lg bg-white/20 px-2.5 py-1 text-xs font-semibold hover:bg-white/30"
+        data-testid="practice-leave"
+        onClick={async () => {
+          // Pause the lesson first, so it doesn't switch straight back to practice.
+          const t = store.getState().settings.tutorial;
+          if (t.active) store.updateSettings({ tutorial: pauseLesson(t) });
+          await store.exitPractice();
+          toast.success('Left practice mode. Showing your own records. Resume the lesson any time from the Learning Center.');
+        }}
+      >
+        Leave practice
+      </button>
+    </div>
+  );
+}
+
+/** The Learning Center: a sidebar link on large screens, an icon in the top bar on phones. */
+function LearnLink({ compact = false }: { compact?: boolean }) {
+  return (
+    <NavLink
+      to="/learn"
+      data-tour="learn-link"
+      aria-label={compact ? 'Learning Center' : undefined}
+      className={({ isActive }) =>
+        cn(
+          compact
+            ? 'flex size-9 items-center justify-center rounded-xl border border-line bg-surface text-ink-2 hover:bg-surface-2'
+            : 'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+          !compact && (isActive ? 'bg-accent-soft text-accent-text' : 'text-ink-2 hover:bg-surface-2 hover:text-ink'),
+          compact && isActive && 'text-accent-text',
+        )
+      }
+    >
+      <GraduationCap className="size-5" />
+      {!compact && <span className="flex-1">Learning Center</span>}
+    </NavLink>
+  );
+}
+
 function StorageWarnings() {
   const storageKind = useAppState((s) => s.storageKind);
   const saveError = useAppState((s) => s.saveError);
@@ -157,7 +252,7 @@ function StorageWarnings() {
 
 export function Layout() {
   const nav = useNavItems();
-  const demo = useAppState((s) => s.dataset === 'demo');
+  const dataset = useAppState((s) => s.dataset);
   const location = useLocation();
 
   useEffect(() => {
@@ -197,6 +292,9 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
+        <div className="mb-2">
+          <LearnLink />
+        </div>
         <div className="px-1">
           <ModeSwitcher />
         </div>
@@ -205,12 +303,16 @@ export function Layout() {
       <div className="lg:pl-64 print:pl-0">
         <div className="sticky top-0 z-20 print:hidden">
           <div className="pt-safe bg-canvas lg:hidden" />
-          {demo && <DemoBanner />}
+          {dataset === 'demo' && <DemoBanner />}
+          {dataset === 'practice' && <PracticeBanner />}
           <StorageWarnings />
           {/* Mobile top bar */}
           <header className="flex h-14 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur lg:hidden">
             <Logo />
-            <ModeSwitcher compact />
+            <div className="flex items-center gap-2">
+              <LearnLink compact />
+              <ModeSwitcher compact />
+            </div>
           </header>
         </div>
         <main className="min-w-0 px-4 pt-5 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-6 lg:px-10 lg:pt-8 lg:pb-12 print:p-0">

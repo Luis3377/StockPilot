@@ -32,6 +32,8 @@ import { InsightsPage } from './pages/InsightsPage';
 import { CountCheckPage } from './pages/CountCheckPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { NotFound } from './pages/NotFound';
+import { LearnPage } from './pages/LearnPage';
+import { TourProvider } from './learn/TourProvider';
 
 function useTheme() {
   const theme = useAppState((s) => s.settings.theme);
@@ -89,35 +91,38 @@ export function App() {
         ) : (
           <HashRouter>
             <DialogHub>
-              <Routes>
-                <Route element={<Layout />}>
-                  <Route index element={<OverviewPage />} />
-                  <Route path="inventory" element={<InventoryPage />} />
-                  <Route path="inventory/lots" element={<LotsPage />} />
-                  <Route path="inventory/lots/performance" element={<HistoryPage />} />
-                  <Route path="inventory/lots/:id" element={<LotDetailPage />} />
-                  <Route path="inventory/lots/:id/performance" element={<LotPerformancePage />} />
-                  <Route path="inventory/bids" element={<BidsPage />} />
-                  <Route path="inventory/bids/:id" element={<BidPlanPage />} />
-                  <Route path="inventory/:id" element={<ItemDetailPage />} />
-                  <Route path="sales" element={<SalesPage />} />
-                  <Route path="sales/close" element={<MonthlyClosePage />} />
-                  <Route path="sales/close/history" element={<CloseHistoryPage />} />
-                  <Route path="sales/close/:month/report" element={<ReportPage />} />
-                  <Route path="sales/year-end" element={<YearEndPage />} />
-                  <Route path="sales/year-end/:year/report" element={<YearReportPage />} />
-                  <Route path="sales/planning" element={<PlanningPage />} />
-                  <Route path="sales/payouts" element={<PayoutsPage />} />
-                  <Route path="sales/payouts/:ref" element={<PayoutDetailPage />} />
-                  <Route path="insights" element={<InsightsPage />} />
-                  <Route path="insights/sourcing" element={<SourcingPage />} />
-                  <Route path="insights/sourcing/source/:key" element={<SourceDetailPage />} />
-                  <Route path="insights/sourcing/trips/:id" element={<TripPage />} />
-                  <Route path="count" element={<CountCheckPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="*" element={<NotFound />} />
-                </Route>
-              </Routes>
+              <TourProvider>
+                <Routes>
+                  <Route element={<Layout />}>
+                    <Route index element={<OverviewPage />} />
+                    <Route path="inventory" element={<InventoryPage />} />
+                    <Route path="inventory/lots" element={<LotsPage />} />
+                    <Route path="inventory/lots/performance" element={<HistoryPage />} />
+                    <Route path="inventory/lots/:id" element={<LotDetailPage />} />
+                    <Route path="inventory/lots/:id/performance" element={<LotPerformancePage />} />
+                    <Route path="inventory/bids" element={<BidsPage />} />
+                    <Route path="inventory/bids/:id" element={<BidPlanPage />} />
+                    <Route path="inventory/:id" element={<ItemDetailPage />} />
+                    <Route path="sales" element={<SalesPage />} />
+                    <Route path="sales/close" element={<MonthlyClosePage />} />
+                    <Route path="sales/close/history" element={<CloseHistoryPage />} />
+                    <Route path="sales/close/:month/report" element={<ReportPage />} />
+                    <Route path="sales/year-end" element={<YearEndPage />} />
+                    <Route path="sales/year-end/:year/report" element={<YearReportPage />} />
+                    <Route path="sales/planning" element={<PlanningPage />} />
+                    <Route path="sales/payouts" element={<PayoutsPage />} />
+                    <Route path="sales/payouts/:ref" element={<PayoutDetailPage />} />
+                    <Route path="insights" element={<InsightsPage />} />
+                    <Route path="insights/sourcing" element={<SourcingPage />} />
+                    <Route path="insights/sourcing/source/:key" element={<SourceDetailPage />} />
+                    <Route path="insights/sourcing/trips/:id" element={<TripPage />} />
+                    <Route path="count" element={<CountCheckPage />} />
+                    <Route path="settings" element={<SettingsPage />} />
+                    <Route path="learn" element={<LearnPage />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Route>
+                </Routes>
+              </TourProvider>
             </DialogHub>
           </HashRouter>
         )}

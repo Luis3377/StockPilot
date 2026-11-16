@@ -220,6 +220,11 @@ test('onboarding works with the keyboard alone, with visible focus', async ({ pa
   for (let i = 0; i < 20 && !(await start.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
   await expect(start).toBeFocused();
   await page.keyboard.press('Enter');
+  // The welcome opens with keyboard focus inside it; Escape is the same as "Explore on my own".
+  await expect(page.getByTestId('tour-welcome')).toBeVisible();
+  await expect(page.getByTestId('tour-welcome-start')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('tour-welcome')).toBeHidden();
   await expect(page.getByTestId('get-started')).toBeVisible();
 });
 
@@ -235,6 +240,8 @@ test('no accessibility violations on onboarding and the main screens', async ({ 
   await page.getByRole('button', { name: 'Continue' }).click();
   await check('onboarding step 2');
   await page.getByRole('button', { name: /^Start with my own inventory/ }).click();
+  await check('welcome');
+  await page.getByTestId('tour-welcome-skip').click();
   await check('empty overview');
   await addItem(page, { name: 'Desk lamp', quantity: 2, cost: '10', asking: '25' });
   await nav(page, 'Overview');

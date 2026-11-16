@@ -28,6 +28,11 @@ export interface AppState {
 
 type Listener = () => void;
 
+/** Which saved dataset the settings point at: a practice lesson, the demo, or the real records. */
+export function datasetFor(settings: Pick<Settings, 'practiceActive' | 'demoActive'>): DatasetId {
+  return settings.practiceActive ? 'practice' : settings.demoActive ? 'demo' : 'real';
+}
+
 const TAB_ID = Math.random().toString(36).slice(2);
 
 export class AppStore {
@@ -67,7 +72,7 @@ export class AppStore {
     try {
       this.adapter = adapter ?? (await openStorage());
       const settings = sanitizeSettings(await this.adapter.getSettings());
-      const dataset: DatasetId = settings.demoActive ? 'demo' : 'real';
+      const dataset = datasetFor(settings);
       const data = await this.loadDataset(dataset);
       this.set({ status: 'ready', settings, dataset, data, storageKind: this.adapter.kind });
       this.listenToOtherTabs();
@@ -100,7 +105,7 @@ export class AppStore {
     this.channel.onmessage = async (event: MessageEvent<{ from: string; kind: 'data' | 'settings' }>) => {
       if (event.data?.from === TAB_ID || !this.adapter) return;
       const settings = sanitizeSettings(await this.adapter.getSettings());
-      const dataset: DatasetId = settings.demoActive ? 'demo' : 'real';
+      const dataset = datasetFor(settings);
       const data = await this.loadDataset(dataset);
       this.set({ settings, dataset, data });
     };
@@ -184,7 +189,32 @@ export class AppStore {
     await this.flush();
     const dataset: DatasetId = active ? 'demo' : 'real';
     const data = await this.loadDataset(dataset);
-    const settings = { ...this.state.settings, demoActive: active };
+    const settings = { ...this.state.settings, demoActive: active, practiceActive: false };
+    this.set({ dataset, data, settings });
+    await this.persist(() => this.storage.putSettings(settings), 'settings');
+  }
+
+  /**
+   * Switches to the practice dataset for a Learning Center lesson. `fresh` starts it empty
+   * (restarting a lesson never piles up duplicate practice records). Real and demo data are
+   * not read or written while practicing.
+   */
+  async enterPractice(fresh: boolean): Promise<void> {
+    await this.flush();
+    if (fresh) await this.storage.clearDataset('practice');
+    const data = await this.loadDataset('practice');
+    const settings = { ...this.state.settings, practiceActive: true };
+    this.set({ dataset: 'practice', data, settings });
+    await this.persist(() => this.storage.putSettings(settings), 'settings');
+  }
+
+  /** Leaves practice: back to the demo or the real records, exactly as they were. */
+  async exitPractice(): Promise<void> {
+    if (this.state.dataset !== 'practice' && !this.state.settings.practiceActive) return;
+    await this.flush();
+    const settings = { ...this.state.settings, practiceActive: false };
+    const dataset = datasetFor(settings);
+    const data = await this.loadDataset(dataset);
     this.set({ dataset, data, settings });
     await this.persist(() => this.storage.putSettings(settings), 'settings');
   }
@@ -214,6 +244,7 @@ export class AppStore {
   async restore(backup: ParsedBackup, restoreSettings: boolean): Promise<void> {
     await this.flush();
     const dataset = this.state.dataset;
+    if (dataset === 'practice') throw new Error('You’re in practice mode. Leave practice before restoring a backup.');
     const now = new Date().toISOString();
     const idMap = new Map(backup.photos.map((p) => [p.id, newId()]));
     const photos: PhotoRecord[] = backup.photos.map((p) => ({ id: idMap.get(p.id)!, full: p.full, thumb: p.thumb, dataset, createdAt: now }));
@@ -227,8 +258,21 @@ export class AppStore {
     this.set({ data });
     await this.storage.deletePhotos(oldPhotoIds).catch(() => undefined);
     if (restoreSettings) {
-      const { demoActive, onboarded, lastBackupAt } = this.state.settings;
-      this.updateSettings({ ...backup.settings, demoActive, onboarded, lastBackupAt });
+      // Which dataset is open stays as it is; tutorial progress comes from the backup, minus any running lesson.
+      const { demoActive, practiceActive, onboarded, lastBackupAt } = this.state.settings;
+      this.updateSettings({
+        ...backup.settings,
+        demoActive,
+        practiceActive,
+        onboarded,
+        lastBackupAt,
+        tutorial: {
+          ...backup.settings.tutorial,
+          // A backup never brings the welcome back once it was dealt with here.
+          welcome: backup.settings.tutorial.welcome === 'pending' ? this.state.settings.tutorial.welcome : backup.settings.tutorial.welcome,
+          active: null,
+        },
+      });
     }
     this.notifyOtherTabs('data');
   }

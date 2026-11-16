@@ -49,7 +49,9 @@ export function Dialog({ open, onClose, title, description, children, footer, fo
         e.stopPropagation();
         onCloseRef.current();
       } else if (e.key === 'Tab' && panel) {
-        const els = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+        // A running Learning Center lesson's controls stay reachable from the keyboard while a dialog is open.
+        const tour = document.querySelector<HTMLElement>('[data-tour-popover]');
+        const els = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE), ...(tour ? tour.querySelectorAll<HTMLElement>(FOCUSABLE) : [])].filter((el) => el.offsetParent !== null);
         if (!els.length) return;
         const firstEl = els[0];
         const lastEl = els[els.length - 1];

@@ -12,6 +12,11 @@ export function useBackup() {
   const [busy, setBusy] = useState(false);
 
   const backup = async (): Promise<boolean> => {
+    // A backup of practice records would look like one of your real records: not offered.
+    if (dataset === 'practice') {
+      toast.error('You’re in practice mode. Leave practice to back up your own records.');
+      return false;
+    }
     setBusy(true);
     try {
       await store.flush();
