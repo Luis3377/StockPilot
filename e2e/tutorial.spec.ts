@@ -925,3 +925,15 @@ test('without a lesson running, existing work flows are unchanged', async ({ pag
   await expect(page.getByTestId('tour-mask')).toHaveCount(0);
   await saved(page);
 });
+
+test('demo mode: items you add while trying it out are labelled, the demo’s own items are not', async ({ page }) => {
+  await onboard(page, 'Reseller', true);
+  await nav(page, 'Inventory');
+  await expect(page.getByTestId('inventory-item').first()).toBeVisible();
+  await expect(page.getByTestId('demo-added-by-you')).toHaveCount(0);
+  await addItem(page, { name: 'My demo test item', quantity: 1, cost: '3' });
+  await nav(page, 'Inventory');
+  const mine = page.getByTestId('inventory-item').filter({ hasText: 'My demo test item' });
+  await expect(mine.getByTestId('demo-added-by-you')).toHaveText('Added by you');
+  await expect(page.getByTestId('demo-added-by-you')).toHaveCount(1);
+});
