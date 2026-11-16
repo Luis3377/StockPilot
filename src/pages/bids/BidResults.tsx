@@ -10,6 +10,7 @@ import { useMoney } from '../../lib/hooks';
 import { Card } from '../../ui/Card';
 import { useRadioGroup } from '../../ui/useRadioGroup';
 import { cn } from '../../ui/cn';
+import { HelpTip } from '../../learn/HelpTip';
 
 const pct = (n: number) => `${Number(n.toFixed(2))}%`;
 
@@ -36,9 +37,12 @@ export function BidResults({ result, heading = 'Maximum bid estimate', note }: {
   const s = result.scenarios[scenario];
   return (
     <Card className="p-4 sm:p-5" data-testid="bid-results">
-      <h2 className="flex items-center gap-2 text-base font-semibold text-ink">
-        <Calculator className="size-4 text-accent" aria-hidden /> {heading}
-      </h2>
+      <div className="flex items-center gap-2">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-ink">
+          <Calculator className="size-4 text-accent" aria-hidden /> {heading}
+        </h2>
+        <HelpTip topic="max-bid" />
+      </div>
       {note}
       <Headline calc={result} />
       <ScenarioTable calc={result} />
@@ -205,7 +209,16 @@ function Breakdown({ s, calc }: { s: ScenarioResult; calc: BidCalculation }) {
       <Line label="Expected sale proceeds" value={money(s.expectedSales)} strong testId="bid-expected-sales" />
       <Line label={`Selling fees (${pct(s.sellingFeePct)} of sales)`} value={money(s.sellingFees)} op="−" />
       <Line label="Outbound shipping" value={money(s.shipping)} op="−" />
-      <Line label="Net proceeds" value={money(s.netProceeds)} strong testId="bid-net" />
+      <Line
+        label={
+          <span className="inline-flex items-center gap-1.5">
+            Net proceeds <HelpTip topic="net-proceeds" />
+          </span>
+        }
+        value={money(s.netProceeds)}
+        strong
+        testId="bid-net"
+      />
       <Line label={`Max all-in cost (÷ ${Number((1 + calc.targetRoiPct / 100).toFixed(4))} for a ${pct(calc.targetRoiPct)} return)`} value={money(s.maxAllIn)} strong testId="bid-max-all-in" />
       {at ? (
         <>

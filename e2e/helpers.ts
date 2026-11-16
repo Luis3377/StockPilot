@@ -12,8 +12,16 @@ export async function onboard(page: Page, mode: Mode = 'Reseller', demo = false)
   await page.getByRole('radio', { name: new RegExp(`^${mode} Mode`) }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: demo ? /Explore with demo data/ : /Start with my own inventory/ }).click();
+  await dismissWelcome(page);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   if (demo) await expect(page.getByTestId('demo-banner')).toBeVisible();
+}
+
+/** New users see the Learning Center welcome once; most tests choose "Explore on my own". */
+export async function dismissWelcome(page: Page) {
+  await expect(page.getByTestId('tour-welcome')).toBeVisible();
+  await page.getByTestId('tour-welcome-skip').click();
+  await expect(page.getByTestId('tour-welcome')).toBeHidden();
 }
 
 /** Clicks a main navigation entry (sidebar on desktop, bottom tabs on phones). */

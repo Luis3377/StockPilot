@@ -106,7 +106,7 @@ export function RestoreDialog({ open, onClose, onRestored }: { open: boolean; on
             <p className="rounded-lg bg-warn-soft p-2 text-warn-text">
               Your current {plural(current.items.length, 'item')} and {plural(current.sales.length, 'sale')} will be replaced. Consider downloading a backup of them first.
             </p>
-            <Checkbox checked={withSettings} onChange={setWithSettings} label="Also restore settings" description="Mode, theme, currency and alert thresholds." />
+            <Checkbox checked={withSettings} onChange={setWithSettings} label="Also restore settings" description="Mode, theme, currency, alert thresholds and Learning Center progress." />
           </div>
         )}
       </div>

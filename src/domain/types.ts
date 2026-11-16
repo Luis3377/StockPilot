@@ -1,8 +1,11 @@
 // Core data model. Every mode (reseller, collector, small business) reads and writes
 // these same records — modes only change which views and metrics are emphasised.
 
+import { defaultTutorial, type TutorialProgress } from '../learn/progress';
+
 export type UserMode = 'reseller' | 'collector' | 'business';
-export type DatasetId = 'real' | 'demo';
+/** 'practice' holds sample records made in Learning Center lessons, apart from real and demo data. */
+export type DatasetId = 'real' | 'demo' | 'practice';
 export type ThemePreference = 'system' | 'light' | 'dark';
 
 /** A dated per-unit estimated value, used to chart how an item's worth changes. */
@@ -1048,8 +1051,12 @@ export interface Settings {
   /** Collectors can opt in to sales & profit tracking. */
   collectorSalesEnabled: boolean;
   demoActive: boolean;
+  /** A practice lesson is running on the practice dataset (real and demo data are untouched). */
+  practiceActive: boolean;
   lastBackupAt: string | null;
   inventoryView: 'grid' | 'list';
+  /** Learning Center progress (lessons done, where one stopped, welcome seen). Not financial data. */
+  tutorial: TutorialProgress;
 }
 
 export interface PhotoRecord {
@@ -1094,7 +1101,9 @@ export function defaultSettings(): Settings {
     sellingCostPercent: null,
     collectorSalesEnabled: false,
     demoActive: false,
+    practiceActive: false,
     lastBackupAt: null,
     inventoryView: 'grid',
+    tutorial: defaultTutorial(false),
   };
 }

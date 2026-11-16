@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useAppState } from '../../data/store';
 import { ItemFormDialog } from './ItemFormDialog';
 import { SaleFormDialog, type SalePrefill } from './SaleFormDialog';
 import { PayoutImportDialog } from './PayoutImportDialog';
@@ -44,6 +45,16 @@ type Open =
 export function DialogHub({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState<Open>(null);
   const close = useCallback(() => setOpen(null), []);
+
+  // A form opened on one set of records never saves into another: switching between your
+  // records, the demo or a practice lesson closes any open form.
+  const dataset = useAppState((s) => s.dataset);
+  const shownFor = useRef(dataset);
+  useEffect(() => {
+    if (shownFor.current === dataset) return;
+    shownFor.current = dataset;
+    setOpen(null);
+  }, [dataset]);
 
   const api = useMemo<DialogApi>(
     () => ({

@@ -84,6 +84,7 @@ import {
   type Settings,
   type ValueSnapshot,
 } from '../domain/types';
+import { sanitizeTutorial } from '../learn/progress';
 
 type Obj = Record<string, unknown>;
 
@@ -799,8 +800,10 @@ export function sanitizeSettings(raw: unknown): Settings {
     sellingCostPercent: pick('sellingCostPercent', (v) => v === null || (nonNegNum(v) && (v as number) < 100)),
     collectorSalesEnabled: pick('collectorSalesEnabled', (v) => typeof v === 'boolean'),
     demoActive: pick('demoActive', (v) => typeof v === 'boolean'),
+    practiceActive: pick('practiceActive', (v) => typeof v === 'boolean'),
     lastBackupAt: pick('lastBackupAt', (v) => v === null || typeof v === 'string'),
     inventoryView: pick('inventoryView', (v) => v === 'grid' || v === 'list'),
+    tutorial: sanitizeTutorial(raw.tutorial, raw.onboarded === true),
   };
 }
 

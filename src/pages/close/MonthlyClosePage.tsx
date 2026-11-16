@@ -20,6 +20,7 @@ import { Button, buttonClass } from '../../ui/Button';
 import { cn } from '../../ui/cn';
 import { DecisionDialog, defaultMonth, FinalizeDialog, MonthPicker, monthOptions, ReopenDialog, StateBadge, STATE_LABEL, type StepView } from './parts';
 import { formatPercent } from '../../domain/money';
+import { HelpTip } from '../../learn/HelpTip';
 
 export function MonthlyClosePage() {
   const data = useAppState((s) => s.data);
@@ -335,7 +336,7 @@ export function RollForwardCard({ rf, title = 'Inventory roll-forward', descript
   const tone: Tone = rf.status === 'verified' ? 'good' : rf.status === 'difference' ? 'bad' : rf.status === 'partial' ? 'warn' : 'neutral';
   return (
     <Card className="mb-4 p-4 sm:p-5" data-testid="rollforward">
-      <SectionHeader title={title} description={description} />
+      <SectionHeader title={title} description={description} action={<HelpTip topic="inventory-reconciliation" />} />
       <p className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="rf-status">
         <Badge tone={tone}>{rf.status === 'verified' ? 'Verified' : rf.status === 'difference' ? 'Difference' : rf.status === 'partial' ? 'Partly verified' : 'Not available'}</Badge>
         <span className="text-ink-2">{rf.statusText}</span>

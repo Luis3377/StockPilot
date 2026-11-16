@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { addItem, isMobile, nav, noHorizontalOverflow, onboard } from './helpers';
+import { addItem, dismissWelcome, isMobile, nav, noHorizontalOverflow, onboard } from './helpers';
 
 test('onboarding asks how StockPilot will be used and requires a choice', async ({ page }) => {
   await page.goto('./');
@@ -13,6 +13,7 @@ test('onboarding asks how StockPilot will be used and requires a choice', async 
   await expect(page.getByRole('heading', { name: 'Where your inventory is saved' })).toBeVisible();
   await expect(page.getByTestId('storage-explainer')).toContainText('Only on this device, in this browser');
   await page.getByRole('button', { name: /Start with my own inventory/ }).click();
+  await dismissWelcome(page);
   await expect(page.getByText('Collector mode')).toBeVisible();
   await expect(page.getByTestId('get-started')).toBeVisible();
 });

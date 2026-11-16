@@ -23,6 +23,7 @@ import { Figures, hoursText, pctText, ScrollTable, sourceHref } from './parts';
 import { TimeTab } from './TimeTab';
 import { TripsTab } from './TripsTab';
 import { SourcesTab } from './SourcesTab';
+import { HelpTip } from '../../learn/HelpTip';
 
 const TABS = ['overview', 'hours', 'trips', 'time', 'sources'] as const;
 type Tab = (typeof TABS)[number];
@@ -135,7 +136,7 @@ function Overview() {
         <StatTile label="Sales revenue" value={money(t.revenue)} sub={`${plural(t.unitsSold, 'unit')} sold`} />
         <StatTile label="Cash tied up in unsold stock" value={money(t.inventoryCost)} sub="Inventory cost today" testId="sourcing-tied" />
         {report.timeCoverage.complete || !report.hasTime ? (
-          <StatTile label="Realized profit per logged hour" value={t.profitPerHour === null ? 'Not enough time data' : money(t.profitPerHour)} sub={report.hasTime ? `${hoursText(t.hours)} logged` : 'Log time to see this'} testId="sourcing-pph" />
+          <StatTile label="Realized profit per logged hour" value={t.profitPerHour === null ? 'Not enough time data' : money(t.profitPerHour)} sub={report.hasTime ? `${hoursText(t.hours)} logged` : 'Log time to see this'} testId="sourcing-pph" help="profit-per-hour" />
         ) : (
           <StatTile
             label="Profit per hour, where time is logged"
@@ -338,7 +339,11 @@ function PerHour() {
     <>
       <Filters f={f} categories={categories} withType={false} />
       <Card className="p-4 sm:p-5" data-testid="pph-summary">
-        <SectionHeader title="Realized profit per logged hour" description="Realized profit ÷ hours you logged. Not an hourly wage: your time isn’t subtracted from profit, and unsold stock isn’t counted." />
+        <SectionHeader
+          title="Realized profit per logged hour"
+          description="Realized profit ÷ hours you logged. Not an hourly wage: your time isn’t subtracted from profit, and unsold stock isn’t counted."
+          action={<HelpTip topic="profit-per-hour" />}
+        />
         {report.hasTime && tc.complete ? (
           <p className="mt-3 text-sm text-ink" data-testid="pph-formula">
             {money(t.netProfit)} realized profit ÷ {hoursText(t.hours)} logged ({rangeLabel}) ={' '}
