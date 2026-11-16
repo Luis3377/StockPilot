@@ -5,6 +5,7 @@ import { acquiredDate, itemCostValue, knownCategories, knownLocations, stockStat
 import { todayISO } from '../domain/dates';
 import type { Item } from '../domain/types';
 import { PRACTICE_DATA_LOCK, store, useAppState } from '../data/store';
+import { isDemoSeedItem } from '../data/demo';
 import { inventoryCsv } from '../csv/exports';
 import { downloadText, fileStamp } from '../lib/download';
 import { useMoney } from '../lib/hooks';
@@ -284,6 +285,7 @@ export function InventoryPage() {
                     {item.name}
                   </p>
                   <p className="mt-1 truncate text-xs text-muted">{[item.sku, item.category].filter(Boolean).join(' · ')}</p>
+                  {dataset === 'demo' && !isDemoSeedItem(item) && <AddedByYou />}
                   <div className="mt-2 flex items-end justify-between gap-2">
                     <span className="tabular text-sm font-semibold text-ink">{priceLabel(item, settings.mode, money)}</span>
                     <span className="tabular text-xs text-ink-2">Qty {item.quantity}</span>
@@ -317,6 +319,7 @@ export function InventoryPage() {
                         <span className="line-clamp-2 font-medium break-words text-ink" title={item.name}>
                           {item.name}
                         </span>
+                        {dataset === 'demo' && !isDemoSeedItem(item) && <AddedByYou />}
                         <span className="block truncate text-xs text-muted">
                           {item.sku}
                           <span className="md:hidden"> · Qty {item.quantity} · {priceLabel(item, settings.mode, money)}</span>
@@ -398,5 +401,18 @@ function FilterSelect({ label, value, onChange, options, className }: { label: s
         <path d="m6 9 6 6 6-6" />
       </svg>
     </label>
+  );
+}
+
+/** In demo mode: an item someone added while trying StockPilot out, not one that came with the demo. */
+function AddedByYou() {
+  return (
+    <span
+      className="mt-1 inline-block rounded-full bg-demo-soft px-2 py-0.5 text-[11px] font-medium text-ink"
+      data-testid="demo-added-by-you"
+      title="You added this while trying the demo; it didn’t come with it."
+    >
+      Added by you
+    </span>
   );
 }

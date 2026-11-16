@@ -2,6 +2,8 @@
 
 StockPilot teaches itself. Someone with no accounting or inventory background can follow short, hands-on lessons that point at the real buttons, fields and figures in the app, one step at a time, and practise on sample records that never touch their own.
 
+> After the first QA review, see [TUTORIAL_QA_1.md](TUTORIAL_QA_1.md): Practice Mode data lock, one tab per lesson, an interactive Max Bid lesson, collector details, worked examples, and discovery of every lesson in every mode.
+
 - [Where to find it](#where-to-find-it)
 - [How a lesson works](#how-a-lesson-works)
 - [Lessons](#lessons)
@@ -19,15 +21,17 @@ StockPilot teaches itself. Someone with no accounting or inventory background ca
 
 - **Welcome.** After onboarding, new users see *"Welcome to StockPilot! Let's show you how to manage inventory, track sales, and understand your business's profits."* with **Start guided tour** and **Explore on my own**. It's never required, and it isn't shown again after either choice (Escape or closing it counts as "Explore on my own"). People who used StockPilot before the Learning Center existed aren't shown it.
 - **Learning Center.** A **Learning Center** link sits above the mode switcher in the sidebar (desktop), and a graduation-cap icon sits in the top bar (phones). It opens `#/learn`.
-- **Help icons.** A small **?** next to key figures explains the term and links to its entry in the Learning Center (see [Help icons](#help-icons)).
+- **Help icons.** A small **ⓘ** next to key figures explains the term and links to its entry in the Learning Center (see [Help icons](#help-icons)).
+- **Resume tour.** An unfinished lesson is offered on the Overview and at the top of the Learning Center.
 
 The Learning Center page has:
 
 1. **Your path** for the current mode, with each lesson's status (not started, in progress at step *n* of *m*, completed, skipped) and **Start**, **Resume**, **Start over** or **Replay**, plus "*x* of *y* lessons done".
-2. **All lessons** for the mode, grouped as *Basic inventory*, *Sales*, *Buying intelligence*, *Business insights* and *Financial reporting*. A lesson that can't run says why (e.g. sales tracking is off in Collector mode).
-3. **Search** across lessons and help topics.
-4. **Help topics**: what each figure means and how StockPilot calculates it, with **Show me** links to the matching lesson.
-5. **Show the welcome again**.
+2. **All lessons** for the mode, grouped as *Basic inventory*, *Sales*, *Buying intelligence*, *Business insights* and *Financial reporting*, then **Lessons made for other modes** (all 17 are always listed; starting one never changes your mode). A lesson that can't run says why (e.g. sales tracking is off, or the AI scanner is switched off).
+3. **Search** across every lesson's text (titles, summaries, keywords and every step) and the help topics.
+4. **Help topics**: what each figure means and how StockPilot calculates it, with **See it in StockPilot** (opens the page with that explanation showing) and **Lesson: …** links.
+5. **Practice records**: what's kept, when it's cleared, and **Delete practice records**.
+6. **Show the welcome again**.
 
 ## How a lesson works
 
@@ -40,6 +44,8 @@ The tour engine (`src/learn/TourProvider.tsx`) runs on top of the real app:
   - *result* steps: a verified result in the records, e.g. "an item was saved" (more items than when the lesson started) and the form has closed;
   - *look* steps: **Next**.
 - **Wrong clicks** on the dimmed page don't do anything; the box explains that the page is paused and points to the highlighted area or Exit.
+- **Keyboard**: Tab only moves between the highlighted control(s) and the lesson box; Tab or Enter in a field with a valid answer moves on; Escape exits.
+- **One tab at a time**: the tab that started (or continued) a lesson runs it; other StockPilot tabs say so and offer "Continue it here", and take over if that tab is closed.
 - **Look-only steps can't operate the highlighted control** (a clear shield sits over it), so an explanation lesson never saves, imports, closes, deletes or sends anything.
 - **Navigation**: a step that belongs to a page opens it once when the step starts. If you go elsewhere, the box says so and offers **Take me back**.
 - **Forms and dialogs**: steps inside the Add item / Record sale forms highlight one field at a time. If the form is closed (or the page is refreshed), the lesson goes back to the step that opens it, with a note.
@@ -48,27 +54,27 @@ The tour engine (`src/learn/TourProvider.tsx`) runs on top of the real app:
 
 ## Lessons
 
-Practice lessons (🧪) run on practice records. All others only look around.
+Practice lessons (🧪) run on practice records, several with a ready-made worked example. All others only look around.
 
 | Lesson | Group | Modes | What it covers |
 | --- | --- | --- | --- |
 | Getting around StockPilot | Basic inventory | all | The Overview, headline figures, the main menu and the Learning Center |
 | 🧪 Add your first product | Basic inventory | reseller, business | Opening Inventory, Add item, name, quantity, **cost per item** (*"Cost per item is what you paid for one product. StockPilot uses this amount to calculate how much profit you make when the item sells."*), selling/asking price, saving, inventory cost |
-| 🧪 Record a sale and read your profit | Sales | all (needs sales tracking) | Record sale, item, sale price, fees, saving; then **revenue**, **cost of goods sold** and **realized profit** on the real tiles (and why profit isn't cash) |
+| 🧪 Record a sale and read your profit | Sales | all (needs sales tracking) | Record sale, item, sale price, fees (amount or %), saving; then **revenue**, **cost of goods sold**, **realized profit**, **margin** and **ROI** calculated from your own practice sale (and why profit isn't cash). Straight after "Add your first product" it sells the product you just added |
 | Checking inventory levels | Basic inventory | reseller, business | Search, In stock / Low stock / Out of stock, Count Check |
-| Sourcing Performance and profit per hour | Business insights | reseller, business | Results by source; profit per logged hour (not a wage) |
-| Understanding Monthly Close | Financial reporting | reseller, business | Month figures (verified / partly / missing), inventory reconciliation, the checklist |
+| 🧪 Sourcing Performance and profit per hour | Business insights | reseller, business | A practice purchase, sale and logged time: results by source, where you record sources and time, profit per logged hour (not a wage) |
+| 🧪 Understanding Monthly Close | Financial reporting | reseller, business | A practice month: figures (verified / partly / missing), a worked inventory reconciliation, the checklist (nothing is closed) |
 | Financial planning and reserves | Financial reporting | reseller, business | The disclaimer, tax reserve (your own percentage), 20/25/30% examples, money set aside |
-| Backing up your data | Basic inventory | all | Where records live, Download backup |
+| Backing up your data | Basic inventory | all | Where records live, Download backup, what Restore does |
 | 🧪 Adding items with the AI scanner | Buying intelligence | all, **only when the scanner is enabled** | Where Scan with AI is and what Analyze does; never analyzes anything |
-| 🧪 The Max Bid Calculator | Buying intelligence | reseller | Starting a plan and its assumptions (the plan stays in practice) |
-| Bulk lots and cost splitting | Buying intelligence | reseller, business | What a lot is and how its cost is split |
-| Marketplace payout reconciliation | Sales | reseller, business | Payouts vs profit; importing reports is always your choice |
-| Predicted vs. actual | Business insights | reseller | Comparing lots with their Max Bid plans |
-| 🧪 Adding a collectible | Basic inventory | collector | Name, cost, **estimated market value** (an estimate, not a sale or appraisal), More details (condition, location, acquisition date) |
+| 🧪 The Max Bid Calculator | Buying intelligence | reseller | New calculation → your resale estimate → your target return → the **real** maximum bid, highlighted and explained, with the breakdown |
+| 🧪 Bulk lots and cost splitting | Buying intelligence | reseller, business | A $100 practice lot split $75 / $25 by estimated resale value, on the real lot page |
+| Marketplace payout reconciliation | Sales | reseller, business | Which eBay reports to download, a worked payout difference, how to investigate; never imports |
+| 🧪 Predicted vs. actual | Business insights | reseller | A practice pallet bought with a Max Bid plan, sold below the plan: the comparison and why it differs |
+| 🧪 Adding a collectible | Basic inventory | collector | Name, cost, **estimated market value** (an estimate, not a sale or appraisal), then More details: condition, purchase date and where you got it |
 | Organizing your collection | Basic inventory | collector | Search, categories and locations |
 | Value: what you paid vs. what it's worth | Business insights | collector | Cost vs asking price vs estimated market value, and their limits |
-| Optional: sales and profit | Sales | collector | Turning on sales tracking in Settings |
+| Optional: sales and profit | Sales | collector | What “Track sales & profit” adds (the lesson doesn't switch it on) |
 
 **Learning paths** (the welcome tour follows these; lessons that can't run are left out):
 
@@ -85,7 +91,7 @@ Every dollar amount in a lesson is an example and is labelled **Illustrative exa
 - A lesson's sample item (the "Practice coffee mug" for the sale lesson) is added **only to the practice records**, and only if they have nothing in stock.
 - **Finishing, skipping, exiting** or **Leave practice** in the purple banner switches back to whichever records were open before (your own or the demo), exactly as they were. A refresh mid-lesson reopens the practice records and the lesson.
 - **Open forms close when the records switch**, so a form opened on practice records can never save into your own (and vice versa). Leaving practice on a practice record's page (e.g. a practice Max Bid plan) goes to its list.
-- **Backups and restores are refused in practice mode**, so a practice record can't end up in a backup of your data, and a restore can't overwrite practice records thinking they're yours.
+- **Data management is refused in practice mode** — backups, restores, imports, demo switching and resets, and erasing — in the store itself, with “Leave Practice Mode to manage your data.” on the disabled buttons. Practice records stay stored until a practice lesson starts over or you delete them (Learning Center → Practice records).
 - A banner — *"Practice mode — a Learning Center lesson is using sample records. Your own records aren't changed."* — is shown the whole time.
 
 ## Safeguards

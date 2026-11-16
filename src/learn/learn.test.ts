@@ -428,3 +428,14 @@ describe('Practice Mode data safety (H3)', () => {
     expect(sanitizeTutorial({ active: { lessonId: 'backup', step: 0, owner: 'BAD ID!' } }, true).active).toEqual({ lessonId: 'backup', step: 0, baseline: base });
   });
 });
+
+describe('demo records added while trying StockPilot out', () => {
+  it('are told apart from the demo’s own sample items, in saved demos too (no migration)', async () => {
+    const { buildDemoData, isDemoSeedItem } = await import('../data/demo');
+    const seeded = buildDemoData('2026-11-16');
+    expect(seeded.items.length).toBeGreaterThan(10);
+    expect(seeded.items.every(isDemoSeedItem)).toBe(true);
+    const mine = addItem(seeded, { name: 'My test item', quantity: 1, unitCost: 2 }).item;
+    expect(isDemoSeedItem(mine)).toBe(false);
+  });
+});
