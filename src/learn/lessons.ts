@@ -161,6 +161,7 @@ export const LESSONS: Lesson[] = [
           valid: money,
           invalid: 'Enter an amount like 8 or 8.50.',
         },
+        illustrative: true,
         resumeAt: 'open-form',
         skipIf: itemSaved,
       },

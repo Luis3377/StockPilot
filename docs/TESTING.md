@@ -218,3 +218,7 @@ The full map is in [FINANCIAL_PLANNING.md](FINANCIAL_PLANNING.md#tests). In shor
 ## Manual beta fix round 1 → tests
 
 The full map is in [BETA_FIXES_1.md](BETA_FIXES_1.md#tests). New: `src/insights/provenCases.test.ts` (the calculations manual testing confirmed), `src/insights/adjustments.test.ts`, `src/domain/saleDates.test.ts`, `src/domain/timeLinks.test.ts` and `e2e/betafixes.spec.ts`.
+
+## Learning Center + guided tours → tests
+
+The full map is in [LEARNING_CENTER.md](LEARNING_CENTER.md#tests). New: `src/learn/learn.test.ts` (progress, lessons, help text, practice isolation, backups) and `e2e/tutorial.spec.ts` (welcome, practice lessons, wrong clicks, invalid answers, refresh/resume, exit/skip/replay without duplicates, every lesson's targets in each mode, missing targets, backup/restore of progress, keyboard, axe, reduced motion, phone layout), plus a scanner-lesson test in `e2e/scanner.spec.ts`. Existing browser tests now dismiss the welcome after onboarding (`dismissWelcome` in `e2e/helpers.ts`).

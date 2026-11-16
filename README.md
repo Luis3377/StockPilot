@@ -26,6 +26,7 @@ StockPilot is an inventory and profit assistant for resellers, collectors and sm
 | **Count Check** | Count physical stock (all items, a category or a location), see missing/extra units and their value, approve adjustments with reasons, and keep a history and adjustment log. Progress is saved as you go. |
 | **Import / export / backup** | CSV import with validation, row-level errors and duplicate protection; CSV exports for inventory, sales & profit, monthly profit summary, adjustments and count discrepancy reports; full JSON backup (including photos) and restore. |
 | **Demo mode** | Clearly labeled sample data in a separate dataset. Your real records are never touched. |
+| **Learning Center + guided tours** | A welcome for new users and short, hands-on lessons that dim the page, highlight the real button or field and move on only when the step is actually done (a click on the right control, a valid answer, a saved record). Lessons that create records run in **practice mode**, a separate set of sample records that never touches yours. Paths for each mode, start/resume/replay, search, and **?** help icons on key figures (revenue, cost of goods sold, realized profit, margin, ROI, max bid, net proceeds, inventory reconciliation, tax reserve, profit per logged hour). Sidebar → **Learning Center** (graduation cap on phones). See [docs/LEARNING_CENTER.md](docs/LEARNING_CENTER.md). |
 | **Design** | Light/dark/system themes, responsive layout with bottom tabs on phones, iPhone safe areas, “Add to Home Screen” support, accessible dialogs and charts (each chart has a table view). |
 
 ## Getting started
@@ -115,6 +116,7 @@ The domain layer is pure TypeScript with no browser dependencies, so the same in
 
 ## Further reading
 
+- [docs/LEARNING_CENTER.md](docs/LEARNING_CENTER.md) — the Learning Center and guided tours: how lessons work, the lessons and paths, practice-data isolation, safeguards, help icons, progress and backups, accessibility, testing and limitations
 - [docs/BETA_FIXES_1.md](docs/BETA_FIXES_1.md) — the first manual beta fix round: findings, root causes, what changed, and tests
 - [docs/FINANCIAL_PLANNING.md](docs/FINANCIAL_PLANNING.md) — tax set-aside and financial planning: reserve calculations, scenarios, suggested vs. set aside, obligations and reminders, the assistant, stored data and limitations
 - [docs/YEAR_END.md](docs/YEAR_END.md) — year-end review: the annual reconciliation, year-end counts, monthly coverage, finalizing and locking, the accountant summary and exports, the optional tax-preparer worksheet, and limitations

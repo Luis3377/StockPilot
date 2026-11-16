@@ -261,7 +261,7 @@ function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: Act
     if (step.resumeAt && !resolveTarget(step.target)) {
       const to = steps.findIndex((s) => s.id === step.resumeAt);
       if (to >= 0 && to < index) {
-        carryHint.current = { index: to, text: 'The form closed when the page reloaded. Open it again to carry on — what you saved is still there.' };
+        carryHint.current = { index: to, text: 'The page reloaded and the form closed. Open it again to carry on (anything typed but not saved needs typing again).' };
         go(index, to);
       }
     }

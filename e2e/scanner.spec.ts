@@ -639,6 +639,36 @@ test('scanner panel and result fit phone screens, with long names shown in full'
   await expect(field(page, 'Item name')).toHaveValue(LONG);
 });
 
+test('Learning Center: the scanner lesson shows where the scanner is and never sends a photo', async ({ page }) => {
+  const log = await mockScanner(page, [success({ name: 'Should never be used' })]);
+  await onboard(page, 'Reseller');
+  await page.locator('[data-tour="learn-link"]:visible').click();
+  // In this build the scanner lesson is part of the reseller path.
+  await expect(page.getByTestId('learn-path')).toContainText('Adding items with the AI scanner');
+  await page.getByTestId('learn-path').locator('[data-lesson="ai-scanner"]').getByTestId('learn-start').click();
+  const pop = page.getByTestId('tour-popover');
+  await expect(pop).toContainText('Nothing is sent to the AI unless you press Analyze yourself.');
+  await page.getByTestId('tour-next').click();
+  await expect(pop).toHaveAttribute('data-step', 'go-inventory');
+  await page.locator('[data-tour-active="go-inventory"]').click();
+  await expect(pop).toHaveAttribute('data-step', 'open-form');
+  await page.locator('[data-tour-active="open-form"]').click();
+  await expect(pop).toHaveAttribute('data-step', 'scanner');
+  const panel = page.locator('[data-tour-active="scanner"]');
+  await expect(panel).toHaveAttribute('data-testid', 'scan-panel');
+  await expect(pop).toContainText('Analyzing uses one of your daily AI requests');
+  // The panel is only shown: a tap on it doesn't reach its buttons.
+  await panel.click({ force: true });
+  await expect(page.getByTestId('tour-hint')).toContainText('This step only shows where this is');
+  await page.getByTestId('tour-next').click();
+  await page.getByTestId('tour-finish').click();
+  await expect(pop).toBeHidden();
+  // Leaving practice closed the form; nothing was saved and nothing was sent.
+  await expect(page.getByTestId('item-form')).toBeHidden();
+  await expect(page.getByTestId('inventory-item')).toHaveCount(0);
+  expect(log.scans).toHaveLength(0);
+});
+
 test.describe('standard build (scanner off)', () => {
   test.use({ baseURL: STANDARD_APP });
 

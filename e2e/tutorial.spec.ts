@@ -13,10 +13,38 @@ const step = (page: Page, id: string) => expect(pop(page)).toHaveAttribute('data
 const target = (page: Page) => page.locator('[data-tour-active]');
 const at = (page: Page, id: string) => page.locator(`[data-tour-active="${id}"]`);
 
-/** Waits for a step, then clicks the control it highlights. */
+/** Taps the highlighted control where a person sees it: once it has stopped moving and nothing covers it. */
+async function tap(page: Page, id: string) {
+  const el = at(page, id);
+  let last = '';
+  let point: { x: number; y: number } | null = null;
+  await expect
+    .poll(
+      async () => {
+        const b = await el.boundingBox();
+        const key = JSON.stringify(b);
+        const still = key === last;
+        last = key;
+        if (!b || !still) return false;
+        const x = b.x + b.width / 2;
+        const y = b.y + b.height / 2;
+        const onTop = await el.evaluate((node, [px, py]) => {
+          const hit = document.elementFromPoint(px, py);
+          return !!hit && (node === hit || node.contains(hit));
+        }, [x, y]);
+        point = onTop ? { x, y } : null;
+        return onTop;
+      },
+      { message: `the "${id}" control should be on screen and uncovered`, timeout: 5000, intervals: [100] },
+    )
+    .toBe(true);
+  await page.mouse.click(point!.x, point!.y);
+}
+
+/** Waits for a step, then taps the control it highlights. */
 async function clickStep(page: Page, id: string) {
   await step(page, id);
-  await at(page, id).click();
+  await tap(page, id);
 }
 const itemForm = (page: Page) => page.getByTestId('item-form');
 
@@ -135,7 +163,7 @@ test('guided tour: welcome, getting around, then adding a practice product step 
   // Practice records only: the real lamp isn't here.
   await expect(page.getByText('Real desk lamp')).toHaveCount(0);
   await expectReachable(page);
-  await at(page, 'open-form').click();
+  await tap(page, 'open-form');
   await expect(itemForm(page)).toBeVisible();
   await step(page, 'name');
   // Invalid answers don't move on.
@@ -154,7 +182,7 @@ test('guided tour: welcome, getting around, then adding a practice product step 
   await answer(page, 'Selling price', '20');
   await step(page, 'save');
   await expectReachable(page);
-  await at(page, 'save').click();
+  await tap(page, 'save');
   await step(page, 'result');
   await expect(pop(page)).toContainText('Illustrative example');
   await expect(page.getByTestId('inventory-item')).toHaveCount(1);
@@ -199,7 +227,7 @@ test('recording a practice sale explains revenue, cost of goods sold and realize
   await expect(page.getByTestId('practice-banner')).toBeVisible();
   await step(page, 'open');
   await expect(page.getByTestId('tour-hint')).toContainText('Open it again to carry on');
-  await at(page, 'open').click();
+  await tap(page, 'open');
   await step(page, 'item');
   await target(page).selectOption({ index: 1 });
   await step(page, 'price');
@@ -278,7 +306,7 @@ test('exit and resume from the Learning Center, skip a lesson, and replay withou
   await clickStep(page, 'go-inventory');
   await step(page, 'open-form');
   await expect(page.getByText(/Practice coffee mug/)).toHaveCount(0);
-  await at(page, 'open-form').click();
+  await tap(page, 'open-form');
   await step(page, 'name');
   await answer(page, 'Item name', 'Practice coffee mug');
   await step(page, 'quantity');

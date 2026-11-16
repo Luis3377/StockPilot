@@ -34,7 +34,7 @@ export function LearnPage() {
   const shownLessons = lessons.filter((l) => match(`${l.title} ${l.summary} ${GROUP_LABELS[l.group]}`));
   const topics = HELP_TOPICS.filter((t) => match(`${t.term} ${t.text} ${t.keywords ?? ''}`));
   const focusTopic = params.get('topic');
-  const done = path.filter((l) => lessonStatus(progress, l.id) === 'completed').length;
+  const done = path.filter((l) => l.id in progress.completed).length;
 
   // Opened from a help icon: show that topic (after the page's own scroll-to-top) and move focus to it.
   useEffect(() => {
@@ -131,7 +131,7 @@ function LessonRow({ lesson, number, env }: { lesson: Lesson; number?: number; e
           {number !== undefined && <span className="text-muted">{number}.</span>}
           {lesson.title}
           {lesson.practice && <Badge tone="demo">Practice</Badge>}
-          {status === 'completed' && (
+          {lesson.id in progress.completed && (
             <Badge tone="good" icon={<CheckCircle2 className="size-3" />}>
               Completed
             </Badge>
