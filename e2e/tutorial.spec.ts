@@ -1,6 +1,7 @@
 // Learning Center and guided tours: the welcome, practice lessons on the separate practice
 // records, verified step-by-step progress, stop/resume, replays, every lesson's targets, phones,
-// keyboard and screen-reader support, and that real records are never touched.
+// keyboard and screen-reader support, Practice Mode data safety, two tabs, and that real
+// records are never touched.
 
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -10,12 +11,13 @@ import { addItem, isMobile, nav, onboard, recordSale, reloadWhenSaved, saved } f
 const pop = (page: Page) => page.getByTestId('tour-popover');
 const step = (page: Page, id: string) => expect(pop(page)).toHaveAttribute('data-step', id);
 /** The control the current step highlights (marked with the step's id, so it's never a stale one). */
-const target = (page: Page) => page.locator('[data-tour-active]');
-const at = (page: Page, id: string) => page.locator(`[data-tour-active="${id}"]`);
+const at = (page: Page, id: string) => page.locator(`[data-tour-active="${id}"]`).first();
+const itemForm = (page: Page) => page.getByTestId('item-form');
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Taps the highlighted control where a person sees it: once it has stopped moving and nothing covers it. */
-async function tap(page: Page, id: string) {
-  const el = at(page, id);
+async function tap(page: Page, id: string, within?: string) {
+  const el = within ? at(page, id).locator(within).first() : at(page, id);
   let last = '';
   let point: { x: number; y: number } | null = null;
   await expect
@@ -28,10 +30,13 @@ async function tap(page: Page, id: string) {
         if (!b || !still) return false;
         const x = b.x + b.width / 2;
         const y = b.y + b.height / 2;
-        const onTop = await el.evaluate((node, [px, py]) => {
-          const hit = document.elementFromPoint(px, py);
-          return !!hit && (node === hit || node.contains(hit));
-        }, [x, y]);
+        const onTop = await el.evaluate(
+          (node, [px, py]) => {
+            const hit = document.elementFromPoint(px, py);
+            return !!hit && (node === hit || node.contains(hit));
+          },
+          [x, y],
+        );
         point = onTop ? { x, y } : null;
         return onTop;
       },
@@ -46,7 +51,22 @@ async function clickStep(page: Page, id: string) {
   await step(page, id);
   await tap(page, id);
 }
-const itemForm = (page: Page) => page.getByTestId('item-form');
+
+/** The form control a field step reads: the highlighted control, or the one inside a highlighted field group. */
+async function fieldOf(page: Page, id: string): Promise<Locator> {
+  const t = at(page, id);
+  const isControl = await t.evaluate((n) => /^(INPUT|SELECT|TEXTAREA)$/.test(n.tagName));
+  return isControl ? t : t.locator('input:not([type="hidden"]):not([type="file"]), select, textarea').first();
+}
+
+/** Types into the highlighted field (checked by its label) and moves on with Tab, like a person would. */
+async function answer(page: Page, id: string, label: string, value: string) {
+  await step(page, id);
+  const input = await fieldOf(page, id);
+  await expect(input).toHaveAccessibleName(new RegExp(`^${escapeRe(label)}`));
+  await input.fill(value);
+  await page.keyboard.press('Tab');
+}
 
 async function axe(page: Page, where: string) {
   await page.waitForTimeout(400);
@@ -54,27 +74,46 @@ async function axe(page: Page, where: string) {
   expect(violations.map((v) => `${where}: ${v.id} — ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 }
 
-/** The highlighted control is on screen and nothing (the popover included) covers its middle. */
+/** The highlighted control is on screen and nothing (the lesson box included) covers it. */
 async function expectReachable(page: Page, control?: Locator) {
   const el = control ?? at(page, (await pop(page).getAttribute('data-step'))!);
   await expect(el).toBeInViewport();
-  const covered = () => el.evaluate((node) => {
-    const r = node.getBoundingClientRect();
-    const top = Math.max(0, r.top);
-    const bottom = Math.min(window.innerHeight, r.bottom);
-    let last = 'nothing';
-    // The middle, or (for a big card the lesson box partly overlaps) another point inside it.
-    for (const [fx, fy] of [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) {
-      const hit = document.elementFromPoint(r.left + r.width * fx, top + (bottom - top) * fy) as HTMLElement | null;
-      if (!hit) continue;
-      // Look-only steps put a clear shield over the control: shown, but not usable from the lesson.
-      if (node === hit || node.contains(hit) || hit.contains(node) || hit.dataset.testid === 'tour-look-shield') return null;
-      last = `${hit.tagName} ${hit.dataset.testid ?? ''} ${hit.className}`.slice(0, 160);
-    }
-    return last;
-  });
-  // Allow a moment for the lesson to scroll the control clear of the header, tab bar or lesson box.
+  const covered = () =>
+    el.evaluate((node) => {
+      const r = node.getBoundingClientRect();
+      const top = Math.max(0, r.top);
+      const bottom = Math.min(window.innerHeight, r.bottom);
+      let last = 'nothing';
+      // The middle, or (for a big card the lesson box partly overlaps) another point inside it.
+      for (const [fx, fy] of [
+        [0.5, 0.5],
+        [0.25, 0.25],
+        [0.75, 0.25],
+        [0.25, 0.75],
+        [0.75, 0.75],
+      ]) {
+        const hit = document.elementFromPoint(r.left + r.width * fx, top + (bottom - top) * fy) as HTMLElement | null;
+        if (!hit) continue;
+        // Look-only steps put a clear shield over the control: shown, but not usable from the lesson.
+        if (node === hit || node.contains(hit) || hit.contains(node) || hit.dataset.testid === 'tour-look-shield') return null;
+        last = `${hit.tagName} ${hit.dataset.testid ?? ''} ${hit.className}`.slice(0, 160);
+      }
+      return last;
+    });
   await expect.poll(covered, { message: `the highlighted control (${await pop(page).getAttribute('data-step')}) should not be covered`, timeout: 3000 }).toBeNull();
+}
+
+/** Every button in the lesson box is fully inside the screen. */
+async function buttonsInside(page: Page) {
+  const vw = page.viewportSize()!;
+  for (const b of await pop(page).getByRole('button').all()) {
+    const r = await b.boundingBox();
+    expect(r, 'button visible').not.toBeNull();
+    expect(r!.x).toBeGreaterThanOrEqual(0);
+    expect(r!.x + r!.width).toBeLessThanOrEqual(vw.width + 0.5);
+    expect(r!.y).toBeGreaterThanOrEqual(0);
+    expect(r!.y + r!.height).toBeLessThanOrEqual(vw.height + 0.5);
+  }
 }
 
 async function openLearn(page: Page) {
@@ -82,7 +121,12 @@ async function openLearn(page: Page) {
   await expect(page.getByRole('heading', { level: 1, name: 'Learning Center' })).toBeVisible();
 }
 
-const lessonRow = (page: Page, id: string) => page.getByTestId('learn-path').locator(`[data-lesson="${id}"]`).or(page.locator(`[data-testid^="learn-group-"] [data-lesson="${id}"]`)).first();
+const lessonRow = (page: Page, id: string) =>
+  page
+    .getByTestId('learn-path')
+    .locator(`[data-lesson="${id}"]`)
+    .or(page.locator(`[data-testid^="learn-group-"] [data-lesson="${id}"], [data-testid="learn-other-modes"] [data-lesson="${id}"]`))
+    .first();
 
 async function startLesson(page: Page, id: string) {
   await openLearn(page);
@@ -90,13 +134,31 @@ async function startLesson(page: Page, id: string) {
   await expect(pop(page)).toBeVisible();
 }
 
-/** Types into the highlighted field (checked by its label) and moves on with Tab, like a person would. */
-async function answer(page: Page, label: string, value: string) {
-  const el = target(page);
-  await expect(el).toHaveAccessibleName(new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
-  await el.fill(value);
-  await page.keyboard.press('Tab');
+/** Walks a lesson to its end: Next on look steps, a tap on the control for steps that need one. */
+async function walk(page: Page, id: string) {
+  await startLesson(page, id);
+  for (let i = 0; i < 30; i++) {
+    const p = pop(page);
+    await expect(p).toBeVisible();
+    await expect(p).not.toHaveAttribute('data-target-found', 'false', { timeout: 4000 });
+    await expect(page.getByTestId('tour-body')).not.toContainText('can’t find');
+    if (await page.getByTestId('tour-finish').isVisible()) {
+      await page.getByTestId('tour-finish').click();
+      await expect(p).toBeHidden();
+      return;
+    }
+    const before = (await p.getAttribute('data-step'))!;
+    if ((await p.getAttribute('data-target-found')) === 'true') await expectReachable(page);
+    if (await page.getByTestId('tour-next').isVisible()) await page.getByTestId('tour-next').click();
+    else await tap(page, before);
+    await expect(p).not.toHaveAttribute('data-step', before);
+  }
+  throw new Error(`lesson ${id} didn't finish`);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Welcome and the first lessons
+// ---------------------------------------------------------------------------------------------
 
 test('new users get the welcome once; skipping it never brings it back, and it can be shown again', async ({ page }) => {
   await page.goto('./');
@@ -124,7 +186,7 @@ test('new users get the welcome once; skipping it never brings it back, and it c
   await expect(welcome).toBeHidden();
 });
 
-test('guided tour: welcome, getting around, then adding a practice product step by step', async ({ page }) => {
+test('guided tour: getting around, then adding a practice product step by step with real feedback', async ({ page }) => {
   await onboard(page, 'Small business');
   // A real record that must stay exactly as it is.
   await addItem(page, { name: 'Real desk lamp', quantity: 2, cost: '12', asking: '30' });
@@ -132,10 +194,11 @@ test('guided tour: welcome, getting around, then adding a practice product step 
   await page.getByTestId('learn-welcome').click();
   await page.getByTestId('tour-welcome-start').click();
 
-  // Lesson 1: getting around (explanation steps only).
+  // Lesson 1: getting around (look steps; Back works).
   await expect(pop(page)).toContainText('Getting around StockPilot');
   await expect(page.getByTestId('tour-progress')).toHaveText(/^Step 1 of \d+$/);
   await step(page, 'overview');
+  await expect(pop(page)).toContainText('A summary of your business');
   await expect(page.getByTestId('tour-back')).toBeHidden();
   await page.getByTestId('tour-next').click();
   await step(page, 'headline');
@@ -146,12 +209,15 @@ test('guided tour: welcome, getting around, then adding a practice product step 
     await step(page, id);
     if (id !== 'done') await expectReachable(page);
   }
+  // The next lesson offered is the next unfinished one on the path.
+  await expect(page.getByTestId('tour-next-lesson')).toHaveText('Next: Add your first product');
   await page.getByTestId('tour-next-lesson').click();
 
   // Lesson 2: practice product.
   await expect(pop(page)).toContainText('Add your first product');
   await expect(page.getByTestId('practice-banner')).toBeVisible();
   await step(page, 'intro');
+  await expect(pop(page)).toContainText('your backups never include it');
   await page.getByTestId('tour-next').click();
   await step(page, 'go-inventory');
   await expectReachable(page);
@@ -166,29 +232,46 @@ test('guided tour: welcome, getting around, then adding a practice product step 
   await tap(page, 'open-form');
   await expect(itemForm(page)).toBeVisible();
   await step(page, 'name');
-  // Invalid answers don't move on.
-  await target(page).fill('a');
+  // Invalid answers don't move on, and the lesson box's buttons don't move when the reason appears.
+  const name = await fieldOf(page, 'name');
+  await name.fill('a');
+  const nextBefore = await page.getByTestId('tour-next').boundingBox();
   await page.getByTestId('tour-next').click();
   await expect(page.getByTestId('tour-hint')).toHaveText('Type a name (at least two letters).');
+  expect(await page.getByTestId('tour-next').boundingBox()).toEqual(nextBefore);
   await step(page, 'name');
-  await answer(page, 'Item name', 'Practice coffee mug');
+  await answer(page, 'name', 'Item name', 'Practice coffee mug');
+  // The whole quantity field is highlighted, and its − / + buttons work.
   await step(page, 'quantity');
   await expect(pop(page)).toContainText('Quantity is how many you have on hand');
-  await answer(page, 'Quantity', '3');
+  await tap(page, 'quantity', 'button[aria-label="Increase"]');
+  await tap(page, 'quantity', 'button[aria-label="Increase"]');
+  await expect(await fieldOf(page, 'quantity')).toHaveValue('3');
+  await step(page, 'quantity');
+  await (await fieldOf(page, 'quantity')).focus();
+  await page.keyboard.press('Tab');
   await step(page, 'cost');
   await expect(pop(page)).toContainText('Cost per item is what you paid for one product. StockPilot uses this amount to calculate how much profit you make when the item sells.');
-  await answer(page, 'Cost per item', '8');
-  await step(page, 'price');
-  await answer(page, 'Selling price', '20');
+  // Clear feedback on a number that isn't one.
+  await (await fieldOf(page, 'cost')).fill('eight');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('tour-hint')).toContainText('“eight” isn’t a number');
+  await step(page, 'cost');
+  await answer(page, 'cost', 'Cost per item', '8');
+  await answer(page, 'price', 'Selling price', '20');
   await step(page, 'save');
   await expectReachable(page);
   await tap(page, 'save');
   await step(page, 'result');
-  await expect(pop(page)).toContainText('Illustrative example');
+  // The person's own numbers, not a fixed example.
+  await expect(pop(page)).toContainText('3 × $8.00 = $24.00');
   await expect(page.getByTestId('inventory-item')).toHaveCount(1);
   await expect(page.getByTestId('inventory-item')).toContainText('Practice coffee mug');
+  // No low-stock warning appears on the practice product.
+  await expect(page.getByTestId('inventory-item')).not.toContainText('Low stock');
   await page.getByTestId('tour-next').click();
   await step(page, 'done');
+  await expect(page.getByTestId('tour-back-to-learn')).toBeVisible();
   await page.getByTestId('tour-finish').click();
   await expect(pop(page)).toBeHidden();
   await expect(page.getByText('Lesson complete: Add your first product.')).toBeVisible();
@@ -206,45 +289,68 @@ test('guided tour: welcome, getting around, then adding a practice product step 
   await expect(page.getByTestId('learn-path')).toContainText(/2 of \d+ lessons done/);
 });
 
-test('recording a practice sale explains revenue, cost of goods sold and realized profit; a refresh resumes', async ({ page }) => {
-  await onboard(page, 'Reseller');
+test('recording a practice sale: the product from the last lesson, real figures for margin and ROI, refresh and resume', async ({ page }) => {
+  await onboard(page, 'Small business');
   await addItem(page, { name: 'Real camera', quantity: 1, cost: '50', asking: '120' });
-  await startLesson(page, 'practice-record-sale');
+  // Add a practice product, then go straight on: the sale lesson keeps that product.
+  await startLesson(page, 'practice-add-item');
+  await page.getByTestId('tour-next').click();
+  await clickStep(page, 'go-inventory');
+  await clickStep(page, 'open-form');
+  await answer(page, 'name', 'Item name', 'My practice teapot');
+  await answer(page, 'quantity', 'Quantity', '2');
+  await answer(page, 'cost', 'Cost per item', '10');
+  await answer(page, 'price', 'Selling price', '25');
+  await clickStep(page, 'save');
+  await step(page, 'result');
+  await page.getByTestId('tour-next').click();
+  await expect(page.getByTestId('tour-next-lesson')).toHaveText('Next: Record a sale and read your profit');
+  await page.getByTestId('tour-next-lesson').click();
   await step(page, 'intro');
   await page.getByTestId('tour-next').click();
   await clickStep(page, 'go-sales');
   await clickStep(page, 'open');
   await expect(page.getByTestId('sale-form')).toBeVisible();
   await step(page, 'item');
-  // Only the practice item is offered.
-  await expect(target(page).locator('option', { hasText: 'Real camera' })).toHaveCount(0);
-  await target(page).selectOption({ index: 1 });
+  // Only practice items are offered.
+  const select = await fieldOf(page, 'item');
+  await expect(select.locator('option', { hasText: 'Real camera' })).toHaveCount(0);
+  await expect(select.locator('option', { hasText: 'My practice teapot' })).toHaveCount(1);
+  await expect(select.locator('option', { hasText: 'Practice coffee mug' })).toHaveCount(0);
+  await select.selectOption({ index: 1 });
   await step(page, 'price');
 
-  // Refresh in the middle: the lesson comes back in practice mode, at the step that opens the form.
+  // Refresh in the middle: the lesson comes back in practice mode, at the step that opens the form, saying why.
   await reloadWhenSaved(page);
   await expect(pop(page)).toBeVisible();
   await expect(page.getByTestId('practice-banner')).toBeVisible();
   await step(page, 'open');
-  await expect(page.getByTestId('tour-hint')).toContainText('Open it again to carry on');
+  await expect(page.getByTestId('tour-hint')).toContainText('The page reloaded and the form closed');
   await tap(page, 'open');
   await step(page, 'item');
-  await target(page).selectOption({ index: 1 });
-  await step(page, 'price');
-  await answer(page, 'Sale price', '20');
+  await (await fieldOf(page, 'item')).selectOption({ index: 1 });
+  await answer(page, 'price', 'Sale price', '20');
+  // The fee field and its amount/percent switch are highlighted together.
   await step(page, 'fees');
-  await answer(page, 'Marketplace fees', '2');
+  await expect(at(page, 'fees').getByRole('radio').first()).toBeVisible();
+  await answer(page, 'fees', 'Marketplace fees', '2');
   await clickStep(page, 'save');
   await step(page, 'revenue');
-  await expect(target(page)).toContainText('$20.00');
+  await expect(pop(page)).toContainText('$20.00');
   await page.getByTestId('tour-next').click();
   await step(page, 'cogs');
-  await expect(target(page)).toContainText('$8.00');
+  await expect(pop(page)).toContainText('$10.00');
   await page.getByTestId('tour-next').click();
   await step(page, 'profit');
-  await expect(target(page)).toContainText('$10.00');
+  await expect(pop(page)).toContainText('$20.00 − $10.00 − $2.00 = $8.00');
   await expect(pop(page)).toContainText('not the cash in your bank');
-  await expect(pop(page)).toContainText('Illustrative example');
+  await page.getByTestId('tour-next').click();
+  await step(page, 'margin');
+  await expect(pop(page)).toContainText('$8.00 ÷ $20.00 = 40.0%');
+  await page.getByTestId('tour-next').click();
+  await step(page, 'roi');
+  await expect(pop(page)).toContainText('$8.00 ÷ $10.00 = 80.0%');
+  await expect(pop(page)).toContainText('Margin compares profit with what buyers paid; ROI compares it with what you paid');
   await page.getByTestId('tour-next').click();
   await page.getByTestId('tour-finish').click();
 
@@ -256,7 +362,7 @@ test('recording a practice sale explains revenue, cost of goods sold and realize
   await expect(page.getByTestId('inventory-item')).toContainText('Real camera');
 });
 
-test('exit and resume from the Learning Center, skip a lesson, and replay without duplicate practice records', async ({ page }) => {
+test('exit and resume (with a "welcome back"), skip with confirmation, and replay without duplicate practice records', async ({ page }) => {
   await onboard(page, 'Small business');
   await startLesson(page, 'practice-add-item');
   await page.getByTestId('tour-next').click();
@@ -266,32 +372,37 @@ test('exit and resume from the Learning Center, skip a lesson, and replay withou
   // Exit keeps the place.
   await page.getByTestId('tour-exit').click();
   await expect(pop(page)).toBeHidden();
-  await expect(page.getByText('Lesson paused. Resume it any time from the Learning Center.')).toBeVisible();
+  await expect(page.getByText(/Lesson paused\. Resume it any time from the Learning Center\. The practice records stay stored/)).toBeVisible();
   await expect(page.getByTestId('practice-banner')).toBeHidden();
+  // The Overview offers to resume.
+  await nav(page, 'Overview');
+  await expect(page.getByTestId('resume-tour')).toContainText('Add your first product');
   await openLearn(page);
+  await expect(page.getByTestId('learn-resume-card')).toContainText('Add your first product (step 3 of');
   const row = lessonRow(page, 'practice-add-item');
   await expect(row).toHaveAttribute('data-status', 'in_progress');
   await expect(row).toContainText(/In progress · step 3 of \d+/);
   await row.getByTestId('learn-resume').click();
   await step(page, 'open-form');
+  await expect(page.getByTestId('tour-hint')).toContainText('Welcome back — picking up at step 3');
 
-  // Escape also exits (and the place is kept).
-  await page.getByTestId('tour-progress').click();
+  // Escape exits from anywhere, including inside the open form (and the place is kept).
+  await tap(page, 'open-form');
+  await step(page, 'name');
   await page.keyboard.press('Escape');
   await expect(pop(page)).toBeHidden();
+  await expect(itemForm(page)).toBeHidden();
 
-  // Finish it once.
-  await openLearn(page);
-  await lessonRow(page, 'practice-add-item').getByTestId('learn-resume').click();
-  await clickStep(page, 'open-form');
-  await step(page, 'name');
-  await answer(page, 'Item name', 'Practice coffee mug');
-  await step(page, 'quantity');
-  await answer(page, 'Quantity', '3');
-  await step(page, 'cost');
-  await answer(page, 'Cost per item', '8');
-  await step(page, 'price');
-  await answer(page, 'Selling price', '20');
+  // Resuming (from the Overview) inside a form that's no longer open says so.
+  await nav(page, 'Overview');
+  await page.getByTestId('resume-tour-button').click();
+  await step(page, 'open-form');
+  await expect(page.getByTestId('tour-hint')).toContainText('Picking up where you left off');
+  await tap(page, 'open-form');
+  await answer(page, 'name', 'Item name', 'Practice coffee mug');
+  await answer(page, 'quantity', 'Quantity', '3');
+  await answer(page, 'cost', 'Cost per item', '8');
+  await answer(page, 'price', 'Selling price', '20');
   await clickStep(page, 'save');
   await step(page, 'result');
   await page.getByTestId('tour-next').click();
@@ -307,98 +418,275 @@ test('exit and resume from the Learning Center, skip a lesson, and replay withou
   await step(page, 'open-form');
   await expect(page.getByText(/Practice coffee mug/)).toHaveCount(0);
   await tap(page, 'open-form');
-  await step(page, 'name');
-  await answer(page, 'Item name', 'Practice coffee mug');
-  await step(page, 'quantity');
-  await answer(page, 'Quantity', '3');
-  await step(page, 'cost');
-  await answer(page, 'Cost per item', '8');
-  await step(page, 'price');
-  await answer(page, 'Selling price', '20');
+  await answer(page, 'name', 'Item name', 'Practice coffee mug');
+  await answer(page, 'quantity', 'Quantity', '3');
+  await answer(page, 'cost', 'Cost per item', '8');
+  await answer(page, 'price', 'Selling price', '20');
   await clickStep(page, 'save');
   await step(page, 'result');
   await expect(page.getByTestId('inventory-item')).toHaveCount(1);
 
-  // Skip lesson.
+  // Skip lesson asks first; "Keep going" changes nothing.
   await page.getByTestId('tour-skip').click();
+  await expect(page.getByTestId('tour-skip-confirm')).toContainText('Skip this lesson?');
+  await page.getByTestId('tour-skip-no').click();
+  await step(page, 'result');
+  await page.getByTestId('tour-skip').click();
+  await page.getByTestId('tour-skip-yes').click();
   await expect(pop(page)).toBeHidden();
+  await expect(page.getByText('Lesson skipped. It stays in the Learning Center whenever you want it.')).toBeVisible();
   await openLearn(page);
-  await expect(lessonRow(page, 'practice-add-item')).toHaveAttribute('data-status', 'completed');
+  await expect(lessonRow(page, 'practice-add-item')).toContainText('Completed');
   await lessonRow(page, 'inventory-levels').getByTestId('learn-start').click();
   await page.getByTestId('tour-skip').click();
+  await page.getByTestId('tour-skip-yes').click();
   await openLearn(page);
   await expect(lessonRow(page, 'inventory-levels')).toHaveAttribute('data-status', 'skipped');
   await expect(lessonRow(page, 'inventory-levels')).toContainText('Skipped');
 });
 
-test('leaving practice from the banner pauses the lesson and shows your own records', async ({ page }) => {
-  await onboard(page, 'Reseller');
-  await addItem(page, { name: 'Real record player', quantity: 1, cost: '40' });
+// ---------------------------------------------------------------------------------------------
+// H3 — Practice Mode data safety and keyboard containment
+// ---------------------------------------------------------------------------------------------
+
+test('Practice Mode: data management is locked with an explanation, the page can’t be reached by keyboard, and nothing real changes', async ({ page }) => {
+  await onboard(page, 'Small business');
+  await addItem(page, { name: 'Real desk lamp', quantity: 2, cost: '12', asking: '30' });
   await startLesson(page, 'practice-add-item');
-  await expect(page.getByTestId('practice-banner')).toBeVisible();
-  await expect(page.getByTestId('practice-banner')).toContainText('Your own records aren’t changed.');
-  // During a lesson the page is dimmed for pointer clicks, but the banner stays usable from the keyboard.
-  await page.getByTestId('practice-leave').focus();
-  await page.keyboard.press('Enter');
-  await expect(pop(page)).toBeHidden();
+  await page.getByTestId('tour-next').click();
+  await step(page, 'go-inventory');
+
+  // Keyboard: Tab only moves between the highlighted control and the lesson box.
+  for (let i = 0; i < 14; i++) {
+    await page.keyboard.press('Tab');
+    const where = await page.evaluate(() => {
+      const a = document.activeElement as HTMLElement | null;
+      return a?.closest('[data-tour-popover]') ? 'popover' : a?.closest('[data-tour-active]') ? 'target' : `${a?.tagName} ${a?.textContent?.slice(0, 30)}`;
+    });
+    expect(['popover', 'target']).toContain(where);
+  }
+
+  // Even if Settings is opened directly, every data action is off, with the reason.
+  await page.evaluate(() => {
+    location.hash = '#/settings';
+  });
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+  await expect(page.getByTestId('practice-data-lock').first()).toContainText('Leave Practice Mode to manage your data.');
+  for (const name of ['Back up now', 'Download backup', 'Restore from backup', 'Import inventory CSV', 'Try demo mode', 'Reset demo data', 'Erase all data']) {
+    const b = page.getByRole('button', { name, exact: true });
+    if (await b.count()) await expect(b.first(), name).toBeDisabled();
+  }
+  // Exit is always there.
+  await expect(page.getByTestId('tour-exit')).toBeVisible();
+  await page.getByTestId('tour-exit').click();
+
+  // Out of practice: everything works again, on your own records.
   await expect(page.getByTestId('practice-banner')).toBeHidden();
+  await expect(page.getByTestId('practice-data-lock')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Download backup', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Erase all data', exact: true })).toBeEnabled();
   await nav(page, 'Inventory');
-  await expect(page.getByTestId('inventory-item')).toContainText('Real record player');
-  await openLearn(page);
-  await expect(lessonRow(page, 'practice-add-item')).toHaveAttribute('data-status', 'in_progress');
+  await expect(page.getByTestId('inventory-item')).toHaveCount(1);
+  await expect(page.getByTestId('inventory-item')).toContainText('Real desk lamp');
 });
 
-/** Walks a look-only lesson: every step must find what it points at. */
-async function walk(page: Page, id: string) {
-  await startLesson(page, id);
-  for (let i = 0; i < 25; i++) {
-    const p = pop(page);
-    await expect(p).toBeVisible();
-    await expect(p).not.toHaveAttribute('data-target-found', 'false', { timeout: 3000 });
-    await expect(page.getByTestId('tour-body')).not.toContainText('can’t find');
-    if (await page.getByTestId('tour-finish').isVisible()) {
-      await page.getByTestId('tour-finish').click();
-      await expect(p).toBeHidden();
-      return;
-    }
-    if ((await p.getAttribute('data-target-found')) === 'true') await expectReachable(page);
-    const before = await p.getAttribute('data-step');
-    await page.getByTestId('tour-next').click();
-    await expect(p).not.toHaveAttribute('data-step', before!);
-  }
-  throw new Error(`lesson ${id} didn't finish`);
-}
+// ---------------------------------------------------------------------------------------------
+// H1 — Two tabs
+// ---------------------------------------------------------------------------------------------
 
-test('every small-business explanation lesson finds what it points at', async ({ page }) => {
+test('two tabs: only the tab running a lesson moves it; the other says so, and takes over only when that tab is closed', async ({ page, context }) => {
+  await onboard(page, 'Small business');
+  await startLesson(page, 'practice-add-item');
+  await page.getByTestId('tour-next').click();
+  await clickStep(page, 'go-inventory');
+  await clickStep(page, 'open-form');
+  await step(page, 'name');
+  // Record every step the first tab shows from now on.
+  await page.evaluate(() => {
+    (window as unknown as { steps: string[] }).steps = [];
+    new MutationObserver(() => {
+      const s = document.querySelector('[data-tour-popover]')?.getAttribute('data-step');
+      const log = (window as unknown as { steps: string[] }).steps;
+      if (s && log.at(-1) !== s) log.push(s);
+    }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-step'], childList: true });
+  });
+
+  const other = await context.newPage();
+  await other.goto('./');
+  await expect(other.getByTestId('tour-other-tab')).toContainText('“Add your first product” is running in another StockPilot tab');
+  await expect(other.getByTestId('tour-popover')).toHaveCount(0);
+
+  // The first tab carries on through the form while the second is open (it used to rewind it).
+  await page.bringToFront();
+  await answer(page, 'name', 'Item name', 'Practice coffee mug');
+  await answer(page, 'quantity', 'Quantity', '3');
+  await page.waitForTimeout(2500);
+  await step(page, 'cost');
+  await answer(page, 'cost', 'Cost per item', '8');
+  await page.waitForTimeout(1500);
+  await step(page, 'price');
+  const seen = await page.evaluate(() => (window as unknown as { steps: string[] }).steps);
+  expect(seen).toEqual(['quantity', 'cost', 'price']);
+  await expect(other.getByTestId('tour-popover')).toHaveCount(0);
+
+  // Refreshing the first tab keeps the lesson there.
+  await reloadWhenSaved(page);
+  await expect(pop(page)).toBeVisible();
+  await step(page, 'open-form');
+  await expect(other.getByTestId('tour-other-tab')).toBeVisible();
+
+  // Closing it: the second tab takes the lesson over.
+  await page.close();
+  await expect(other.getByTestId('tour-popover')).toBeVisible({ timeout: 10000 });
+  await expect(other.getByTestId('tour-other-tab')).toHaveCount(0);
+  await expect(other.getByTestId('tour-popover')).toHaveAttribute('data-step', 'open-form');
+});
+
+test('two tabs: "Continue it here" moves the lesson to this tab and the first tab stands down', async ({ page, context }) => {
+  await onboard(page, 'Reseller');
+  await startLesson(page, 'tour-dashboard');
+  await page.getByTestId('tour-next').click();
+  await step(page, 'headline');
+  const other = await context.newPage();
+  await other.goto('./');
+  await other.getByTestId('tour-continue-here').click();
+  await expect(other.getByTestId('tour-popover')).toBeVisible();
+  await expect(other.getByTestId('tour-popover')).toHaveAttribute('data-step', 'headline');
+  await expect(page.getByTestId('tour-other-tab')).toBeVisible();
+  await expect(pop(page)).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// H2 — Max Bid; H4 — collector details
+// ---------------------------------------------------------------------------------------------
+
+test('Max Bid lesson: enter a resale value and target return, see and understand the real maximum bid', async ({ page }) => {
+  await onboard(page, 'Reseller');
+  await startLesson(page, 'max-bid');
+  await step(page, 'intro');
+  await page.getByTestId('tour-next').click();
+  await step(page, 'page');
+  await page.getByTestId('tour-next').click();
+  await step(page, 'new');
+  await expect(pop(page)).toContainText('Click New calculation');
+  await tap(page, 'new');
+  await answer(page, 'resale', 'Estimated resale value, whole lot', '1000');
+  await step(page, 'roi');
+  await expectReachable(page);
+  await answer(page, 'roi', 'Target return (ROI)', '50');
+  await step(page, 'result');
+  await expect(page.getByTestId('bid-max')).toBeVisible();
+  const max = (await page.getByTestId('bid-max').textContent())!.trim();
+  expect(max).toMatch(/^\$\d/);
+  await expect(pop(page)).toContainText(`the most to bid is ${max}`);
+  await expectReachable(page);
+  await page.getByTestId('tour-next').click();
+  await step(page, 'breakdown');
+  await expect(pop(page)).toContainText('net proceeds');
+  await page.getByTestId('tour-next').click();
+  await page.getByTestId('tour-finish').click();
+  await openLearn(page);
+  await expect(lessonRow(page, 'max-bid')).toHaveAttribute('data-status', 'completed');
+});
+
+test('Max Bid lesson: it can’t be finished until a result is on screen', async ({ page }) => {
+  await onboard(page, 'Reseller');
+  await startLesson(page, 'max-bid');
+  await page.getByTestId('tour-next').click();
+  await page.getByTestId('tour-next').click();
+  await clickStep(page, 'new');
+  await step(page, 'resale');
+  // No resale value: Next explains, and the result step can't be reached.
+  await page.getByTestId('tour-next').click();
+  await expect(page.getByTestId('tour-hint')).toContainText('Enter an amount');
+  await step(page, 'resale');
+});
+
+test('collector lesson: condition, purchase date and where it was bought are each guided before saving', async ({ page }) => {
+  await onboard(page, 'Collector');
+  await startLesson(page, 'collector-add');
+  await page.getByTestId('tour-next').click();
+  await step(page, 'go-inventory');
+  await expect(pop(page)).toContainText('Click Collection in the menu');
+  await tap(page, 'go-inventory');
+  await clickStep(page, 'open-form');
+  await answer(page, 'name', 'Item name', 'Practice 1986 baseball card');
+  await answer(page, 'cost', 'Cost per item', '15');
+  await answer(page, 'value', 'Est. market value', '40');
+  await step(page, 'more');
+  await expect(page.getByTestId('tour-next')).toHaveCount(0);
+  await tap(page, 'more');
+  await step(page, 'condition');
+  await expectReachable(page);
+  // Saving early isn't possible from the lesson: the condition is asked for first.
+  await page.getByTestId('tour-next').click();
+  await expect(page.getByTestId('tour-hint')).toContainText('Describe the condition');
+  await answer(page, 'condition', 'Condition', 'Near mint');
+  await step(page, 'date');
+  await expectReachable(page);
+  await (await fieldOf(page, 'date')).fill('2026-01-15');
+  await page.keyboard.press('Enter');
+  await step(page, 'where');
+  await expectReachable(page);
+  await expect(pop(page)).toContainText('not where you keep it');
+  await answer(page, 'where', 'Where you bought it', 'Practice card show');
+  await step(page, 'save');
+  await expect(pop(page)).toContainText('Add it to your collection');
+  await tap(page, 'save');
+  await step(page, 'result');
+  await expect(pop(page)).toContainText('you paid $15.00, and you estimate it’s worth $40.00');
+  await expect(page.getByText('Added "Practice 1986 baseball card" to your collection')).toBeVisible();
+  await page.getByTestId('tour-next').click();
+  await page.getByTestId('tour-finish').click();
+  // Nothing in the real collection.
+  await nav(page, 'Collection');
+  await expect(page.getByText('Your collection is empty')).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------------------------
+// Every lesson, every mode
+// ---------------------------------------------------------------------------------------------
+
+test('every small-business lesson finds what it points at, with worked examples', async ({ page }) => {
+  test.setTimeout(90_000);
   await onboard(page, 'Small business', true);
   for (const id of ['tour-dashboard', 'inventory-levels', 'profit-by-source', 'monthly-close', 'financial-planning', 'backup']) await walk(page, id);
   await openLearn(page);
   for (const id of ['tour-dashboard', 'inventory-levels', 'profit-by-source', 'monthly-close', 'financial-planning', 'backup']) {
     await expect(lessonRow(page, id)).toHaveAttribute('data-status', 'completed');
   }
-});
-
-test('reseller lessons: buying intelligence and payouts, and the scanner is not offered when it is off', async ({ page }) => {
-  await onboard(page, 'Reseller', true);
-  for (const id of ['bulk-lots', 'payouts', 'predicted-actual']) await walk(page, id);
-  await openLearn(page);
-  await expect(page.locator('[data-lesson="ai-scanner"]')).toHaveCount(0);
-  await expect(page.getByTestId('learn-path')).not.toContainText('AI scanner');
-
-  // Max Bid runs in practice: the plan it starts isn't one of the demo's plans.
-  await startLesson(page, 'max-bid');
-  await page.getByTestId('tour-next').click();
-  await step(page, 'page');
-  await page.getByTestId('tour-next').click();
-  await clickStep(page, 'new');
-  await step(page, 'form');
-  await expectReachable(page);
-  await page.getByTestId('tour-next').click();
-  await page.getByTestId('tour-finish').click();
+  // The demo is untouched by the practice lessons.
   await expect(page.getByTestId('demo-banner')).toBeVisible();
 });
 
-test('collector path: practice collectible, valuation and optional sales; switching modes changes the path', async ({ page }) => {
+test('reseller lessons: bulk lot split, payouts, predicted vs actual; the scanner lesson is listed as unavailable', async ({ page }) => {
+  test.setTimeout(90_000);
+  await onboard(page, 'Reseller', true);
+  // Bulk lots: the $100 split between two practice items by estimated value.
+  await startLesson(page, 'bulk-lots');
+  await page.getByTestId('tour-next').click();
+  await page.getByTestId('tour-next').click();
+  await clickStep(page, 'open');
+  await step(page, 'split');
+  await expect(at(page, 'split')).toContainText('$75.00');
+  await expect(at(page, 'split')).toContainText('$25.00');
+  await page.getByTestId('tour-next').click();
+  await page.getByTestId('tour-finish').click();
+  // Back on the demo's own lots page, without the practice lot.
+  await expect(page.getByText('Practice box lot')).toHaveCount(0);
+
+  await walk(page, 'payouts');
+  await walk(page, 'predicted-actual');
+  await openLearn(page);
+  const scanner = page.locator('[data-lesson="ai-scanner"]').first();
+  await expect(scanner).toHaveAttribute('data-available', 'false');
+  await expect(scanner).toContainText('The AI scanner is switched off in this version');
+  await expect(scanner.getByTestId('learn-start')).toBeDisabled();
+  await expect(page.getByTestId('learn-path')).not.toContainText('AI scanner');
+  await expect(page.getByTestId('demo-banner')).toBeVisible();
+});
+
+test('collector path: valuation and optional sales; other modes’ lessons are discoverable without changing mode', async ({ page }) => {
   await onboard(page, 'Collector');
   await openLearn(page);
   await expect(page.getByTestId('learn-path')).toContainText('Your path: Collector');
@@ -406,31 +694,24 @@ test('collector path: practice collectible, valuation and optional sales; switch
   // Record-a-sale explains why it's unavailable while collector sales are off.
   await expect(lessonRow(page, 'practice-record-sale')).toContainText('Sales tracking is off in Collector mode');
   await expect(lessonRow(page, 'practice-record-sale').getByTestId('learn-start')).toBeDisabled();
-
-  await lessonRow(page, 'collector-add').getByTestId('learn-start').click();
+  // Lessons made for other modes are listed, and can be taken here.
+  const others = page.getByTestId('learn-other-modes');
+  await expect(others).toContainText('The Max Bid Calculator');
+  await expect(others).toContainText('For Reseller mode');
+  for (const id of ['collector-organize', 'collector-valuation']) await walk(page, id);
+  await startLesson(page, 'collector-sales');
+  await expect(pop(page)).toContainText('This lesson doesn’t switch it on');
   await page.getByTestId('tour-next').click();
-  await clickStep(page, 'go-inventory');
-  await clickStep(page, 'open-form');
-  await step(page, 'name');
-  await answer(page, 'Item name', 'Practice 1986 baseball card');
-  await step(page, 'cost');
-  await answer(page, 'Cost per item', '15');
-  await step(page, 'value');
-  await answer(page, 'Est. market value', '40');
-  await clickStep(page, 'more');
-  await clickStep(page, 'save');
-  await step(page, 'done');
   await page.getByTestId('tour-finish').click();
-  for (const id of ['collector-organize', 'collector-valuation', 'collector-sales']) await walk(page, id);
-  await nav(page, 'Collection');
-  await expect(page.getByText('Your collection is empty')).toBeVisible();
+  await walk(page, 'bulk-lots');
+  await expect(page.getByTestId('mode-switcher').first()).toContainText('Collector');
 
   await page.locator('[data-testid="mode-switcher"]:visible').click();
   await page.getByRole('menuitemradio', { name: /Small business/ }).click();
   await openLearn(page);
   await expect(page.getByTestId('learn-path')).toContainText('Your path: Small business');
   await expect(lessonRow(page, 'practice-add-item')).toHaveAttribute('data-status', 'not_started');
-  await expect(lessonRow(page, 'tour-dashboard')).toBeVisible();
+  await expect(lessonRow(page, 'bulk-lots')).toHaveAttribute('data-status', 'completed');
 });
 
 test('a step whose control is missing explains it and offers a way on, never a dead end', async ({ page }) => {
@@ -446,18 +727,28 @@ test('a step whose control is missing explains it and offers a way on, never a d
   await step(page, 'learn');
 });
 
-test('learning center search finds lessons and help topics; help icons explain the figures', async ({ page }) => {
+test('learning center: search by instructions; "See it in StockPilot" opens the explanation in place', async ({ page }) => {
   await onboard(page, 'Small business', true);
   await openLearn(page);
   for (const g of ['Basic inventory', 'Sales', 'Business insights', 'Financial reporting']) await expect(page.getByRole('heading', { name: g, exact: true })).toBeVisible();
-  await page.getByTestId('learn-search').getByRole('searchbox').or(page.getByLabel('Search lessons and help topics')).first().fill('tax');
-  await expect(page.getByTestId('learn-topic').filter({ hasText: 'Tax reserve' })).toContainText('doesn’t know your tax rate');
-  await expect(page.getByTestId('learn-topic').filter({ hasText: 'Tax reserve' })).toContainText('profit isn’t the same as cash');
-  await expect(page.locator('[data-lesson="financial-planning"]').first()).toBeVisible();
-
-  await nav(page, 'Sales & Profit');
-  await page.getByTestId('help-realized-profit').click();
+  const search = page.getByLabel('Search lessons and help topics');
+  await search.fill('restore');
+  await expect(page.locator('[data-lesson="backup"]').first()).toBeVisible();
+  await expect(page.getByTestId('learn-topic').filter({ hasText: 'Restoring a backup' })).toBeVisible();
+  await search.fill('margin roi');
+  await expect(page.locator('[data-lesson="practice-record-sale"]').first()).toBeVisible();
+  await search.fill('tax');
+  const tax = page.getByTestId('learn-topic').filter({ hasText: 'Tax reserve' });
+  await expect(tax).toContainText('doesn’t know your tax rate');
+  await expect(tax).toContainText('profit isn’t the same as cash');
+  await search.fill('realized profit');
+  await page.locator('#topic-realized-profit').getByTestId('learn-topic-see').click();
+  await expect(page).toHaveURL(/#\/sales\?help=realized-profit/);
+  await expect(page.getByTestId('help-realized-profit-text')).toBeVisible();
   await expect(page.getByTestId('help-realized-profit-text')).toContainText('not the cash in your bank account');
+  // No lesson started.
+  await expect(pop(page)).toHaveCount(0);
+  // Help icons look and work the same on tiles and section headings.
   await page.getByTestId('help-realized-profit-text').getByRole('link', { name: 'More in the Learning Center' }).click();
   await expect(page).toHaveURL(/#\/learn\?topic=realized-profit/);
   await expect(page.locator('#topic-realized-profit')).toBeInViewport();
@@ -471,16 +762,15 @@ test('progress is kept in backups and restored with settings', async ({ page }) 
   const file = JSON.parse(readFileSync(await download.path(), 'utf8'));
   expect(Object.keys(file.settings.tutorial.completed)).toEqual(['bulk-lots']);
   expect(file.settings.tutorial.active).toBeNull();
-  // Lesson progress isn't financial data: nothing was added to the records.
+  // Lesson progress isn't financial data, and practice records aren't in the backup.
   expect(file.data.items).toEqual([]);
+  expect(file.data.lots).toEqual([]);
   expect(file.data.sales).toEqual([]);
 
-  // Progress moves on after the backup…
   await walk(page, 'payouts');
   await openLearn(page);
   await expect(lessonRow(page, 'payouts')).toHaveAttribute('data-status', 'completed');
 
-  // …and restoring the backup with its settings brings back the progress it had.
   await nav(page, 'Settings');
   await page.getByRole('button', { name: 'Restore from backup' }).click();
   const dialog = page.getByTestId('restore-dialog');
@@ -495,7 +785,16 @@ test('progress is kept in backups and restored with settings', async ({ page }) 
   await expect(page.getByTestId('tour-welcome')).toBeHidden();
 });
 
-test('keyboard and screen readers: the welcome, a running lesson and the Learning Center', async ({ page }) => {
+test('practice records: explained, kept for resuming, and can be deleted from the Learning Center', async ({ page }) => {
+  await onboard(page, 'Small business');
+  await openLearn(page);
+  await expect(page.getByTestId('learn-practice-records')).toContainText('They stay stored after you leave a lesson');
+  await page.getByTestId('learn-clear-practice').click();
+  await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Delete practice records' }).click();
+  await expect(page.getByText('Practice records deleted.')).toBeVisible();
+});
+
+test('keyboard and screen readers: the welcome, a running lesson, a field step and the Learning Center', async ({ page }) => {
   await page.goto('./');
   await page.getByRole('radio', { name: /^Reseller Mode/ }).click();
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -521,7 +820,7 @@ test('keyboard and screen readers: the welcome, a running lesson and the Learnin
   await page.keyboard.press('Escape');
   await expect(p).toBeHidden();
 
-  // A field step inside a dialog: Tab moves between the form and the lesson box.
+  // A field step inside a dialog: type, Tab moves on to the next field; Tab never leaves field + lesson box.
   await startLesson(page, 'practice-add-item');
   await page.getByTestId('tour-next').click();
   await clickStep(page, 'go-inventory');
@@ -538,6 +837,7 @@ test('keyboard and screen readers: the welcome, a running lesson and the Learnin
   await page.getByTestId('tour-exit').click();
   await openLearn(page);
   await axe(page, 'learning center');
+  await expect(page.locator('[data-tour="learn-link"]:visible')).toHaveAccessibleName(/Learning Center/);
 });
 
 test('reduced motion: the lesson still works and scrolls without animation', async ({ page }) => {
@@ -546,21 +846,56 @@ test('reduced motion: the lesson still works and scrolls without animation', asy
   await walk(page, 'monthly-close');
 });
 
-test('phone layout: the lesson box never hides the control, and follows scrolling', async ({ page }) => {
+test('dark mode: the dimmed page is darker and the highlighted control stays readable', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await onboard(page, 'Small business');
+  await startLesson(page, 'tour-dashboard');
+  const fill = await page
+    .getByTestId('tour-mask')
+    .locator('path')
+    .evaluate((el) => getComputedStyle(el).fill);
+  expect(fill).toMatch(/0\.75\)$/);
+  // The lesson box itself passes (the app's own dark accent buttons under the overlay are a separate, known issue).
+  await page.waitForTimeout(400);
+  const { violations } = await new AxeBuilder({ page }).include('[data-tour-popover]').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  expect(violations.map((v) => v.id)).toEqual([]);
+  // The highlighted control isn't dimmed: nothing of the overlay covers it.
+  await expectReachable(page);
+});
+
+test('phone layout: the lesson box and all its buttons stay on screen, never hide the control, and follow scrolling', async ({ page }) => {
   test.skip(!isMobile(page), 'phone layout');
   await onboard(page, 'Small business', true);
   await startLesson(page, 'financial-planning');
   for (const id of ['page', 'tax', 'scenarios', 'reserves']) {
     await step(page, id);
     await expectReachable(page);
-    const box = await pop(page).boundingBox();
-    const vw = page.viewportSize()!;
-    expect(box!.x).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(vw.width);
+    await buttonsInside(page);
     await page.getByTestId('tour-next').click();
   }
   await step(page, 'done');
+  await buttonsInside(page);
   await page.getByTestId('tour-finish').click();
+
+  // A long form on a phone: each field scrolls into view and stays usable.
+  await startLesson(page, 'practice-add-item');
+  await page.getByTestId('tour-next').click();
+  await clickStep(page, 'go-inventory');
+  await clickStep(page, 'open-form');
+  for (const [id, label, value] of [
+    ['name', 'Item name', 'Phone mug'],
+    ['quantity', 'Quantity', '2'],
+    ['cost', 'Cost per item', '4'],
+    ['price', 'Selling price', '9'],
+  ] as const) {
+    await step(page, id);
+    await expectReachable(page);
+    await buttonsInside(page);
+    await answer(page, id, label, value);
+  }
+  await step(page, 'save');
+  await expectReachable(page);
+  await page.getByTestId('tour-exit').click();
 
   // The highlight follows the control as the page scrolls.
   await startLesson(page, 'backup');
@@ -579,7 +914,7 @@ test('phone layout: the lesson box never hides the control, and follows scrollin
   await expect.poll(follows).toBeLessThanOrEqual(1);
 });
 
-test('without the Learning Center open, existing work flows are unchanged', async ({ page }) => {
+test('without a lesson running, existing work flows are unchanged', async ({ page }) => {
   await onboard(page, 'Reseller');
   await addItem(page, { name: 'Vintage radio', quantity: 2, cost: '15', asking: '45' });
   await nav(page, 'Sales & Profit');
@@ -588,4 +923,5 @@ test('without the Learning Center open, existing work flows are unchanged', asyn
   await expect(page.getByTestId('sales-net')).toContainText('$25.00');
   await expect(page.getByTestId('tour-popover')).toHaveCount(0);
   await expect(page.getByTestId('tour-mask')).toHaveCount(0);
+  await saved(page);
 });

@@ -132,7 +132,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
       {active && lesson ? (
         mine ? (
           <TourRunner key={lesson.id} lesson={lesson} active={active} staticEnv={staticEnv} />
-        ) : (
+        ) : active.owner === TAB_ID ? null /* this tab's lesson, taking its lock back (e.g. after a refresh) */ : (
           <OtherTabNotice title={lesson.title} onContinue={() => void start(lesson.id, { resume: true })} />
         )
       ) : (

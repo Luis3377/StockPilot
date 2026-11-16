@@ -62,7 +62,9 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
   const [found, setFound] = useState<{ key: string; els: HTMLElement[] }>({ key: '', els: [] });
   const els = useMemo(() => (found.key === stepKey ? found.els : []), [found, stepKey]);
   const el = els[0] ?? null;
-  const [boxes, setBoxes] = useState<Box[]>([]);
+  // Measured for this step only (a box from the previous step would place the lesson box wrongly).
+  const [measured, setBoxes] = useState<{ key: string; boxes: Box[] }>({ key: '', boxes: [] });
+  const boxes = measured.key === stepKey ? measured.boxes : [];
   const [missing, setMissing] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -140,9 +142,8 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
       };
       go(index, to);
     } else if (resumed && index > 0) {
+      // Shown by the step effect below (it runs next and would otherwise clear it).
       carryHint.current = { index, text: `Welcome back — picking up at step ${index + 1} of ${steps.length}.` };
-      setHint(carryHint.current.text);
-      carryHint.current = null;
     }
   }, [step, steps, index, go, lesson.id, takeResumed]);
 
@@ -185,7 +186,7 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
       mark(now);
       setFound((prev) => (prev.key === stepKey && prev.els.length === now.length && prev.els.every((e, i) => e === now[i]) ? prev : { key: stepKey, els: now }));
       if (!step.target) {
-        setBoxes((b) => (b.length ? [] : b));
+        setBoxes((b) => (b.key === stepKey && !b.boxes.length ? b : { key: stepKey, boxes: [] }));
         return;
       }
       if (now.length) {
@@ -195,7 +196,7 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
           const r = n.getBoundingClientRect();
           return { top: r.top, left: r.left, width: r.width, height: r.height };
         });
-        setBoxes((b) => (sameBoxes(b, next) ? b : next));
+        setBoxes((b) => (b.key === stepKey && sameBoxes(b.boxes, next) ? b : { key: stepKey, boxes: next }));
         // Off screen, or under the sticky header or the phone's tab bar: bring it to the middle.
         // Checked when the step starts and once more a moment later (a page still loading, or the
         // browser restoring the scroll position after a refresh, can move it).
@@ -209,7 +210,7 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
           if (hidden) first.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
         }
       } else {
-        setBoxes((b) => (b.length ? [] : b));
+        setBoxes((b) => (b.key === stepKey && !b.boxes.length ? b : { key: stepKey, boxes: [] }));
         missingSince.current ??= Date.now();
         const waited = Date.now() - missingSince.current;
         const back = step.resumeAt ? steps.findIndex((s) => s.id === step.resumeAt) : -1;
@@ -535,8 +536,10 @@ interface PopoverProps {
   onNextLesson: () => void;
 }
 
-type Side = 'below' | 'above' | 'right' | 'left';
+type Side = 'below' | 'above' | 'right' | 'left' | 'corner';
 const GAP = PAD + 12;
+/** The app's dark-mode accent is too light for white text (3.6:1); the lesson box's primary buttons use a deeper blue (5.7:1). */
+const PRIMARY_DARK = 'dark:bg-[#2563c4] dark:hover:bg-[#1d4f9e]';
 
 const overlap = (a: { top: number; left: number; bottom: number; right: number }, b: { top: number; left: number; bottom: number; right: number }) =>
   Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
@@ -557,8 +560,10 @@ function placeBox(box: Box, w: number, h: number, vw: number, vh: number, keep: 
   };
   const sides: Side[] = ['below', 'above', 'right', 'left'];
   // Stay put while the current side still works (no jumping about as hints come and go).
-  if (keep && score(keep) < 1e9 && overlap(rectFor(keep), tb) === 0) return keep;
-  return sides.reduce((best, s) => (score(s) < score(best) ? s : best), sides[0]);
+  if (keep && keep !== 'corner' && score(keep) < 1e9 && overlap(rectFor(keep), tb) === 0) return keep;
+  const best = sides.reduce((b, x) => (score(x) < score(b) ? x : b), sides[0]);
+  // A control bigger than the screen leaves no room beside it: the bottom corner, over its lower part.
+  return score(best) >= 1e9 ? 'corner' : best;
 }
 
 function Popover(p: PopoverProps) {
@@ -582,6 +587,10 @@ function Popover(p: PopoverProps) {
       }
     }
   });
+  // Asking "Skip this lesson?": focus goes to the answer, not back to the page.
+  useEffect(() => {
+    if (p.confirmSkip) ref.current?.querySelector<HTMLElement>('[data-testid="tour-skip-yes"]')?.focus();
+  }, [p.confirmSkip]);
   // Each new step is announced, and focus moves here unless the step is about typing in a field.
   useEffect(() => {
     if (p.step.advance.kind !== 'field') titleRef.current?.focus({ preventScroll: true });
@@ -613,7 +622,11 @@ function Popover(p: PopoverProps) {
       style = { bottom: vp.h - (b.top - GAP), left: clampLeft(b.left) };
       anchoredBottom = true;
     } else if (chosen === 'right') style = { top: clampTop(b.top), left: b.left + b.width + GAP };
-    else style = { top: clampTop(b.top), left: b.left - GAP - size.w };
+    else if (chosen === 'left') style = { top: clampTop(b.top), left: b.left - GAP - size.w };
+    else {
+      style = { bottom: 16, right: 16 };
+      anchoredBottom = true;
+    }
   }
 
   const titleId = `tour-title-${p.index}`;
@@ -694,7 +707,7 @@ function Popover(p: PopoverProps) {
         <div className="mt-3 rounded-xl bg-surface-2 p-3" data-testid="tour-skip-confirm">
           <p className="text-sm text-ink">Skip this lesson? It’s marked as skipped, and you can take it any time from the Learning Center.</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button size="sm" variant="primary" onClick={p.onSkipLesson} data-testid="tour-skip-yes" data-autofocus>
+            <Button size="sm" variant="primary" onClick={p.onSkipLesson} className={PRIMARY_DARK} data-testid="tour-skip-yes" data-autofocus>
               Skip lesson
             </Button>
             <Button size="sm" onClick={p.onCancelSkip} data-testid="tour-skip-no">
@@ -712,7 +725,7 @@ function Popover(p: PopoverProps) {
             )}
             {p.isLast ? (
               <>
-                <Button size="sm" variant={p.nextLesson ? 'secondary' : 'primary'} onClick={p.onNext} data-testid="tour-finish">
+                <Button size="sm" variant={p.nextLesson ? 'secondary' : 'primary'} onClick={p.onNext} className={p.nextLesson ? undefined : PRIMARY_DARK} data-testid="tour-finish">
                   Finish
                 </Button>
                 {p.nextLesson && (
@@ -738,12 +751,12 @@ function Popover(p: PopoverProps) {
                 </Button>
               </>
             ) : p.offRoute ? (
-              <Button size="sm" variant="primary" onClick={p.onReturn} data-testid="tour-return">
+              <Button size="sm" variant="primary" onClick={p.onReturn} className={PRIMARY_DARK} data-testid="tour-return">
                 Take me back
               </Button>
             ) : (
               p.canNext && (
-                <Button size="sm" variant="primary" onClick={p.onNext} data-testid="tour-next">
+                <Button size="sm" variant="primary" onClick={p.onNext} className={PRIMARY_DARK} data-testid="tour-next">
                   Next
                 </Button>
               )
