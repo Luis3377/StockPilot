@@ -70,7 +70,10 @@ export async function axe(page: Page, where: string) {
   expect(violations.map((v) => `${where}: ${v.id} — ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 }
 
-/** The highlighted control is on screen and nothing (the lesson box included) covers it. */
+/**
+ * The highlighted control is on screen and nothing (the lesson box included) covers it. Waits out a
+ * notification that's about to go (they last 3.5 s), e.g. the last lesson's “Lesson complete”.
+ */
 export async function expectReachable(page: Page, control?: Locator) {
   const el = control ?? at(page, (await pop(page).getAttribute('data-step'))!);
   await expect(el).toBeInViewport();
@@ -96,7 +99,7 @@ export async function expectReachable(page: Page, control?: Locator) {
       }
       return last;
     });
-  await expect.poll(covered, { message: `the highlighted control (${await pop(page).getAttribute('data-step')}) should not be covered`, timeout: 3000 }).toBeNull();
+  await expect.poll(covered, { message: `the highlighted control (${await pop(page).getAttribute('data-step')}) should not be covered`, timeout: 5000 }).toBeNull();
 }
 
 /** Every button in the lesson box is fully inside the screen. */

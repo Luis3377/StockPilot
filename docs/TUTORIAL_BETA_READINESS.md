@@ -124,11 +124,12 @@ The retest confirmed these were working. They are unchanged, and their existing 
 | L11 | | The welcome offers Resume tour and resumes. Passes axe. |
 | Data safety | | After two look-only lessons and a practice sale on the demo, the demo's revenue, net profit, sale count and inventory cost are unchanged. |
 
-Two existing tests in `e2e/tutorial.spec.ts` now expect the leave confirmation: they click Exit with typing in a lesson form. Their other assertions are unchanged. The browser-test helpers for lessons moved to `e2e/tourHelpers.ts` so both suites can use them.
+The shared reachability check waits up to 5 seconds (not 3) for a notification that is about to disappear. Two existing tests in `e2e/tutorial.spec.ts` now expect the leave confirmation: they click Exit with typing in a lesson form. Their other assertions are unchanged. The browser-test helpers for lessons moved to `e2e/tourHelpers.ts` so both suites can use them.
 
 ## Remaining known issues
 
 - **Phones and two tall cards (M2).** On a phone in Reseller mode, the two highlighted Overview cards together are taller than the screen space left beside the lesson box. Both are highlighted, but the second (Inventory cost) is a short scroll away. Desktop and tablet show both at once.
+- **A “Lesson complete” notice right after finishing a lesson.** On a phone, if you start the next lesson immediately, the notice (shown for 3.5 seconds) can briefly sit over a control near the bottom of a short page. It disappears by itself, and the lesson waits.
 - **Physical devices.** Phone behaviour is tested in a simulated iPhone 13 viewport (Chromium), not on a real phone. VoiceOver/TalkBack, a real on-screen keyboard and native date pickers still need a manual check (see [MANUAL_TESTS_IOS.md](MANUAL_TESTS_IOS.md)).
 - **Report IDs.** Fixes are labelled with the IDs from the retest summary, because the PDF wasn't available.
 - Still open from round 1: the app-wide dark-mode primary button contrast, and the need for Web Locks for automatic tab hand-over (see [TUTORIAL_QA_1.md](TUTORIAL_QA_1.md#not-fixed-or-only-partly)).
