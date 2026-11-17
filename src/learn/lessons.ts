@@ -8,11 +8,14 @@
 // it, what do I click, what does the result mean, and what should I do next.
 
 import { addItem, recordSale } from '../domain/actions';
-import { createBidPlan, defaultAssumptions, lotPrefillFromPlan, recordBidPurchase } from '../domain/bids';
+import { SCENARIO_KEYS, SCENARIO_LABELS, bidPlanForLot, createBidPlan, defaultAssumptions, lotPrefillFromPlan, recordBidPurchase } from '../domain/bids';
+import { localDate } from '../domain/ledger';
+import { lotPerformance, type LotPerformance } from '../insights/performance';
+import { monthLabel, monthOf, rollForward } from '../insights/monthly';
 import { totalSales } from '../domain/calc';
 import { todayISO } from '../domain/dates';
 import { createLot } from '../domain/lots';
-import { formatMoney, formatPercent } from '../domain/money';
+import { formatMoney, formatPercent, toCents } from '../domain/money';
 import { addTimeEntry, assignSource, resolveSource } from '../domain/sourcing';
 import { emptyData, type AppData, type Item, type UserMode } from '../domain/types';
 import { salesEnabled } from '../lib/modes';
@@ -34,6 +37,10 @@ const collector = (e: ModeEnv) => e.settings.mode === 'collector';
 const listName = (e: ModeEnv) => (collector(e) ? 'Collection' : 'Inventory');
 const thing = (e: ModeEnv) => (collector(e) ? 'collectible' : 'product');
 const money = (e: LessonEnv, n: number) => formatMoney(n, e.settings.currency);
+/** "+$2.00" / "−$2.00" / "$0.00": the same signs the app's comparison tables use. */
+const signed = (e: LessonEnv, n: number) => (toCents(n) === 0 ? formatMoney(0, e.settings.currency) : `${n > 0 ? '+' : '−'}${formatMoney(Math.abs(n), e.settings.currency)}`);
+const signedPctText = (n: number | null) => (n === null ? '—' : Math.round(n * 100) === 0 ? '0%' : `${n > 0 ? '+' : '−'}${Math.abs(n)}%`);
+const units = (n: number) => `${n} unit${n === 1 ? '' : 's'}`;
 
 const num = (v: string) => Number(v.replace(/[$,\s%]/g, ''));
 const decimals = (v: string) => (v.split('.')[1] ?? '').replace(/\D/g, '').length;
@@ -131,6 +138,30 @@ const withMonthExample = (data: AppData): AppData => {
   return recordSale(withItem, { itemId: item.id, quantity: 1, salePrice: 20, priceMode: 'per_unit', fees: 2, saleDate: todayISO(), platform: 'Practice' }).data;
 };
 
+/**
+ * The month the practice records are in (their latest purchase or sale), so Monthly Close opens
+ * that month rather than its own default (the last finished month, which practice records made
+ * today aren't in).
+ */
+export function practiceMonth(data: AppData, today: string = todayISO()): string {
+  const dates = [...data.items.map((i) => i.purchaseDate ?? localDate(i.createdAt)), ...data.sales.map((x) => x.saleDate)].filter((d) => d && d <= today);
+  return monthOf(dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : today);
+}
+
+/**
+ * The practice lot's figures exactly as its Performance page shows them: the same engine, and the
+ * scenario the page has selected (Expected unless it was changed there).
+ */
+export function practicePerformance(e: LessonEnv): LotPerformance | null {
+  const lot = e.data.lots.find((l) => bidPlanForLot(e.data, l.id)) ?? e.data.lots[0];
+  if (!lot) return null;
+  const shown = e.text('[aria-label="Compare with scenario"] [aria-checked="true"]');
+  const scenario = SCENARIO_KEYS.find((k) => SCENARIO_LABELS[k] === shown) ?? 'expected';
+  return lotPerformance(e.data, e.settings, lot, { scenario, skipWarnings: true });
+}
+
+const direction = (n: number) => (toCents(n) > 0 ? 'ahead of' : toCents(n) < 0 ? 'behind' : 'level with');
+
 // ---------------------------------------------------------------------------------------------
 // Shared steps
 // ---------------------------------------------------------------------------------------------
@@ -218,7 +249,17 @@ export const LESSONS: Lesson[] = [
           collector(e)
             ? 'Cost is what you paid. Estimated market value is your own estimate for the items you valued — not an appraisal and not money you’d receive. Neither is cash in your pocket.'
             : 'Realized profit counts completed sales only, after what the items cost you and your selling expenses. Inventory cost is what you paid for stock you still have: money spent, not money earned.',
-        target: ['[data-testid="hero-profit"]', '[data-testid="hero-collection-value"]', '[data-testid="hero-inventory-value"]'],
+        // Both cards the text describes are highlighted (profit and inventory cost; or, for a collection,
+        // estimated market value and cost), not just the first. Each overview layout has one of each pair.
+        target: [
+          '[data-testid="hero-profit"]',
+          '[data-testid="stat-profit"]',
+          '[data-testid="hero-inventory-value"]',
+          '[data-testid="stat-inventory-cost"]',
+          '[data-testid="hero-collection-value"]',
+          '[data-testid="stat-acquisition-cost"]',
+        ],
+        targetAll: true,
         advance: { kind: 'next' },
         optional: true,
       },
@@ -237,7 +278,7 @@ export const LESSONS: Lesson[] = [
         target: '[data-tour="learn-link"]',
         advance: { kind: 'next' },
       },
-      done('You know your way around', (e) => `Next, try adding a ${thing(e)} in a practice lesson. Practice records are kept apart from yours, so you can’t break anything.`),
+      done('You know your way around', 'Practice lessons use their own records, kept apart from yours, so you can try anything without breaking something.'),
     ],
   },
   {
@@ -263,7 +304,13 @@ export const LESSONS: Lesson[] = [
           kind: 'field',
           valid: (v) => /^\d+$/.test(v.trim()) && num(v) >= 1,
           invalid: (v) =>
-            v.trim() === '' ? 'Enter how many you have, like 3.' : !/^\d+$/.test(v.trim()) ? `“${v.trim()}” isn’t a whole number. Use digits, like 3.` : 'Enter 1 or more.',
+            v.trim() === ''
+              ? 'Enter how many you have, like 3.'
+              : /^-/.test(v.trim())
+                ? 'A quantity can’t be negative. Enter how many you have, like 3.'
+                : !/^\d+$/.test(v.trim())
+                  ? `“${v.trim()}” isn’t a whole number. Use digits, like 3.`
+                  : 'Enter 1 or more.',
         },
         resumeAt: 'open-form',
         skipIf: itemSaved,
@@ -302,7 +349,7 @@ export const LESSONS: Lesson[] = [
         target: '[data-testid="inventory-item"]',
         advance: { kind: 'next' },
       },
-      done('Your first product', 'That’s how every product starts. Next: record a sale of it and see how StockPilot works out your profit. Your own inventory wasn’t changed.'),
+      done('Your first product', 'That’s how every product starts. Your own inventory wasn’t changed.'),
     ],
   },
   {
@@ -317,6 +364,8 @@ export const LESSONS: Lesson[] = [
     unavailable: noSales,
     continuesPractice: true,
     setup: withPracticeItem,
+    // Opened at an explanation step (from a help topic): a practice sale to explain, already recorded.
+    jumpSetup: withMonthExample,
     steps: [
       practiceIntro('You’ll sell a practice item and see exactly how StockPilot works out the profit.'),
       {
@@ -486,6 +535,7 @@ export const LESSONS: Lesson[] = [
     practice: true,
     minutes: 3,
     setup: withSourcingExample,
+    jumpSetup: withSourcingExample,
     steps: [
       practiceIntro('The practice records have a lamp bought at “Practice thrift store”, one sale, and 1½ hours logged there.'),
       {
@@ -535,11 +585,12 @@ export const LESSONS: Lesson[] = [
     minutes: 4,
     unavailable: noSales,
     setup: withMonthExample,
+    jumpSetup: withMonthExample,
     steps: [
       practiceIntro('The practice records have a product bought this month and one sale, so there’s something to check. Nothing is closed.'),
       {
         id: 'page',
-        route: '/sales/close',
+        route: (e) => `/sales/close?month=${practiceMonth(e.data)}`,
         title: 'Monthly Close',
         body: 'At the end of each month you check its figures here before calling them final, so your reports and taxes start from numbers you trust.',
         target: 'main h1',
@@ -547,7 +598,7 @@ export const LESSONS: Lesson[] = [
       },
       {
         id: 'figures',
-        route: '/sales/close',
+        route: (e) => `/sales/close?month=${practiceMonth(e.data)}`,
         title: 'The month’s figures',
         body: 'Each figure says whether it’s verified from your records, only partly covered, or missing. Nothing is shown as verified unless the records support it — a month still in progress, or before your records began, says so.',
         target: '[data-testid="close-figures"]',
@@ -556,17 +607,26 @@ export const LESSONS: Lesson[] = [
       },
       {
         id: 'rollforward',
-        route: '/sales/close',
+        route: (e) => `/sales/close?month=${practiceMonth(e.data)}`,
         title: 'Inventory reconciliation, worked through',
-        body: 'Beginning inventory + purchases − cost of goods sold ± write-offs and corrections should equal what your item records show at month-end. Here: $0.00 at the start + $24.00 bought (3 mugs × $8.00) − $8.00 cost of the one sold = $16.00 expected, and 2 mugs × $8.00 = $16.00 on the shelf. A difference would mean something changed without a record.',
+        body: (e) => {
+          const month = practiceMonth(e.data);
+          const rf = rollForward(e.data, e.settings, month, todayISO());
+          const intro =
+            'Beginning inventory + purchases − cost of goods sold ± write-offs and corrections should equal what your item records show at month-end. A difference means something changed without a record.';
+          if (rf.status === 'not_available' || rf.beginning === null || rf.expectedEnding === null) return `${intro} For ${monthLabel(month)}: ${rf.statusText}.`;
+          const moves = rf.lines.filter((l) => toCents(l.amount) !== 0).map((l) => `${l.label.toLowerCase()} ${signed(e, l.amount)}`);
+          const records = rf.recordsEnding === null ? '' : `, and your item records show ${money(e, rf.recordsEnding)}`;
+          const verdict = rf.status === 'verified' ? 'They match, so it’s verified.' : `${rf.statusText}.`;
+          return `${intro} For ${monthLabel(month)}: ${money(e, rf.beginning)} at the start${moves.length ? `, ${moves.join(', ')}` : ''} = ${money(e, rf.expectedEnding)} expected${records}. ${verdict}`;
+        },
         target: '[data-testid="rollforward"]',
         advance: { kind: 'next' },
-        illustrative: true,
         optional: true,
       },
       {
         id: 'checklist',
-        route: '/sales/close',
+        route: (e) => `/sales/close?month=${practiceMonth(e.data)}`,
         title: 'The checklist',
         body: 'Work through each step, then close the month. Closing locks its figures so they can’t change by accident; you can reopen it with a reason. (This lesson doesn’t close anything.)',
         target: '[data-testid="close-checklist"]',
@@ -695,6 +755,8 @@ export const LESSONS: Lesson[] = [
     modes: ['reseller'],
     practice: true,
     minutes: 4,
+    // Opened at New calculation (from a help topic): nothing to prepare.
+    jumpSetup: (d) => d,
     steps: [
       practiceIntro('You’ll work out a real maximum bid. Plans you save here stay in practice.'),
       {
@@ -709,8 +771,10 @@ export const LESSONS: Lesson[] = [
         id: 'new',
         route: '/inventory/bids',
         title: 'Start a calculation',
-        body: 'Click New calculation.',
+        body: 'Click New calculation (either button works).',
         target: '[data-testid="bid-new"]',
+        // The page shows New calculation twice when there are no plans yet (top and centre): both work.
+        targetAll: true,
         advance: { kind: 'when', check: (e) => /^\/inventory\/bids\/.+/.test(e.path) },
       },
       {
@@ -860,8 +924,11 @@ export const LESSONS: Lesson[] = [
     practice: true,
     minutes: 3,
     setup: withPlannedLot,
+    jumpSetup: withPlannedLot,
     steps: [
-      practiceIntro('The practice records have a pallet bought for $80 with a Max Bid plan that expected radios at $60 and speakers at $40. Some have sold — for less.'),
+      practiceIntro(
+        'The practice records have a pallet bought with a Max Bid plan that estimated radios at $60 and speakers at $40. Some items have sold, and one is still in stock.',
+      ),
       {
         id: 'lots',
         route: '/inventory/lots',
@@ -878,18 +945,86 @@ export const LESSONS: Lesson[] = [
         advance: { kind: 'when', check: (e) => /\/performance$/.test(e.path) },
       },
       {
-        id: 'comparison',
-        title: 'Predicted next to actual',
-        body: 'Each row shows what the plan predicted, what your records show, and the difference. The radios sold for $45 each, not the $60 you estimated, so revenue and profit are behind the forecast.',
-        target: '[data-testid="perf-comparison"]',
+        id: 'stage',
+        title: 'Still selling: not final yet',
+        body: (e) => {
+          const perf = practicePerformance(e);
+          if (!perf) return 'This page compares what you planned with what your records show.';
+          const a = perf.actual;
+          if (perf.final) return 'Every unit has sold (or the lot was closed), so these are final results, compared directly with the plan.';
+          return `${a.unitsSold} of ${units(a.unitsBought)} have sold, so the lot isn’t finished. Your plan predicted the whole lot, so StockPilot compares it with a projected final outcome — an estimate of where the whole lot ends up — not with what has sold so far.`;
+        },
+        target: '[data-testid="perf-stage-note"]',
         advance: { kind: 'next' },
-        illustrative: true,
+      },
+      {
+        id: 'earned',
+        title: '1. Profit already earned',
+        body: (e) => {
+          const perf = practicePerformance(e);
+          if (!perf) return 'Realized profit on the units sold so far.';
+          const a = perf.actual;
+          const whole =
+            a.unrecovered > 0
+              ? `For the whole lot, ${money(e, a.unrecovered)} of the ${money(e, a.acquisitionCost)} you paid isn’t recovered yet.`
+              : `Net proceeds so far (${money(e, a.netProceeds)}) already cover the ${money(e, a.acquisitionCost)} you paid for the whole lot.`;
+          return `On the ${units(a.unitsSold)} sold: revenue ${money(e, a.revenue)} − their share of the lot’s cost ${money(e, a.costOfGoods)} − selling expenses ${money(e, a.sellingExpenses)} = ${money(e, a.realizedProfit)} realized profit. That’s earned on completed sales (not the cash in your bank). ${whole}`;
+        },
+        target: '[data-testid="perf-realized"]',
+        advance: { kind: 'next' },
+      },
+      {
+        id: 'prediction',
+        title: '2. Predicted vs. 3. projected final profit',
+        body: (e) => {
+          const perf = practicePerformance(e);
+          const r = perf?.rows.find((x) => x.key === 'profit');
+          if (!perf || !perf.prediction || !r || r.predicted === null || r.compared === null || r.difference === null)
+            return 'This lot has no prediction to compare with, so only the actual results are shown.';
+          const scenario = SCENARIO_LABELS[perf.scenario].toLowerCase();
+          const planned = perf.prediction.acquisitionCost;
+          const predicted = `When you planned the purchase, the ${scenario} scenario predicted ${money(e, r.predicted)} profit for the whole lot${planned !== null ? `, if you paid up to ${money(e, planned)} in total` : ''}.`;
+          if (perf.final)
+            return `${predicted} The actual final profit is ${money(e, r.compared)} — ${direction(r.difference)} the prediction by ${signed(e, r.difference)} (${signedPctText(r.errorPct)}).`;
+          const left = perf.projection?.remainingUnits ?? 0;
+          return `${predicted} If the ${units(left)} still in stock ${left === 1 ? 'sells' : 'sell'} as the plan assumes, the projected final profit is ${money(e, r.compared)}: ${direction(r.difference)} the prediction by ${signed(e, r.difference)} (${signedPctText(r.errorPct)}), as the Difference column shows. Projected figures are estimates, not results.`;
+        },
+        target: '[data-testid="perf-row-profit"]',
+        advance: { kind: 'next' },
       },
       {
         id: 'why',
-        title: 'Why it differs',
-        body: 'This breaks the gap into causes: lower sale prices, fees, and items still unsold. While items are still selling the result isn’t final, and StockPilot marks it that way.',
-        target: ['[data-testid="perf-why"]', '[data-testid="perf-stage-note"]'],
+        title: '4. Why it differs',
+        body: (e) => {
+          const perf = practicePerformance(e);
+          const p = perf?.prediction;
+          const profit = perf?.rows.find((x) => x.key === 'profit');
+          const net = perf?.rows.find((x) => x.key === 'net');
+          if (!perf || !p || !profit || profit.difference === null || !net || net.difference === null || net.compared === null)
+            return 'Without a prediction there’s nothing to explain the difference against.';
+          const a = perf.actual;
+          const parts: string[] = [];
+          if (p.acquisitionCost !== null) {
+            const saved = p.acquisitionCost - a.acquisitionCost;
+            parts.push(
+              `What you paid: ${money(e, a.acquisitionCost)} in total, ${toCents(saved) === 0 ? 'exactly what the plan allowed' : `${toCents(saved) > 0 ? 'less' : 'more'} than the ${money(e, p.acquisitionCost)} the plan allowed`} (${signed(e, saved)}).`,
+            );
+          }
+          parts.push(
+            `Net proceeds (sales after selling costs): ${perf.final ? '' : 'projected '}${money(e, net.compared)} against ${money(e, net.predicted ?? 0)} predicted (${signed(e, net.difference)}).`,
+          );
+          const total = `Together that’s the ${signed(e, profit.difference)} difference in profit.`;
+          const sp = perf.soldPrices;
+          const prices = sp
+            ? ` What has sold so far brought ${money(e, sp.actual)}; at the plan’s prices it would have brought ${money(e, sp.predicted)} (${signedPctText(sp.differencePct)}), so ${toCents(sp.actual - sp.predicted) < 0 ? 'those items sold for less than you estimated' : toCents(sp.actual - sp.predicted) > 0 ? 'those items sold for more than you estimated' : 'those items sold at your estimates'}.`
+            : '';
+          const rest =
+            !perf.final && perf.projection
+              ? ` The rest is still an estimate: if the unsold ${units(perf.projection.remainingUnits)} ${perf.projection.remainingUnits === 1 ? 'sells' : 'sell'} for less, or not at all, the final profit will be lower.`
+              : '';
+          return `${parts.join(' ')} ${total}${prices}${rest}`;
+        },
+        target: ['[data-testid="perf-sold-prices"]', '[data-testid="perf-comparison"]'],
         advance: { kind: 'next' },
       },
       done('Predicted vs. actual', 'After a few lots, Max Bid can suggest adjusting your estimates based on how your past lots really did — only if you accept it.'),
@@ -1092,6 +1227,26 @@ export function nextUnfinished(env: StaticEnv, progress: TutorialProgress, curre
   const at = path.findIndex((l) => l.id === currentId);
   const ordered = [...path.slice(at + 1), ...path.slice(0, Math.max(0, at))];
   return ordered.find((l) => l.id !== currentId && !(l.id in progress.completed) && lessonStatus(progress, l.id) !== 'completed');
+}
+
+/**
+ * The unfinished lesson to offer as "Resume": one made for the current mode that can run with
+ * this setup (e.g. not a sales lesson while collector sales tracking is off), the most recently
+ * paused first. Undefined when there's none, so no Resume button ever leads to an error.
+ */
+export function resumeCandidate(env: StaticEnv, progress: TutorialProgress): Lesson | undefined {
+  const when = (id: string) => progress.pausedAt?.[id] ?? '';
+  return Object.keys(progress.resume)
+    .map(lessonById)
+    .filter((l): l is Lesson => !!l && l.modes.includes(env.settings.mode) && !l.unavailable?.(env))
+    .sort((a, b) => when(b.id).localeCompare(when(a.id)))[0];
+}
+
+/** Every unfinished lesson that can be resumed now (for a "more unfinished" count). */
+export function resumable(env: StaticEnv, progress: TutorialProgress): Lesson[] {
+  return Object.keys(progress.resume)
+    .map(lessonById)
+    .filter((l): l is Lesson => !!l && l.modes.includes(env.settings.mode) && !l.unavailable?.(env));
 }
 
 export function stepsFor(lesson: Lesson, env: StaticEnv): LessonStep[] {

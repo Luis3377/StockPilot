@@ -26,6 +26,8 @@ interface DialogApi {
   /** Record a Max Bid plan's purchase as a bulk lot (the lot form, filled from the plan). */
   addLotFromBid(prefill: BidLotPrefill): void;
   editLot(lotId: string): void;
+  /** Closes whichever shared form is open (e.g. a practice form in a tab that no longer runs the lesson). */
+  closeAll(): void;
 }
 
 const Ctx = createContext<DialogApi | null>(null);
@@ -70,6 +72,7 @@ export function DialogHub({ children }: { children: ReactNode }) {
       addLot: () => setOpen({ kind: 'lot' }),
       addLotFromBid: (prefill) => setOpen({ kind: 'lot', fromBid: prefill }),
       editLot: (lotId) => setOpen({ kind: 'editLot', lotId }),
+      closeAll: () => setOpen(null),
     }),
     [],
   );

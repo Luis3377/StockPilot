@@ -226,3 +226,7 @@ The full map is in [LEARNING_CENTER.md](LEARNING_CENTER.md#tests). New: `src/lea
 ## Tutorial QA round 1 → tests
 
 The full map is in [TUTORIAL_QA_1.md](TUTORIAL_QA_1.md#tests): Practice Mode data lock, two tabs, Max Bid with real values, collector details, practice isolation, replays, refresh/resume, phone buttons, discovery of all 17 lessons, and the unchanged calculation suites.
+
+## Tutorial beta readiness → tests
+
+The full map is in [TUTORIAL_BETA_READINESS.md](TUTORIAL_BETA_READINESS.md#tests). New: `src/learn/beta.test.ts` (the Predicted vs. actual and Monthly Close text checked against the engines' figures across dates, resume eligibility, the practice write guard, closing text, help-topic steps) and `e2e/beta-readiness.spec.ts` (the same on screen on desktop and iPhone 13, Escape in forms, a stale form in a second tab, highlights, phone sheet, quantity validation, Resume tour, demo figures unchanged). Lesson helpers for browser tests are in `e2e/tourHelpers.ts`.

@@ -34,6 +34,16 @@ interface Box {
   height: number;
 }
 
+/** The smallest box around all highlighted controls (the lesson box is placed against all of them). */
+function unionBox(boxes: Box[]): Box | null {
+  if (!boxes.length) return null;
+  const top = Math.min(...boxes.map((b) => b.top));
+  const left = Math.min(...boxes.map((b) => b.left));
+  const bottom = Math.max(...boxes.map((b) => b.top + b.height));
+  const right = Math.max(...boxes.map((b) => b.left + b.width));
+  return { top, left, width: right - left, height: bottom - top };
+}
+
 const sameBoxes = (a: Box[], b: Box[]) =>
   a.length === b.length && a.every((x, i) => x.top === b[i].top && x.left === b[i].left && x.width === b[i].width && x.height === b[i].height);
 
@@ -43,6 +53,11 @@ function reducedMotion() {
 
 function textOf(t: Text, env: LessonEnv): string {
   return typeof t === 'function' ? t(env) : t;
+}
+
+/** The page a step opens (some depend on the records, e.g. Monthly Close's month). */
+function routeOf(step: LessonStep, env: LessonEnv): string | undefined {
+  return typeof step.route === 'function' ? step.route(env) : step.route;
 }
 
 export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; active: ActiveLesson; staticEnv: StaticEnv }) {
@@ -70,6 +85,9 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
   const [tick, setTick] = useState(0);
   const [touched, setTouched] = useState(false);
   const [confirmSkip, setConfirmSkip] = useState(false);
+  // Leaving would close a form with typing in it: ask first (L13).
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const formDirty = useRef(false);
   const missingSince = useRef<number | null>(null);
   const scrolledFor = useRef<{ key: string; count: number; at: number } | null>(null);
   const navigatedFor = useRef<string | null>(null);
@@ -120,6 +138,30 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
     [lesson, toast, location.pathname, navigate],
   );
 
+  // Typing in an open form (Add item, Record sale…) is remembered until the form closes, so leaving
+  // the lesson never throws it away without asking.
+  useEffect(() => {
+    const MODAL = '[role="dialog"][aria-modal="true"]';
+    const onInput = (ev: Event) => {
+      if (ev.target instanceof Element && ev.target.closest(MODAL)) formDirty.current = true;
+    };
+    const obs = new MutationObserver(() => {
+      if (!document.querySelector(MODAL)) formDirty.current = false;
+    });
+    obs.observe(document.body, { childList: true });
+    document.addEventListener('input', onInput, true);
+    return () => {
+      obs.disconnect();
+      document.removeEventListener('input', onInput, true);
+    };
+  }, []);
+  const formHasTyping = () => formDirty.current && !!document.querySelector('[role="dialog"][aria-modal="true"]');
+  /** Exit (✕, Exit, Escape): straight away, unless that would throw away typing in an open form. */
+  const requestExit = useCallback(() => {
+    if (formHasTyping()) setConfirmLeave(true);
+    else void leave('pause');
+  }, [leave]);
+
   // A practice lesson only ever runs on the practice records (e.g. after a refresh).
   useEffect(() => {
     if (lesson.practice && dataset !== 'practice') void store.enterPractice(false);
@@ -156,10 +198,12 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
     setMissing(false);
     setTouched(false);
     setConfirmSkip(false);
+    setConfirmLeave(false);
     missingSince.current = null;
-    if (step.route && navigatedFor.current !== stepKey) {
+    const route = routeOf(step, env());
+    if (route && navigatedFor.current !== stepKey) {
       navigatedFor.current = stepKey;
-      if (location.pathname !== step.route) navigate(step.route);
+      if (`${location.pathname}${location.search}` !== route && location.pathname !== route) navigate(route);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepKey]);
@@ -204,10 +248,23 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
         const r = first.getBoundingClientRect();
         const tries = scrolledFor.current?.key === stepKey ? scrolledFor.current : { key: stepKey, count: 0, at: 0 };
         if (tries.count < 2 && Date.now() - tries.at > 600) {
-          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height, 40) / 2);
-          const hidden = r.top < 0 || r.bottom > window.innerHeight || !hit || !(first.contains(hit) || hit.closest('[data-tour-popover], [data-tour-overlay]'));
+          const inView = (el: HTMLElement) => {
+            const b = el.getBoundingClientRect();
+            const hit = document.elementFromPoint(b.left + b.width / 2, b.top + Math.min(b.height, 40) / 2);
+            return b.top >= 0 && b.bottom <= window.innerHeight && !!hit && (el.contains(hit) || !!hit.closest('[data-tour-popover], [data-tour-overlay]'));
+          };
+          // A control taller than most of the screen (a long checklist) is shown from its top, under
+          // the sticky header, rather than scrolled to its middle.
+          const tall = r.height > window.innerHeight * 0.6;
+          const topHidden = r.top < 56 || r.top > window.innerHeight * 0.4;
+          // With several controls to use (either one works), one already on screen is enough: never
+          // scroll away from the one the person has scrolled to. A look step explains the first one first.
+          const hidden = tall ? topHidden : !(step.advance.kind === 'next' ? [first] : now).some(inView);
           scrolledFor.current = { key: stepKey, count: hidden ? tries.count + 1 : tries.count === 0 ? 1 : 2, at: Date.now() };
-          if (hidden) first.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+          if (hidden) {
+            if (tall) first.style.scrollMarginTop = '80px';
+            first.scrollIntoView({ block: tall ? 'start' : 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+          }
         }
       } else {
         setBoxes((b) => (b.key === stepKey && !b.boxes.length ? b : { key: stepKey, boxes: [] }));
@@ -316,9 +373,16 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
         .filter((f) => isVisible(f));
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        e.preventDefault();
+        // Escape never closes the form underneath (that would lose what was typed). In a dropdown
+        // or date field it's left to the browser (closing the list or picker); otherwise it cancels
+        // an open question, or asks to leave the lesson, confirming first if a form has typing in it.
         e.stopPropagation();
-        void leave('pause');
+        const t = e.target;
+        if (t instanceof HTMLSelectElement || (t instanceof HTMLInputElement && /^(date|time|datetime-local|month|week)$/.test(t.type))) return;
+        e.preventDefault();
+        if (confirmLeave) setConfirmLeave(false);
+        else if (confirmSkip) setConfirmSkip(false);
+        else requestExit();
         return;
       }
       const fieldInput = step.advance.kind === 'field' && input && e.target === input;
@@ -357,7 +421,7 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('focusin', onFocusIn, true);
     };
-  }, [els, lookOnly, step, input, tryField, leave]);
+  }, [els, lookOnly, step, input, tryField, requestExit, confirmLeave, confirmSkip]);
 
   const e = env();
   const title = textOf(step.title, e);
@@ -367,7 +431,8 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
   const nextLesson = isLast ? nextUnfinished(staticEnv, progress, lesson.id) : undefined;
   // Finishing the last unfinished lesson on the path: say so.
   const pathDone = isLast && path.some((l) => l.id === lesson.id) && path.every((l) => l.id === lesson.id || l.id in progress.completed);
-  const offRoute = Boolean(step.route && location.pathname !== step.route && navigatedFor.current === stepKey);
+  const route = routeOf(step, e);
+  const offRoute = Boolean(route && location.pathname !== route.split('?')[0] && navigatedFor.current === stepKey);
   const canNext =
     (step.advance.kind === 'next' && (!step.advance.ready || step.advance.ready(e))) || (step.advance.kind === 'click' && step.advance.orNext) || step.advance.kind === 'field';
   const onMaskClick = () =>
@@ -388,7 +453,10 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
         body={body}
         index={index}
         total={steps.length}
-        box={shown[0] ?? null}
+        box={unionBox(shown)}
+        // What the lesson box must leave free: for a step that needs an action, any one of the controls
+        // (either works); for a look step the first one it explains (on a phone the rest may be a scroll away).
+        boxes={step.advance.kind === 'next' ? shown.slice(0, 1) : shown}
         missing={missing}
         offRoute={offRoute}
         hint={step.advance.kind === 'field' && touched && !fieldOk ? invalidText : hint}
@@ -397,6 +465,8 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
         nextLesson={nextLesson}
         pathDone={pathDone}
         confirmSkip={confirmSkip}
+        confirmLeave={confirmLeave}
+        formTyping={confirmSkip && formHasTyping()}
         onBack={() => go(index, index - 1)}
         onNext={() => {
           if (!canNext) return;
@@ -408,13 +478,13 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
         onRetry={() => {
           missingSince.current = null;
           setMissing(false);
-          if (step.route) navigate(step.route);
+          if (route) navigate(route);
           else {
             const to = step.resumeAt ? steps.findIndex((s) => s.id === step.resumeAt) : -1;
             if (to >= 0) go(index, to);
           }
         }}
-        onReturn={() => step.route && navigate(step.route)}
+        onReturn={() => route && navigate(route)}
         onFocusTarget={() => {
           el?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
           const f = el && (el.matches(FOCUSABLE) ? el : el.querySelector<HTMLElement>(FOCUSABLE));
@@ -433,7 +503,9 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
           }
           el.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
         }}
-        onExit={() => void leave('pause')}
+        onExit={requestExit}
+        onLeaveAnyway={() => void leave('pause')}
+        onCancelLeave={() => setConfirmLeave(false)}
         onAskSkip={() => setConfirmSkip(true)}
         onCancelSkip={() => setConfirmSkip(false)}
         onSkipLesson={() => void leave('skip')}
@@ -512,6 +584,8 @@ interface PopoverProps {
   index: number;
   total: number;
   box: Box | null;
+  /** The highlighted controls the box must not cover (box is all of them together); one free is enough. */
+  boxes: Box[];
   missing: boolean;
   offRoute: boolean;
   hint: string | null;
@@ -520,6 +594,10 @@ interface PopoverProps {
   nextLesson: Lesson | undefined;
   pathDone: boolean;
   confirmSkip: boolean;
+  /** "Leave the lesson? What you typed will be lost." */
+  confirmLeave: boolean;
+  /** Skipping would also close a form with typing in it. */
+  formTyping: boolean;
   onBack: () => void;
   onNext: () => void;
   onSkipStep: () => void;
@@ -529,6 +607,8 @@ interface PopoverProps {
   /** The box ended up over the highlighted control (phones): the runner scrolls it clear. */
   onCovered: (popover: DOMRect) => void;
   onExit: () => void;
+  onLeaveAnyway: () => void;
+  onCancelLeave: () => void;
   onAskSkip: () => void;
   onCancelSkip: () => void;
   onSkipLesson: () => void;
@@ -577,11 +657,12 @@ function Popover(p: PopoverProps) {
   useLayoutEffect(() => {
     const r = ref.current?.getBoundingClientRect();
     if (r && (Math.abs(r.width - size.w) > 1 || Math.abs(r.height - size.h) > 1)) setSize({ w: r.width, h: r.height });
-    const b = p.box;
     const key = `${p.index}:${p.hint ? 1 : 0}`;
-    if (r && b && coveredFor.current !== key) {
-      const overlaps = r.top < b.top + b.height && r.bottom > b.top && r.left < b.left + b.width && r.right > b.left;
-      if (overlaps) {
+    if (r && p.boxes.length && coveredFor.current !== key) {
+      // Covered only when it sits over every one of them: one left free is enough, and the page isn't
+      // scrolled away from it.
+      const over = (b: Box) => r.top < b.top + b.height && r.bottom > b.top && r.left < b.left + b.width && r.right > b.left;
+      if (p.boxes.every(over)) {
         coveredFor.current = key;
         p.onCovered(r);
       }
@@ -591,6 +672,10 @@ function Popover(p: PopoverProps) {
   useEffect(() => {
     if (p.confirmSkip) ref.current?.querySelector<HTMLElement>('[data-testid="tour-skip-yes"]')?.focus();
   }, [p.confirmSkip]);
+  // Asking "Leave the lesson?": focus starts on Keep going, the safe answer.
+  useEffect(() => {
+    if (p.confirmLeave) ref.current?.querySelector<HTMLElement>('[data-testid="tour-leave-no"]')?.focus();
+  }, [p.confirmLeave]);
   // Each new step is announced, and focus moves here unless the step is about typing in a field.
   useEffect(() => {
     if (p.step.advance.kind !== 'field') titleRef.current?.focus({ preventScroll: true });
@@ -606,7 +691,15 @@ function Popover(p: PopoverProps) {
     // A sheet at the top or bottom, whichever leaves more room, kept for the whole step.
     const roomAbove = p.box.top;
     const roomBelow = vp.h - (p.box.top + p.box.height);
-    if (side.current?.index !== p.index) side.current = { index: p.index, side: 'below', sheet: roomAbove > roomBelow ? 'top' : 'bottom' };
+    if (side.current?.index !== p.index) {
+      // Stay at the same end of the screen as the last step unless that would cover this control,
+      // so the box doesn't jump between top and bottom from one step to the next.
+      const was = side.current?.sheet;
+      const fitsTop = p.box.top >= 12 + size.h + 8;
+      const fitsBottom = p.box.top + p.box.height <= vp.h - 12 - size.h - 8;
+      const sheet = was === 'top' && fitsTop ? 'top' : was === 'bottom' && fitsBottom ? 'bottom' : roomAbove > roomBelow ? 'top' : 'bottom';
+      side.current = { index: p.index, side: 'below', sheet };
+    }
     style = side.current.sheet === 'top' ? { left: 12, right: 12, top: 12 } : { left: 12, right: 12, bottom: 12 };
     anchoredBottom = side.current.sheet === 'bottom';
   } else {
@@ -637,8 +730,15 @@ function Popover(p: PopoverProps) {
       {p.hint}
     </p>
   ) : null;
-  const doneText =
-    p.isLast && p.pathDone ? ' That’s every lesson on your path — nicely done. The Learning Center has the other lessons and all the help topics whenever you need them.' : '';
+  // The closing words match the buttons: the next unfinished lesson when there is one, "path
+  // complete" only when there isn't.
+  const doneText = !p.isLast
+    ? ''
+    : p.nextLesson
+      ? ` Next on your path: “${p.nextLesson.title}”.`
+      : p.pathDone
+        ? ' That’s every lesson on your path — nicely done. The Learning Center has the other lessons and all the help topics whenever you need them.'
+        : '';
   return (
     <div
       ref={ref}
@@ -703,9 +803,26 @@ function Popover(p: PopoverProps) {
           Go to the highlighted control
         </button>
       )}
-      {p.confirmSkip ? (
+      {p.confirmLeave ? (
+        <div className="mt-3 rounded-xl bg-warn-soft p-3" role="alertdialog" aria-labelledby={`tour-leave-${p.index}`} data-testid="tour-leave-confirm">
+          <p id={`tour-leave-${p.index}`} className="text-sm text-ink">
+            Leave the lesson? The form you’re filling in will close and what you’ve typed will be lost. Your place in the lesson is kept, so you can resume it later.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="primary" onClick={p.onCancelLeave} className={PRIMARY_DARK} data-testid="tour-leave-no">
+              Keep going
+            </Button>
+            <Button size="sm" onClick={p.onLeaveAnyway} data-testid="tour-leave-yes">
+              Leave lesson
+            </Button>
+          </div>
+        </div>
+      ) : p.confirmSkip ? (
         <div className="mt-3 rounded-xl bg-surface-2 p-3" data-testid="tour-skip-confirm">
-          <p className="text-sm text-ink">Skip this lesson? It’s marked as skipped, and you can take it any time from the Learning Center.</p>
+          <p className="text-sm text-ink">
+            Skip this lesson? It’s marked as skipped, and you can take it any time from the Learning Center.
+            {p.formTyping && ' The form you’re filling in will close and what you’ve typed will be lost.'}
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button size="sm" variant="primary" onClick={p.onSkipLesson} className={PRIMARY_DARK} data-testid="tour-skip-yes" data-autofocus>
               Skip lesson

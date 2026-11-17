@@ -3,6 +3,8 @@
 StockPilot teaches itself. Someone with no accounting or inventory background can follow short, hands-on lessons that point at the real buttons, fields and figures in the app, one step at a time, and practise on sample records that never touch their own.
 
 > After the first QA review, see [TUTORIAL_QA_1.md](TUTORIAL_QA_1.md): Practice Mode data lock, one tab per lesson, an interactive Max Bid lesson, collector details, worked examples, and discovery of every lesson in every mode.
+>
+> After the QA retest, see [TUTORIAL_BETA_READINESS.md](TUTORIAL_BETA_READINESS.md): Predicted vs. actual and Monthly Close quote the page’s own figures, Resume only offers lessons that can run, Escape never loses typing, and a second tab can’t save practice records.
 
 - [Where to find it](#where-to-find-it)
 - [How a lesson works](#how-a-lesson-works)
