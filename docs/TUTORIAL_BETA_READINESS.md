@@ -85,7 +85,7 @@ Tested on November 16 and 30, December 1 and 31, 2026, January 1, 2027 (year-end
 | ID | Problem | Fix |
 | --- | --- | --- |
 | **M2** | The Overview step described two figures but highlighted one card | Both cards are highlighted in every layout: Realized profit + Inventory cost (Reseller, Small business), Estimated market value + Cost (Collector). |
-| **M3** | The large centred **New calculation** button didn't work during the Max Bid lesson | Both New calculation buttons (header and empty state) are targets, and either one moves the lesson on. The text says so. |
+| **M3** | The large centred **New calculation** button didn't work during the Max Bid lesson | Both New calculation buttons (header and empty state) are targets, and either one moves the lesson on. The text says so. On a phone, scrolling down to the centred one is no longer undone: the lesson only brings a control into view, or moves it out from under the lesson box, when *none* of the highlighted controls is already visible and uncovered. |
 | **M4** | On a phone the lesson box jumped between the top and bottom of the screen | The box stays at the same end of the screen from step to step. It moves only if staying would cover the control. |
 | **M10** | A help topic's lesson link started the lesson from step 1 | It opens the step that explains that figure (for example, Margin opens at the margin step with “$10.00 ÷ $20.00 = 50.0%”). Practice lessons opened part-way set up the records that step needs. |
 | **M11** | Monthly Close scrolled to the middle of the tall checklist | A control taller than most of the screen is shown from its top, just under the header. |
@@ -117,7 +117,7 @@ The retest confirmed these were working. They are unchanged, and their existing 
 | N5 | “Next unfinished” and “path complete” are never both true. No lesson summary names a next lesson. | The closing text names the same lesson as the Next button. |
 | M10 | Every topic's step exists in its lesson. Practice lessons opened part-way have a jump setup, with a sale to explain. | The Margin topic opens at the margin step with the worked example. |
 | M2 + L3 | | Both cards are highlighted in Small business, Reseller and Collector, and neither is covered. On a phone the second card is a scroll away and uncovered once there. |
-| M3 | | The centred button is clicked by position and the lesson moves on. |
+| M3 | | The centred button is clicked by position and the lesson moves on. On a phone, after scrolling to it the page stays put (the old code scrolled back to the header button). |
 | M4 | | Over four form steps on a phone, the lesson box changes ends at most once. |
 | M11 | | The checklist is shown from its top. |
 | L7 | | “-3” and “1.5” stay as typed with their messages, in the form and in the lesson. |

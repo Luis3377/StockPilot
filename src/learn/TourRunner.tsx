@@ -248,12 +248,18 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
         const r = first.getBoundingClientRect();
         const tries = scrolledFor.current?.key === stepKey ? scrolledFor.current : { key: stepKey, count: 0, at: 0 };
         if (tries.count < 2 && Date.now() - tries.at > 600) {
-          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height, 40) / 2);
+          const inView = (el: HTMLElement) => {
+            const b = el.getBoundingClientRect();
+            const hit = document.elementFromPoint(b.left + b.width / 2, b.top + Math.min(b.height, 40) / 2);
+            return b.top >= 0 && b.bottom <= window.innerHeight && !!hit && (el.contains(hit) || !!hit.closest('[data-tour-popover], [data-tour-overlay]'));
+          };
           // A control taller than most of the screen (a long checklist) is shown from its top, under
           // the sticky header, rather than scrolled to its middle.
           const tall = r.height > window.innerHeight * 0.6;
           const topHidden = r.top < 56 || r.top > window.innerHeight * 0.4;
-          const hidden = tall ? topHidden : r.top < 0 || r.bottom > window.innerHeight || !hit || !(first.contains(hit) || hit.closest('[data-tour-popover], [data-tour-overlay]'));
+          // With several highlighted controls (either one works), one already on screen is enough:
+          // never scroll away from the one the person has scrolled to.
+          const hidden = tall ? topHidden : !now.some(inView);
           scrolledFor.current = { key: stepKey, count: hidden ? tries.count + 1 : tries.count === 0 ? 1 : 2, at: Date.now() };
           if (hidden) {
             if (tall) first.style.scrollMarginTop = '80px';
@@ -448,6 +454,7 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
         index={index}
         total={steps.length}
         box={unionBox(shown)}
+        boxes={shown}
         missing={missing}
         offRoute={offRoute}
         hint={step.advance.kind === 'field' && touched && !fieldOk ? invalidText : hint}
@@ -575,6 +582,8 @@ interface PopoverProps {
   index: number;
   total: number;
   box: Box | null;
+  /** Each highlighted control on its own (box is all of them together). */
+  boxes: Box[];
   missing: boolean;
   offRoute: boolean;
   hint: string | null;
@@ -646,11 +655,12 @@ function Popover(p: PopoverProps) {
   useLayoutEffect(() => {
     const r = ref.current?.getBoundingClientRect();
     if (r && (Math.abs(r.width - size.w) > 1 || Math.abs(r.height - size.h) > 1)) setSize({ w: r.width, h: r.height });
-    const b = p.box;
     const key = `${p.index}:${p.hint ? 1 : 0}`;
-    if (r && b && coveredFor.current !== key) {
-      const overlaps = r.top < b.top + b.height && r.bottom > b.top && r.left < b.left + b.width && r.right > b.left;
-      if (overlaps) {
+    if (r && p.boxes.length && coveredFor.current !== key) {
+      // Covered only when it sits over every highlighted control: with two (either one works), the
+      // one left free is enough, and the page isn't scrolled away from it.
+      const over = (b: Box) => r.top < b.top + b.height && r.bottom > b.top && r.left < b.left + b.width && r.right > b.left;
+      if (p.boxes.every(over)) {
         coveredFor.current = key;
         p.onCovered(r);
       }

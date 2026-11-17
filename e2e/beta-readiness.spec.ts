@@ -285,11 +285,13 @@ test('M3: the large centred New calculation button works during the Max Bid less
   const buttons = page.locator('[data-tour-active="new"]');
   await expect(buttons).toHaveCount(2);
   // The one in the middle of the page (the empty state), not the header one. On a phone it's below
-  // the fold: scroll to it as a person would; nothing (lesson box, tab bar, shield) may cover it.
-  await expect(async () => {
-    await buttons.nth(1).evaluate((n) => n.scrollIntoView({ block: 'center' }));
-    await expectReachable(page, buttons.nth(1));
-  }).toPass({ timeout: 10_000 });
+  // the fold: scroll to it as a person would. The lesson doesn't scroll back to the other one, and
+  // nothing (lesson box, tab bar, shield) covers it.
+  await buttons.nth(1).evaluate((n) => n.scrollIntoView({ block: 'center' }));
+  const scrolledTo = await page.evaluate(() => window.scrollY);
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrolledTo);
+  await expectReachable(page, buttons.nth(1));
   const box = await buttons.nth(1).boundingBox();
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await step(page, 'resale');
