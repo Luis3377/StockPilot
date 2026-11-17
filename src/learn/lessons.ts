@@ -249,8 +249,16 @@ export const LESSONS: Lesson[] = [
           collector(e)
             ? 'Cost is what you paid. Estimated market value is your own estimate for the items you valued — not an appraisal and not money you’d receive. Neither is cash in your pocket.'
             : 'Realized profit counts completed sales only, after what the items cost you and your selling expenses. Inventory cost is what you paid for stock you still have: money spent, not money earned.',
-        target: ['[data-testid="hero-profit"]', '[data-testid="hero-collection-value"]', '[data-testid="hero-inventory-value"]'],
-        // Both cards the text describes are highlighted (profit and inventory cost), not just the first.
+        // Both cards the text describes are highlighted (profit and inventory cost; or, for a collection,
+        // estimated market value and cost), not just the first. Each overview layout has one of each pair.
+        target: [
+          '[data-testid="hero-profit"]',
+          '[data-testid="stat-profit"]',
+          '[data-testid="hero-inventory-value"]',
+          '[data-testid="stat-inventory-cost"]',
+          '[data-testid="hero-collection-value"]',
+          '[data-testid="stat-acquisition-cost"]',
+        ],
         targetAll: true,
         advance: { kind: 'next' },
         optional: true,
@@ -979,7 +987,7 @@ export const LESSONS: Lesson[] = [
           if (perf.final)
             return `${predicted} The actual final profit is ${money(e, r.compared)} — ${direction(r.difference)} the prediction by ${signed(e, r.difference)} (${signedPctText(r.errorPct)}).`;
           const left = perf.projection?.remainingUnits ?? 0;
-          return `${predicted} If the ${units(left)} still in stock sell as the plan assumes, the projected final profit is ${money(e, r.compared)}: ${direction(r.difference)} the prediction by ${signed(e, r.difference)} (${signedPctText(r.errorPct)}), as the Difference column shows. Projected figures are estimates, not results.`;
+          return `${predicted} If the ${units(left)} still in stock ${left === 1 ? 'sells' : 'sell'} as the plan assumes, the projected final profit is ${money(e, r.compared)}: ${direction(r.difference)} the prediction by ${signed(e, r.difference)} (${signedPctText(r.errorPct)}), as the Difference column shows. Projected figures are estimates, not results.`;
         },
         target: '[data-testid="perf-row-profit"]',
         advance: { kind: 'next' },
@@ -1012,7 +1020,7 @@ export const LESSONS: Lesson[] = [
             : '';
           const rest =
             !perf.final && perf.projection
-              ? ` The rest is still an estimate: if the unsold ${units(perf.projection.remainingUnits)} sell for less, or not at all, the final profit will be lower.`
+              ? ` The rest is still an estimate: if the unsold ${units(perf.projection.remainingUnits)} ${perf.projection.remainingUnits === 1 ? 'sells' : 'sell'} for less, or not at all, the final profit will be lower.`
               : '';
           return `${parts.join(' ')} ${total}${prices}${rest}`;
         },
