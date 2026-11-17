@@ -257,9 +257,9 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
           // the sticky header, rather than scrolled to its middle.
           const tall = r.height > window.innerHeight * 0.6;
           const topHidden = r.top < 56 || r.top > window.innerHeight * 0.4;
-          // With several highlighted controls (either one works), one already on screen is enough:
-          // never scroll away from the one the person has scrolled to.
-          const hidden = tall ? topHidden : !now.some(inView);
+          // With several controls to use (either one works), one already on screen is enough: never
+          // scroll away from the one the person has scrolled to. A look step explains the first one first.
+          const hidden = tall ? topHidden : !(step.advance.kind === 'next' ? [first] : now).some(inView);
           scrolledFor.current = { key: stepKey, count: hidden ? tries.count + 1 : tries.count === 0 ? 1 : 2, at: Date.now() };
           if (hidden) {
             if (tall) first.style.scrollMarginTop = '80px';
@@ -454,7 +454,9 @@ export function TourRunner({ lesson, active, staticEnv }: { lesson: Lesson; acti
         index={index}
         total={steps.length}
         box={unionBox(shown)}
-        boxes={shown}
+        // What the lesson box must leave free: for a step that needs an action, any one of the controls
+        // (either works); for a look step the first one it explains (on a phone the rest may be a scroll away).
+        boxes={step.advance.kind === 'next' ? shown.slice(0, 1) : shown}
         missing={missing}
         offRoute={offRoute}
         hint={step.advance.kind === 'field' && touched && !fieldOk ? invalidText : hint}
@@ -582,7 +584,7 @@ interface PopoverProps {
   index: number;
   total: number;
   box: Box | null;
-  /** Each highlighted control on its own (box is all of them together). */
+  /** The highlighted controls the box must not cover (box is all of them together); one free is enough. */
   boxes: Box[];
   missing: boolean;
   offRoute: boolean;
@@ -657,8 +659,8 @@ function Popover(p: PopoverProps) {
     if (r && (Math.abs(r.width - size.w) > 1 || Math.abs(r.height - size.h) > 1)) setSize({ w: r.width, h: r.height });
     const key = `${p.index}:${p.hint ? 1 : 0}`;
     if (r && p.boxes.length && coveredFor.current !== key) {
-      // Covered only when it sits over every highlighted control: with two (either one works), the
-      // one left free is enough, and the page isn't scrolled away from it.
+      // Covered only when it sits over every one of them: one left free is enough, and the page isn't
+      // scrolled away from it.
       const over = (b: Box) => r.top < b.top + b.height && r.bottom > b.top && r.left < b.left + b.width && r.right > b.left;
       if (p.boxes.every(over)) {
         coveredFor.current = key;
