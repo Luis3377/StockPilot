@@ -22,7 +22,7 @@ import { cn } from '../ui/cn';
 import { useToast } from '../ui/Toast';
 import { pluralWord } from '../domain/format';
 import { pauseLesson } from '../learn/progress';
-import { lessonById } from '../learn/lessons';
+import { resumeCandidate } from '../learn/lessons';
 import { useTour } from '../learn/TourProvider';
 import { scannerEnabled } from '../ai/config';
 
@@ -239,9 +239,10 @@ function ResumeTour() {
   const tutorial = useAppState((s) => s.settings.tutorial);
   const settings = useAppState((s) => s.settings);
   const { start } = useTour();
-  const id = Object.keys(tutorial.resume).find((x) => lessonById(x) && !lessonById(x)!.unavailable?.({ settings, scannerEnabled }));
-  if (tutorial.active || !id) return null;
-  const lesson = lessonById(id)!;
+  // Only a lesson that can run in this mode right now, the most recently paused (see resumeCandidate).
+  const lesson = resumeCandidate({ settings, scannerEnabled }, tutorial);
+  if (tutorial.active || !lesson) return null;
+  const id = lesson.id;
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-accent/40 bg-accent-soft/40 px-4 py-3 text-sm text-ink" data-testid="resume-tour">
       <span className="flex min-w-0 items-center gap-2">

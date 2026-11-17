@@ -9,6 +9,7 @@ import { startLedger, trackChanges } from '../domain/ledger';
 import { assertClosedMonthsUnchanged } from '../domain/close';
 import { assertFinalizedYearsUnchanged } from '../domain/yearEnd';
 import { newId } from '../domain/ids';
+import { DomainError } from '../domain/errors';
 import { emptyData, defaultSettings, type AppData, type DatasetId, type PhotoRecord, type Settings } from '../domain/types';
 import { sanitizeAppData, sanitizeSettings } from './sanitize';
 import { buildDemoData } from './demo';
@@ -168,8 +169,21 @@ export class AppStore {
     return this.saving;
   }
 
+  private writeGuard: (() => string | null) | null = null;
+
+  /**
+   * Lets the Learning Center refuse changes to the practice records in a tab that isn't running
+   * the lesson (e.g. a form left open in a second tab), so they can't move a lesson on elsewhere.
+   * The guard returns why a change is refused, or null.
+   */
+  setPracticeWriteGuard(guard: (() => string | null) | null): void {
+    this.writeGuard = guard;
+  }
+
   /** Applies a change to the active dataset. Throws (without saving) if the action throws. */
   commit<R>(action: (data: AppData) => { data: AppData } & R): R {
+    const refused = this.state.dataset === 'practice' ? (this.writeGuard?.() ?? null) : null;
+    if (refused) throw new DomainError(refused);
     const before = this.state.data;
     const result = action(before);
     // Every change to inventory cost is dated in the ledger; a closed month's figures can't change.

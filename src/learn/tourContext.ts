@@ -9,6 +9,8 @@ export interface StartOptions {
   resume?: boolean;
   /** Continuing straight from another practice lesson: keep its practice records (e.g. the product you just added). */
   keepPractice?: boolean;
+  /** Open at this step (a help topic's lesson link), with the lesson's jump setup for its practice records. */
+  atStep?: string;
 }
 
 export interface TourApi {

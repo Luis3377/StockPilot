@@ -8,7 +8,7 @@ import { CheckCircle2, CirclePlay, GraduationCap, PartyPopper, RotateCcw, Trash2
 import { store, useAppState } from '../data/store';
 import { scannerEnabled } from '../ai/config';
 import { MODES, modeInfo, salesEnabled } from '../lib/modes';
-import { lessonById, lessonSearchText, lessonsFor, otherModeLessons, pathFor, stepsFor } from '../learn/lessons';
+import { lessonById, lessonSearchText, lessonsFor, otherModeLessons, pathFor, resumable, resumeCandidate, stepsFor } from '../learn/lessons';
 import { HELP_TOPICS } from '../learn/help';
 import { lessonStatus } from '../learn/progress';
 import { GROUP_LABELS, type Lesson, type LessonGroup, type StaticEnv } from '../learn/types';
@@ -50,11 +50,9 @@ export function LearnPage() {
   const focusTopic = params.get('topic');
   const done = path.filter((l) => l.id in progress.completed).length;
   const pathComplete = path.length > 0 && done === path.length;
-  // Unfinished lessons, most useful first: the one on your path that comes next.
-  const unfinished = Object.keys(progress.resume)
-    .map(lessonById)
-    .filter((l): l is Lesson => !!l)
-    .sort((a, b) => path.indexOf(a) - path.indexOf(b));
+  // The lesson to resume: made for this mode, able to run now, the most recently paused (never one that would error).
+  const resumeNow = resumeCandidate(env, progress);
+  const unfinished = resumable(env, progress);
 
   // Opened from a help icon: show that topic (after the page's own scroll-to-top) and move focus to it.
   useEffect(() => {
@@ -94,13 +92,13 @@ export function LearnPage() {
         }
       />
 
-      {unfinished.length > 0 && !progress.active && (
+      {resumeNow && !progress.active && (
         <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 border-accent/40 p-4" data-testid="learn-resume-card">
           <p className="min-w-0 text-sm text-ink">
-            <strong>Pick up where you left off:</strong> {unfinished[0].title} (step {(progress.resume[unfinished[0].id] ?? 0) + 1} of {stepsFor(unfinished[0], env).length})
+            <strong>Pick up where you left off:</strong> {resumeNow.title} (step {(progress.resume[resumeNow.id] ?? 0) + 1} of {stepsFor(resumeNow, env).length})
             {unfinished.length > 1 && <span className="text-ink-2"> · {unfinished.length - 1} more unfinished below</span>}
           </p>
-          <Button variant="primary" icon={<CirclePlay className="size-4" />} onClick={() => void start(unfinished[0].id, { resume: true })} data-testid="learn-resume-top">
+          <Button variant="primary" icon={<CirclePlay className="size-4" />} onClick={() => void start(resumeNow.id, { resume: true })} data-testid="learn-resume-top">
             Resume
           </Button>
         </Card>
@@ -195,7 +193,12 @@ export function LearnPage() {
                           </Link>
                         )}
                         {lesson && !lesson.unavailable?.(env) && (
-                          <button type="button" className="font-medium text-accent-text underline" onClick={() => void start(lesson.id)} data-testid="learn-topic-lesson">
+                          <button
+                            type="button"
+                            className="font-medium text-accent-text underline"
+                            onClick={() => void start(lesson.id, { atStep: t.lessonStep })}
+                            data-testid="learn-topic-lesson"
+                          >
                             Lesson: {lesson.title}
                           </button>
                         )}

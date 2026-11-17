@@ -191,6 +191,23 @@ interface QuantityFieldProps extends Omit<BaseInput, 'min' | 'max'> {
 export function QuantityField({ label, hint, error, required, min = 0, max, className, value, onChange, ...rest }: QuantityFieldProps) {
   const n = Number(value);
   const valid = value.trim() !== '' && Number.isInteger(n);
+  // What was typed is kept as typed (a minus sign or decimal point is never silently dropped, which
+  // used to turn -3 into 3 or 1.5 into 15), and the problem is said straight away.
+  const typed = value.trim();
+  const problem =
+    typed === '' || typed === '-'
+      ? null
+      : !Number.isFinite(n)
+        ? 'Enter a number, like 3.'
+        : !Number.isInteger(n)
+          ? 'Use a whole number, like 3.'
+          : n < min
+            ? min === 0
+              ? 'Can’t be negative.'
+              : `Must be at least ${min}.`
+            : max !== undefined && n > max
+              ? `Can’t be more than ${max}.`
+              : null;
   const step = (d: number) => {
     const base = valid ? n : min;
     let next = base + d;
@@ -199,7 +216,7 @@ export function QuantityField({ label, hint, error, required, min = 0, max, clas
     onChange(String(next));
   };
   return (
-    <Field label={label} hint={hint} error={error} required={required} className={className}>
+    <Field label={label} hint={hint} error={error ?? problem ?? undefined} required={required} className={className}>
       {(id, describedBy) => (
         <div className="flex items-stretch">
           <button
@@ -214,13 +231,12 @@ export function QuantityField({ label, hint, error, required, min = 0, max, clas
           <input
             id={id}
             inputMode="numeric"
-            pattern="[0-9]*"
             autoComplete="off"
             value={value}
-            onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ''))}
-            aria-invalid={Boolean(error)}
+            onChange={(e) => onChange(e.target.value.replace(/[^0-9.\-]/g, '').replace(/(?!^)-/g, ''))}
+            aria-invalid={Boolean(error ?? problem)}
             aria-describedby={describedBy}
-            className={cn(inputBase, borderFor(error), 'tabular text-center')}
+            className={cn(inputBase, borderFor(error ?? problem ?? undefined), 'tabular text-center')}
             {...rest}
           />
           <button

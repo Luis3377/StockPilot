@@ -4,16 +4,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GraduationCap, MonitorSmartphone } from 'lucide-react';
+import { CirclePlay, GraduationCap, MonitorSmartphone } from 'lucide-react';
 import { store, useAppState } from '../data/store';
 import { scannerEnabled } from '../ai/config';
 import { pauseLesson, startLesson, type ActiveLesson } from './progress';
-import { lessonById, pathFor } from './lessons';
+import { lessonById, pathFor, resumeCandidate, stepsFor } from './lessons';
 import type { StaticEnv } from './types';
 import { ADOPT_AFTER_MS, TAB_ID, claimLesson, hasLocks, holdsLesson, releaseLesson, subscribeOwnership, waitUntilLessonFree } from './session';
 import { TourContext, saveProgress, useTour, type StartOptions, type TourApi } from './tourContext';
 import { TourRunner } from './TourRunner';
 import { Dialog } from '../ui/Dialog';
+import { useDialogs } from '../pages/dialogs/DialogHub';
 import { Button } from '../ui/Button';
 import { useToast } from '../ui/Toast';
 
@@ -47,12 +48,19 @@ export function TourProvider({ children }: { children: ReactNode }) {
       let p = store.getState().settings.tutorial;
       if (p.active && p.active.lessonId !== lessonId) p = pauseLesson(p);
       const resuming = Boolean(opts.resume && (lessonId in p.resume || p.active?.lessonId === lessonId));
-      const from = resuming ? (p.active?.lessonId === lessonId ? p.active.step : p.resume[lessonId]) : 0;
+      // Opening at a particular step (a help topic's lesson link): only where the lesson can be
+      // started there — a look-only lesson, or a practice lesson that knows how to set that up.
+      const jumpTo =
+        !resuming && opts.atStep && (!lesson.practice || lesson.jumpSetup)
+          ? stepsFor(lesson, { settings: store.getState().settings, scannerEnabled }).findIndex((x) => x.id === opts.atStep)
+          : -1;
+      const from = resuming ? (p.active?.lessonId === lessonId ? p.active.step : p.resume[lessonId]) : Math.max(0, jumpTo);
       if (lesson.practice) {
         // A fresh start empties the practice records, so replaying never piles up duplicates. Resuming,
         // or going straight on from another practice lesson, keeps them (e.g. the product you just added).
         await store.enterPractice(!resuming && !opts.keepPractice);
-        if (lesson.setup && store.getState().dataset === 'practice') store.update(lesson.setup);
+        const setup = jumpTo > 0 ? lesson.jumpSetup : lesson.setup;
+        if (setup && store.getState().dataset === 'practice') store.update(setup);
       } else if (store.getState().dataset === 'practice') {
         await store.exitPractice();
       }
@@ -78,6 +86,16 @@ export function TourProvider({ children }: { children: ReactNode }) {
     }),
     [progress, start, navigate],
   );
+
+  // In a tab that isn't running the lesson, the practice records are read-only: a form left open
+  // here can't save into them and move the lesson on in the other tab (N1).
+  useEffect(() => {
+    store.setPracticeWriteGuard(() => {
+      const a = store.getState().settings.tutorial.active;
+      return a && a.owner !== TAB_ID && !holdsLesson() ? OTHER_TAB_WRITE : null;
+    });
+    return () => store.setPracticeWriteGuard(null);
+  }, []);
 
   const active = progress.active;
   const lesson = active ? lessonById(active.lessonId) : undefined;
@@ -133,7 +151,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
         mine ? (
           <TourRunner key={lesson.id} lesson={lesson} active={active} staticEnv={staticEnv} />
         ) : active.owner === TAB_ID ? null /* this tab's lesson, taking its lock back (e.g. after a refresh) */ : (
-          <OtherTabNotice title={lesson.title} onContinue={() => void start(lesson.id, { resume: true })} />
+          <OtherTabNotice title={lesson.title} practice={lesson.practice} onContinue={() => void start(lesson.id, { resume: true })} />
         )
       ) : (
         progress.welcome === 'pending' && <Welcome staticEnv={staticEnv} />
@@ -142,8 +160,17 @@ export function TourProvider({ children }: { children: ReactNode }) {
   );
 }
 
+const OTHER_TAB_WRITE =
+  'A Learning Center lesson is running in another StockPilot tab, so the practice records can’t be changed here. Use “Continue it here” to move the lesson to this tab.';
+
 /** Shown in every other StockPilot tab while a lesson runs in one of them. */
-function OtherTabNotice({ title, onContinue }: { title: string; onContinue: () => void }) {
+function OtherTabNotice({ title, practice, onContinue }: { title: string; practice: boolean; onContinue: () => void }) {
+  const dialogs = useDialogs();
+  // A practice form left open here belongs to the lesson in the other tab: close it, so it can't be
+  // saved later by mistake (saving would be refused anyway).
+  useEffect(() => {
+    if (practice) dialogs.closeAll();
+  }, [practice, dialogs]);
   return (
     <div
       role="status"
@@ -166,9 +193,11 @@ function OtherTabNotice({ title, onContinue }: { title: string; onContinue: () =
 // ---------------------------------------------------------------------------------------------
 
 function Welcome({ staticEnv }: { staticEnv: StaticEnv }) {
-  const { start } = useTour();
+  const { start, progress } = useTour();
   const toast = useToast();
   const first = pathFor(staticEnv)[0];
+  // Shown again with an unfinished lesson: offer to pick it up (only one that can run here).
+  const resumeLesson = resumeCandidate(staticEnv, progress);
   const collector = staticEnv.settings.mode === 'collector';
   const skip = () => {
     saveProgress({ ...store.getState().settings.tutorial, welcome: 'skipped' });
@@ -191,20 +220,39 @@ function Welcome({ staticEnv }: { staticEnv: StaticEnv }) {
             Explore on my own
           </Button>
           <Button
-            variant="primary"
+            variant={resumeLesson ? 'secondary' : 'primary'}
             icon={<GraduationCap className="size-4" />}
             onClick={() => {
               saveProgress({ ...store.getState().settings.tutorial, welcome: 'started' });
               if (first) void start(first.id);
             }}
             data-testid="tour-welcome-start"
-            data-autofocus
+            data-autofocus={resumeLesson ? undefined : true}
           >
             Start guided tour
           </Button>
+          {resumeLesson && (
+            <Button
+              variant="primary"
+              icon={<CirclePlay className="size-4" />}
+              onClick={() => {
+                saveProgress({ ...store.getState().settings.tutorial, welcome: 'started' });
+                void start(resumeLesson.id, { resume: true });
+              }}
+              data-testid="tour-welcome-resume"
+              data-autofocus
+            >
+              Resume tour
+            </Button>
+          )}
         </div>
       }
     >
+      {resumeLesson && (
+        <p className="mb-2 text-sm text-ink" data-testid="tour-welcome-unfinished">
+          You have an unfinished lesson: <strong>{resumeLesson.title}</strong>. Resume tour picks it up where you stopped.
+        </p>
+      )}
       <p className="text-sm text-ink-2">
         The tour points at the real buttons and fields, one step at a time. Practice steps use sample records, so your own {collector ? 'collection is' : 'data is'} never changed.
         You can leave whenever you like (Esc or Exit) and pick up later from the Learning Center.

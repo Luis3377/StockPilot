@@ -21,6 +21,8 @@ export interface TutorialProgress {
   skipped: string[];
   /** Where unfinished lessons stopped (lessonId → step index), for "Resume". */
   resume: Record<string, number>;
+  /** When each unfinished lesson was last paused (ISO), so "Resume" offers the most recent one. Missing in older saves. */
+  pausedAt?: Record<string, string>;
   /** The lesson running now (survives a page refresh). */
   active: ActiveLesson | null;
 }
@@ -47,6 +49,8 @@ export function sanitizeTutorial(raw: unknown, onboarded: boolean): TutorialProg
   const resume: Record<string, number> = {};
   if (isObj(raw.resume))
     for (const [k, v] of Object.entries(raw.resume)) if (ID.test(k) && Number.isInteger(v) && (v as number) >= 0 && (v as number) < 200) resume[k] = v as number;
+  const pausedAt: Record<string, string> = {};
+  if (isObj(raw.pausedAt)) for (const [k, v] of Object.entries(raw.pausedAt)) if (ID.test(k) && k in resume && typeof v === 'string' && v.length <= 40) pausedAt[k] = v;
   const a = raw.active;
   const b = isObj(a) && isObj(a.baseline) ? a.baseline : {};
   const n = (v: unknown) => (Number.isInteger(v) && (v as number) >= 0 ? (v as number) : 0);
@@ -69,6 +73,7 @@ export function sanitizeTutorial(raw: unknown, onboarded: boolean): TutorialProg
     completed,
     skipped: Array.isArray(raw.skipped) ? [...new Set(raw.skipped.filter((x): x is string => typeof x === 'string' && ID.test(x)))].slice(0, 100) : [],
     resume,
+    ...(Object.keys(pausedAt).length ? { pausedAt } : {}),
     active,
   };
 }
@@ -86,14 +91,22 @@ export function goToStep(p: TutorialProgress, step: number): TutorialProgress {
 }
 
 /** Stops the running lesson, remembering where it was so it can be resumed. */
-export function pauseLesson(p: TutorialProgress): TutorialProgress {
+export function pauseLesson(p: TutorialProgress, at: string = new Date().toISOString()): TutorialProgress {
   if (!p.active) return p;
   return {
     ...p,
     active: null,
     resume: { ...p.resume, [p.active.lessonId]: p.active.step },
+    pausedAt: { ...p.pausedAt, [p.active.lessonId]: at },
   };
 }
+
+const withoutPause = (p: TutorialProgress, id: string): Record<string, string> | undefined => {
+  if (!p.pausedAt) return undefined;
+  const { [id]: _gone, ...rest } = p.pausedAt;
+  void _gone;
+  return rest;
+};
 
 export function completeLesson(p: TutorialProgress, at: string): TutorialProgress {
   if (!p.active) return p;
@@ -103,6 +116,7 @@ export function completeLesson(p: TutorialProgress, at: string): TutorialProgres
     ...p,
     active: null,
     resume,
+    pausedAt: withoutPause(p, p.active.lessonId),
     completed: { ...p.completed, [p.active.lessonId]: at },
   };
 }
@@ -117,6 +131,7 @@ export function skipLesson(p: TutorialProgress): TutorialProgress {
     ...p,
     active: null,
     resume,
+    pausedAt: withoutPause(p, id),
     skipped: [...new Set([...p.skipped, id])],
   };
 }

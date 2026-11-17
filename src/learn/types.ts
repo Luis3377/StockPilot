@@ -51,8 +51,12 @@ export interface LessonStep {
   title: Text;
   /** Plain English: what to do, and why it matters. */
   body: Text;
-  /** The page this step is on. The tour opens it when the step starts (if the user isn't there already). */
-  route?: string;
+  /**
+   * The page this step is on. The tour opens it when the step starts (if the user isn't there
+   * already). May depend on the records, e.g. Monthly Close opening the practice records' month;
+   * a query string is opened too, but only the path decides whether you're "on" the page.
+   */
+  route?: string | ((env: LessonEnv) => string);
   /** Leave out for a message in the middle of the screen. */
   target?: TargetSpec;
   /** Highlight every visible match (e.g. two buttons that both start the same thing); any of them works. */
@@ -100,6 +104,11 @@ export interface Lesson {
   unavailable?: (env: StaticEnv) => string | null;
   /** Started straight after another practice lesson, it keeps that lesson's practice records (e.g. the product just added). */
   continuesPractice?: boolean;
+  /**
+   * Prepares the practice records when the lesson is opened part-way through (a help topic's
+   * "Lesson" link opening the step that explains that figure). Only ever runs on practice data.
+   */
+  jumpSetup?: (data: AppData) => AppData;
   /** Prepares the practice dataset (e.g. a sample item to sell). Only ever runs on practice data. */
   setup?: (data: AppData) => AppData;
 }
